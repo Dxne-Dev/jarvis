@@ -9,13 +9,13 @@
 - Brief lu. Ancien Jarvis cloné dans `legacy/` (non versionné) et lu en entier : `phase1.md` à `phase4.md`, `architecture.md`, `docs/RESUME-SESSION.md`, journaux `docs/phase1` à `docs/phase3`.
 - `.gitignore`, exclusions locales (`.git/info/exclude`), hooks git locaux contre les fuites de secrets.
 - Identité git locale : Octave BAHOUN-HOUTOUKPE `<octavebahoun@gmail.com>`.
+- Dépôt privé https://github.com/octavebahoun/O-jarvis créé ; branches `main` et `dev` poussées.
 - Machine vérifiée (voir `DECISIONS.md`).
 - Clés du `.env` vérifiées par de vrais appels (résultats ci-dessous).
 
 ## Ensuite
 
-1. Dépôt GitHub privé `O-jarvis`, premier commit, branches `main` et `dev`.
-2. Phase 1 — Fondations : Tauri, React, moteur Python en sidecar, tokens de design, sphère, Réglages et trousseau, bus d'événements, traces v1, CI.
+1. Phase 1 — Fondations : Tauri, React, moteur Python en sidecar, tokens de design, sphère, Réglages et trousseau, bus d'événements, traces v1, CI.
 
 ## Problèmes ouverts
 
@@ -36,4 +36,5 @@
 | 14/10 | Notion `/users/me` + `/search` | OK — intégration `o-jarvis`, pages partagées |
 | 14/10 | Telegram `getMe` | OK — bot `@ojarvi_bot`, pas de webhook |
 | 14/10 | Google OAuth loopback | OK — client « Desktop app » accepté, identifiants valides |
-| 14/10 | Paquets système | Tauri, WebKitWebDriver, PortAudio, Xvfb, portails : présents |
+| 14/10 | Paquets système | Tauri, WebKitWebDriver, PortAudio, Xvfb, portails : présents ; manquent `pulseaudio-utils espeak-ng xdotool wmctrl sqlite3` |
+| 14/10 | Historique publié | Ni `.env`, ni `BRIEF.md`, ni mention interdite (`git log` vérifié) |
