@@ -79,7 +79,8 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Radix UI** pour les dialogues et boutons radio accessibles, **lucide** pour les icônes, **TanStack Query** pour les données du moteur, **Zustand** pour l'état de connexion.
 - **Routeur à hachage** — une app de bureau n'a pas de serveur pour réécrire les URL.
 - **Polices embarquées (`@fontsource`)** : Inter, Space Grotesk, JetBrains Mono — l'app fonctionne hors ligne (leçon de l'ancien : polices Google bloquées au build).
-- **Journal de l'interface vers la coque** (`ui_log`) — les erreurs de la fenêtre arrivent dans les logs même si le moteur est arrêté.
+- **Journal de l'interface vers la coque** (`ui_log`) — les erreurs de la fenêtre arrivent dans les logs même si le moteur est arrêté. Les caractères de contrôle sont retirés : une ligne ne peut pas en imiter une autre.
+- **Permissions de la fenêtre au minimum** — écouter les événements du shell, rien d'autre ; `core:default` aurait aussi permis de créer menus et icônes système.
 
 ## Qualité
 

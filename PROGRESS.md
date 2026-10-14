@@ -20,9 +20,8 @@
 
 ## Ensuite
 
-1. Lanceur « un clic » installé et vérifié (binaire release).
-2. CI verte sur GitHub ; démarrage à froid depuis un clone neuf.
-3. PR `dev → main` de la phase 1, puis phase 2 (parler à Jarvis).
+1. CI entièrement verte (coque Rust en cours) puis PR `dev → main` de la phase 1.
+2. Phase 2 — parler à Jarvis : routeur de modèles, conversation, mémoire, moteur de contexte, voix.
 
 ## Problèmes ouverts
 
@@ -45,3 +44,9 @@
 | 14/10 | Bout en bout Playwright + vrai moteur + axe | 6/6 ; aucune violation sérieuse |
 | 14/10 | Sphère dans l'app réelle (WebKitGTK) | 59,7 à 60,0 i/s, p95 ≤ 19 ms |
 | 14/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
+| 14/10 | Lanceur « un clic » (`gtk-launch o-jarvis`, binaire release) | app + moteur démarrés ; trousseau GNOME |
+| 14/10 | Icône de la barre système (D-Bus StatusNotifier) | enregistrée, active, menu « Ouvrir » / « Quitter » |
+| 14/10 | « Quitter » depuis la barre système | app et moteur arrêtés en ~1 s (`stdin_closed`, `engine_stopped`) |
+| 14/10 | App tuée (SIGTERM) | le moteur s'arrête seul |
+| 14/10 | Démarrage à froid (clone GitHub neuf + `install-dev.sh` + `pnpm tauri dev`) | moteur prêt, interface connectée |
+| 14/10 | CI GitHub : moteur, interface, bout en bout | vertes |
