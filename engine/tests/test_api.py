@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from ojarvis.app import create_app
 from ojarvis.config import EngineConfig
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
 from tests.conftest import DEV_ORIGIN, TOKEN, Router
@@ -208,3 +209,21 @@ def test_unexpected_errors_are_normalized(config: EngineConfig) -> None:
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "internal_error"
     assert "détail interne" not in response.text
+
+
+def test_memory_keyring_only_in_dev(config: EngineConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OJARVIS_MEMORY_KEYRING", "1")
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.null.Keyring")
+    app = create_app(config, token=TOKEN)
+    with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as dev:
+        assert dev.get("/v1/status").json()["keyring"] == "memoire"
+    prod = EngineConfig(paths=config.paths, dev_mode=False, allowed_hosts=config.allowed_hosts)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(prod, token=TOKEN), headers=headers) as c:
+        body = c.get("/v1/status").json()
+    assert body["keyring"] == "indisponible"
+    assert body["keyring_error"]
+
+
+def test_session_token_is_redacted(client: TestClient) -> None:
+    assert TOKEN not in REDACTOR.redact(f"jeton {TOKEN}")

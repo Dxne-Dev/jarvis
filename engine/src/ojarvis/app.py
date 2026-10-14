@@ -15,6 +15,7 @@ from ojarvis.api import routes_core, routes_secrets, routes_stream
 from ojarvis.config import EngineConfig
 from ojarvis.core.errors import install_error_handlers
 from ojarvis.security.auth import CorrelationIdMiddleware, TokenAuthMiddleware
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import SecretBackend
 from ojarvis.services import Services
 
@@ -31,6 +32,7 @@ def create_app(
 ) -> FastAPI:
     if len(token) < 32:
         raise ValueError("jeton trop court")
+    REDACTOR.add_value(token)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

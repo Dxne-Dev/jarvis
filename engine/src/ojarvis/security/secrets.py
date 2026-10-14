@@ -274,4 +274,4 @@ class SecretStore:
     def load_into_redactor(self) -> None:
         values = [self._backend.get(spec.name) for spec in CATALOG]
         values.append(self._backend.get(LOCAL_KEY_NAME))
-        self._redactor.set_values(v for v in values if v)
+        self._redactor.add_values(v for v in values if v)

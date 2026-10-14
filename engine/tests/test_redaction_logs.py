@@ -77,6 +77,9 @@ def test_logs_never_contain_secrets(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert "timestamp" in first
 
 
-def test_noisy_http_loggers_are_quiet() -> None:
+def test_noisy_loggers_are_quiet() -> None:
     configure_logging("DEBUG")
     assert logging.getLogger("httpx").level == logging.WARNING
+    # Les trames WebSocket (dont l'authentification) ne sont jamais écrites.
+    assert logging.getLogger("uvicorn.error").level == logging.WARNING
+    assert logging.getLogger("websockets").level == logging.WARNING

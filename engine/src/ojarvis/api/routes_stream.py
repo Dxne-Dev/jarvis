@@ -69,6 +69,9 @@ async def events_ws(websocket: WebSocket) -> None:
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
+                # Lire l'exception d'une tâche annulée lèverait CancelledError.
+                if task.cancelled():
+                    continue
                 exc = task.exception()
                 if exc is not None and not isinstance(exc, WebSocketDisconnect):
                     log.warning("event_stream_closed", error_type=type(exc).__name__)

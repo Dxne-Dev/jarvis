@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,7 +18,7 @@ from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
 from ojarvis.events.bus import EventBus
 from ojarvis.events.store import EventStore
-from ojarvis.security.secrets import KeyringBackend, SecretBackend, SecretStore
+from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBackend, SecretStore
 from ojarvis.settings_store import SettingsStore
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 
@@ -74,6 +75,9 @@ class Services:
         backend: SecretBackend
         if secret_backend is not None:
             backend = secret_backend
+        elif config.dev_mode and os.environ.get("OJARVIS_MEMORY_KEYRING") == "1":
+            # Tests de bout en bout : trousseau en mémoire, jamais le vrai, jamais sur disque.
+            backend = MemoryBackend()
         else:
             try:
                 backend = await anyio.to_thread.run_sync(KeyringBackend)

@@ -19,7 +19,17 @@ from ojarvis.core.context import current_correlation_id
 from ojarvis.security.redaction import REDACTOR
 
 # Bibliothèques bavardes : le client HTTP écrit les URL complètes (le jeton Telegram y figure).
-_QUIET_LOGGERS = ("httpx", "httpcore", "hpack", "asyncio", "alembic.runtime.migration")
+_QUIET_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "hpack",
+    "asyncio",
+    "alembic.runtime.migration",
+    # Uvicorn passe ce logger à la bibliothèque WebSocket : en DEBUG, elle écrit le contenu
+    # des trames, dont le message d'authentification.
+    "uvicorn.error",
+    "websockets",
+)
 
 
 def _add_correlation_id(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:

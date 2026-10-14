@@ -41,9 +41,13 @@ class Redactor:
             self._values = tuple(sorted(cleaned, key=len, reverse=True))
 
     def add_value(self, value: str) -> None:
+        self.add_values([value])
+
+    def add_values(self, values: Iterable[str]) -> None:
+        """Ajoute des valeurs sans retirer celles déjà connues (jeton de session compris)."""
         with self._lock:
             current = set(self._values)
-        current.add(value)
+        current.update(values)
         self.set_values(current)
 
     def redact(self, text: str) -> str:

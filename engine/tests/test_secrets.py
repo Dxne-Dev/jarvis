@@ -129,11 +129,12 @@ def test_record_check_is_kept_and_redacted(store: SecretStore) -> None:
     assert "aaaa" not in status.last_check_detail
 
 
-def test_load_into_redactor(store: SecretStore) -> None:
+def test_load_into_redactor_keeps_existing_values(store: SecretStore) -> None:
     store.set("CARTESIA_API_KEY", "sk_car_valeur_chargee")
-    REDACTOR.set_values([])
+    REDACTOR.set_values(["jeton-de-session-deja-connu"])
     store.load_into_redactor()
     assert "sk_car_valeur_chargee" not in REDACTOR.redact("sk_car_valeur_chargee")
+    assert "jeton-de-session-deja-connu" not in REDACTOR.redact("jeton-de-session-deja-connu")
 
 
 def test_unavailable_backend_refuses_writes() -> None:
