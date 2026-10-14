@@ -46,3 +46,12 @@ def test_stream_rejects_non_json_first_message(client: TestClient) -> None:
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.code == 4401
+
+
+def test_client_leaving_before_auth_is_not_an_error(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    with client.websocket_connect("/v1/events/ws") as ws:
+        ws.close()
+    assert client.get("/health").status_code == 200
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]

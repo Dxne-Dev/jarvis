@@ -32,6 +32,11 @@ def _event_message(event: Event) -> str:
     return json.dumps({"type": "event", "event": event.model_dump(mode="json")}, ensure_ascii=False)
 
 
+async def _close_quietly(websocket: WebSocket) -> None:
+    with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+        await websocket.close(code=CLOSE_UNAUTHORIZED)
+
+
 @router.websocket("/events/ws")
 async def events_ws(websocket: WebSocket) -> None:
     services: Services = websocket.app.state.services
@@ -43,12 +48,13 @@ async def events_ws(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         first: dict[str, Any] = await asyncio.wait_for(websocket.receive_json(), AUTH_TIMEOUT_S)
-    except (TimeoutError, WebSocketDisconnect, ValueError, json.JSONDecodeError):
-        with contextlib.suppress(RuntimeError):
-            await websocket.close(code=CLOSE_UNAUTHORIZED)
+    except WebSocketDisconnect:
+        return  # le client est parti avant de s'authentifier : rien à fermer
+    except (TimeoutError, ValueError, json.JSONDecodeError):
+        await _close_quietly(websocket)
         return
     if first.get("type") != "auth" or not token_matches(token, str(first.get("token", ""))):
-        await websocket.close(code=CLOSE_UNAUTHORIZED)
+        await _close_quietly(websocket)
         return
 
     async with services.bus.stream("*") as queue:

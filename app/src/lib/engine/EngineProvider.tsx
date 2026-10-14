@@ -25,8 +25,14 @@ export function EngineProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let stream: EventStream | null = null;
     let cancelled = false;
+    let current = "";
 
     const connect = (info: EngineBootInfo) => {
+      // L'adresse arrive deux fois au démarrage (réponse directe et événement du shell) :
+      // on ne recrée la connexion que si quelque chose a changé.
+      const key = `${info.status}|${info.base_url ?? ""}|${info.token ?? ""}`;
+      if (key === current) return;
+      current = key;
       stream?.stop();
       stream = null;
       uiLog(
