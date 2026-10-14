@@ -1,0 +1,65 @@
+# Secrets (les clés vivent dans le trousseau du système)
+.env
+.env.*
+!.env.example
+
+# Ancien projet, lecture seule, jamais versionné
+legacy/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Rust / Tauri
+target/
+app/src-tauri/gen/schemas/
+
+# Paquets
+*.deb
+*.AppImage
+*.rpm
+
+# Données locales, modèles et audio générés
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+models/
+*.onnx
+*.tflite
+*.gguf
+*.bin
+*.pt
+*.wav
+*.mp3
+*.ogg
+
+# Artefacts de vérification (captures, rapports) produits en local
+artefacts/
+
+# Éditeurs et OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
