@@ -1,0 +1,190 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  height: 100%;
+  background:
+    radial-gradient(ellipse 60% 50% at 62% 18%, var(--color-accent-faint), transparent 70%),
+    var(--color-bg);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+}
+
+.logo {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-full);
+  box-shadow: var(--glow-accent);
+}
+
+.brandName {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.link:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.link:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus);
+}
+
+.active {
+  background: var(--color-accent-faint);
+  color: var(--color-text);
+}
+
+.active::before {
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: 0;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  box-shadow: var(--glow-accent);
+  content: "";
+}
+
+.linkIcon {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.active .linkIcon {
+  color: var(--color-accent);
+}
+
+.engine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+
+.engine[data-tone="ok"] .dot {
+  background: var(--color-accent);
+  box-shadow: var(--glow-accent);
+}
+
+.engine[data-tone="wait"] .dot {
+  background: var(--color-warning);
+}
+
+.engine[data-tone="down"] .dot {
+  background: var(--color-danger);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.banner {
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  outline: none;
+}
+
+/* De 900 à 1100 px : la barre latérale se réduit aux icônes. */
+@media (width < 1100px) {
+  .shell {
+    grid-template-columns: var(--sidebar-width-compact) minmax(0, 1fr);
+  }
+
+  .sidebar {
+    align-items: center;
+    padding-inline: var(--space-2);
+  }
+
+  .brandName,
+  .linkLabel,
+  .engineLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .link {
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+  }
+
+  .engine {
+    justify-content: center;
+    padding: var(--space-2);
+  }
+}

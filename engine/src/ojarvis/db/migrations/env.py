@@ -1,0 +1,49 @@
+"""Environnement Alembic : SQLite, mode batch pour les ALTER TABLE."""
+
+from __future__ import annotations
+
+from alembic import context
+from sqlalchemy import create_engine, pool
+
+from ojarvis.db import models  # noqa: F401  (enregistre les tables)
+from ojarvis.db.base import Base
+from ojarvis.db.migrate import managed_by_alembic
+
+config = context.config
+target_metadata = Base.metadata
+
+
+def run_migrations_offline() -> None:
+    context.configure(
+        url=config.get_main_option("sqlalchemy.url"),
+        target_metadata=target_metadata,
+        literal_binds=True,
+        render_as_batch=True,
+        include_name=managed_by_alembic,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise RuntimeError("sqlalchemy.url manquant dans la configuration Alembic")
+    engine = create_engine(url, poolclass=pool.NullPool)
+    with engine.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+            compare_type=True,
+            include_name=managed_by_alembic,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+    engine.dispose()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

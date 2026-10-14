@@ -1,0 +1,157 @@
+"""Point d'entrée du moteur, lancé par l'app comme processus enfant.
+
+Poignée de main avec l'app :
+1. l'app écrit le jeton de session sur l'entrée standard, puis la garde ouverte ;
+2. le moteur choisit un port libre sur 127.0.0.1, prépare la base, puis écrit sur
+   la sortie standard : `OJARVIS_READY {"port": ..., "pid": ..., "version": ...}` ;
+3. quand l'entrée standard se ferme (l'app quitte ou meurt), le moteur s'arrête.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import socket
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import IO
+
+import uvicorn
+
+from ojarvis import __version__
+from ojarvis.app import create_app
+from ojarvis.config import load_config
+from ojarvis.core.logs import configure_logging, get_logger
+
+READY_PREFIX = "OJARVIS_READY "
+EXIT_LOCKED = 3
+EXIT_BAD_TOKEN = 4
+
+log = get_logger("ojarvis.main")
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="ojarvis-engine", description="Moteur d'O-jarvis.")
+    parser.add_argument("--dev", action="store_true", help="mode développement")
+    parser.add_argument("--port", type=int, default=0, help="0 = port libre choisi par le système")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--token-env",
+        metavar="VAR",
+        help="lire le jeton dans cette variable d'environnement (développement)",
+    )
+    source.add_argument(
+        "--token-stdin",
+        action="store_true",
+        default=True,
+        help="lire le jeton sur l'entrée standard (défaut)",
+    )
+    return parser.parse_args(argv)
+
+
+def acquire_lock(path: Path) -> IO[str] | None:
+    """Un seul moteur par dossier de données."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = path.open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def bind_socket(port: int) -> socket.socket:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    sock.listen(64)
+    sock.set_inheritable(True)
+    return sock
+
+
+def watch_parent(server: uvicorn.Server, stream: IO[bytes]) -> None:
+    """Arrête le moteur à la fermeture de l'entrée standard ou si le parent disparaît."""
+    parent = os.getppid()
+
+    def wait_eof() -> None:
+        while stream.read(4096):
+            pass
+        log.info("stdin_closed")
+        server.should_exit = True
+
+    def watch_ppid() -> None:
+        while not server.should_exit:
+            if os.getppid() != parent:
+                log.info("parent_gone")
+                server.should_exit = True
+                return
+            time.sleep(1.0)
+
+    threading.Thread(target=wait_eof, name="stdin-watch", daemon=True).start()
+    threading.Thread(target=watch_ppid, name="ppid-watch", daemon=True).start()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    config = load_config(dev_mode=args.dev)
+    config.paths.ensure()
+    configure_logging(
+        config.log_level,
+        log_file=config.paths.logs_dir / "engine.log",
+        json_console=not config.dev_mode,
+    )
+
+    if args.token_env:
+        token = os.environ.get(args.token_env, "")
+        from_stdin = False
+    else:
+        token = sys.stdin.buffer.readline().decode("utf-8", "replace").strip()
+        from_stdin = True
+    if len(token) < 32:
+        log.error("invalid_token")
+        return EXIT_BAD_TOKEN
+
+    lock = acquire_lock(config.paths.lock_path)
+    if lock is None:
+        log.error("engine_already_running", lock=str(config.paths.lock_path))
+        return EXIT_LOCKED
+
+    sock = bind_socket(args.port)
+    port = int(sock.getsockname()[1])
+
+    def announce() -> None:
+        info = {"port": port, "pid": os.getpid(), "version": __version__}
+        sys.stdout.write(READY_PREFIX + json.dumps(info) + "\n")
+        sys.stdout.flush()
+
+    app = create_app(config, token=token, on_ready=announce)
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            log_config=None,
+            access_log=False,
+            lifespan="on",
+            timeout_graceful_shutdown=5,
+            ws_ping_interval=20,
+        )
+    )
+    if from_stdin:
+        watch_parent(server, sys.stdin.buffer)
+    log.info("engine_listening", port=port, dev_mode=config.dev_mode)
+    try:
+        server.run(sockets=[sock])
+    finally:
+        sock.close()
+        lock.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

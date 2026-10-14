@@ -24,6 +24,9 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Jeton aléatoire par lancement, transmis par l'entrée standard** — invisible dans `/proc/<pid>/environ`. Le moteur s'arrête quand l'entrée standard se ferme : si l'app meurt, il meurt aussi.
 - **Monorepo** : `app/` (Tauri + React), `engine/` (Python), `docs/`, `scripts/`.
 - **Identifiants de code en anglais, interface, docs et commits en français** — convention lisible par tous les outils, produit en français.
+- **Le moteur se lance depuis l'environnement Python du dépôt** (`engine/.venv`) en développement et pour le lanceur « un clic » ; un moteur empaqueté (PyInstaller) prendra la priorité en phase 7. Ordre de recherche : empaqueté, `OJARVIS_ENGINE_DIR`, sources.
+- **WebSocket authentifiée par son premier message** — un navigateur ne peut pas poser d'en-tête sur une WebSocket ; l'origine est aussi vérifiée.
+- **Fermer la fenêtre arrête tout** (le brief) ; la barre système offre « Ouvrir » et « Quitter » ; `Ctrl+Q` quitte.
 
 ## Moteur Python
 
@@ -40,6 +43,9 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Sorties structurées** — appel d'outils natif, sinon mode JSON ; validation Pydantic ; parse tolérant (`raw_decode`, puis réparation) ; un seul nouvel essai avec l'erreur ; puis échec propre.
 - **Un seul appel LLM par tour** — le modèle répond ou appelle des outils (dont « proposer un plan » et « créer une automatisation ») dans le même appel. L'ancien enchaînait intention, plan puis réponse : trop lent pour la voix.
 - **Logs structurés (structlog, JSON) avec ID de corrélation** — et un filtre qui masque toute valeur secrète connue.
+- **Client HTTP : `httpx`** — `httpx2` (successeur annoncé par le client de test de Starlette) a été écarté : paquet récent au nom proche de `httpx`, risque d'imitation ; l'avertissement de dépréciation est filtré dans les tests (14/10/2026).
+- **Loggers `uvicorn.error` et `websockets` bridés à WARNING** — en DEBUG, ils écrivent le contenu des trames WebSocket, dont le message d'authentification. Le jeton de session est aussi ajouté au filtre des logs.
+- **Trousseau en mémoire pour les tests de bout en bout** (`OJARVIS_MEMORY_KEYRING=1`, accepté seulement en mode développement) — aucun test ne touche aux vraies clés, rien n'est écrit en clair.
 
 ## LLM
 
@@ -65,5 +71,18 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.
-- **Sphère en WebGL2 avec un shader maison** — plus léger que three.js ; la règle des 60 i/s décide entre Tauri et Electron.
-- **Polices embarquées (`@fontsource`)** — l'app fonctionne hors ligne (leçon de l'ancien : polices Google bloquées au build).
+- **TypeScript 6.0** — TypeScript 7 (compilateur natif) n'est pas encore pris en charge par `typescript-eslint` (< 6.1).
+- **Tauri confirmé, pas d'Electron (14/10/2026)** — sphère mesurée dans l'app réelle (WebKitGTK, Intel HD 4600, Wayland, toile de 363 px) : 59,7 à 60,0 i/s selon l'état, p95 ≤ 19 ms, au plus 1 image longue sur 360.
+- **Sphère en WebGL2 avec un shader maison** — nuage de points (spirale de Fibonacci), cœur et halo sur un quadrilatère, anneaux en pointillés. Plus léger que three.js. Couleurs lues dans les tokens CSS.
+- **Repli sans WebGL** — un disque lumineux en CSS qui garde les couleurs d'état.
+- **CSS Modules + tokens** — Stylelint refuse toute couleur hors de `tokens.css`. Seule exception : la couleur de fond de la fenêtre native dans `tauri.conf.json`, copie de `--color-bg`, pour éviter un flash blanc à l'ouverture.
+- **Radix UI** pour les dialogues et boutons radio accessibles, **lucide** pour les icônes, **TanStack Query** pour les données du moteur, **Zustand** pour l'état de connexion.
+- **Routeur à hachage** — une app de bureau n'a pas de serveur pour réécrire les URL.
+- **Polices embarquées (`@fontsource`)** : Inter, Space Grotesk, JetBrains Mono — l'app fonctionne hors ligne (leçon de l'ancien : polices Google bloquées au build).
+- **Journal de l'interface vers la coque** (`ui_log`) — les erreurs de la fenêtre arrivent dans les logs même si le moteur est arrêté. Les caractères de contrôle sont retirés : une ligne ne peut pas en imiter une autre.
+- **Permissions de la fenêtre au minimum** — écouter les événements du shell, rien d'autre ; `core:default` aurait aussi permis de créer menus et icônes système.
+
+## Qualité
+
+- **Tests de bout en bout : Playwright sur l'interface branchée au vrai moteur**, avec audit axe à chaque écran. La mesure de fluidité, elle, se fait dans l'app Tauri réelle.
+- **Audit npm : dépendances livrées strictement propres** ; une faille « haute » sans correctif existe dans `braces`, utilisé seulement par Stylelint au moment du lint, sur nos propres fichiers : aucun contenu externe ne l'atteint. Risque accepté et surveillé (la CI bloque au niveau critique pour les outils de développement).

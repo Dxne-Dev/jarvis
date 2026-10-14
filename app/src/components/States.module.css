@@ -1,0 +1,67 @@
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 12rem;
+  padding: var(--space-8) var(--space-6);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.state svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-text-faint);
+}
+
+.title {
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+.text {
+  max-width: 34rem;
+  font-size: var(--text-sm);
+}
+
+.error svg {
+  color: var(--color-danger);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+.partial {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.partial svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-warning);
+}
