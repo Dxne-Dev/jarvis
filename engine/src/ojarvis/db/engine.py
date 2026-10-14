@@ -13,9 +13,23 @@ from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
+import sqlite_vec
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+
+
+def _load_vector_extension(connection: sqlite3.Connection) -> bool:
+    """Charge sqlite-vec ; en cas d'échec, la recherche vectorielle passe par NumPy."""
+    try:
+        connection.enable_load_extension(True)
+        try:
+            sqlite_vec.load(connection)
+        finally:
+            connection.enable_load_extension(False)
+    except (AttributeError, sqlite3.OperationalError):
+        return False
+    return True
 
 
 def _on_connect(dbapi_connection: Any, _: Any) -> None:
@@ -27,6 +41,7 @@ def _on_connect(dbapi_connection: Any, _: Any) -> None:
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
+    _load_vector_extension(dbapi_connection)
 
 
 class Database:
@@ -57,6 +72,14 @@ class Database:
 
     async def run[T](self, fn: Callable[[Session], T]) -> T:
         return await anyio.to_thread.run_sync(self.call, fn)
+
+    def has_vector_extension(self) -> bool:
+        with self.engine.connect() as connection:
+            try:
+                connection.exec_driver_sql("SELECT vec_version()")
+            except Exception:
+                return False
+        return True
 
     def dispose(self) -> None:
         self.engine.dispose()

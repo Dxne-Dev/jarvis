@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,9 @@ from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import InvalidInputError
 from ojarvis.db.engine import Database
 from ojarvis.db.models import Setting
+from ojarvis.llm.types import TASK_TYPES
+
+PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "ollama")
 
 
 class Preferences(BaseModel):
@@ -22,6 +25,21 @@ class Preferences(BaseModel):
 
     reduced_motion: Literal["system", "reduce", "full"] = "system"
     sphere_quality: Literal["auto", "high", "low"] = "auto"
+    #: Modèle imposé par type de tâche, sous la forme « fournisseur/modèle » (absent = auto).
+    routing: dict[str, str] = Field(default_factory=dict)
+    #: Apprendre de la conversation (faits et préférences extraits automatiquement).
+    learn_from_conversations: bool = True
+
+    @field_validator("routing")
+    @classmethod
+    def _check_routing(cls, value: dict[str, str]) -> dict[str, str]:
+        for task, target in value.items():
+            if task not in TASK_TYPES:
+                raise ValueError(f"type de tâche inconnu : {task}")
+            provider, _, model = target.partition("/")
+            if provider not in PROVIDERS or not model:
+                raise ValueError(f"modèle invalide : {target}")
+        return value
 
 
 class SettingsStore:

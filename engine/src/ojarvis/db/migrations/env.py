@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, pool
 
 from ojarvis.db import models  # noqa: F401  (enregistre les tables)
 from ojarvis.db.base import Base
+from ojarvis.db.migrate import managed_by_alembic
 
 config = context.config
 target_metadata = Base.metadata
@@ -18,6 +19,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         render_as_batch=True,
+        include_name=managed_by_alembic,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -34,6 +36,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             render_as_batch=True,
             compare_type=True,
+            include_name=managed_by_alembic,
         )
         with context.begin_transaction():
             context.run_migrations()

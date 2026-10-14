@@ -44,6 +44,11 @@ from ojarvis.tracing.tracer import Tracer
 log = get_logger(__name__)
 
 
+#: « N'importe quel modèle de ce fournisseur qui convient », dans l'ordre du catalogue
+#: (utile pour les modèles gratuits d'OpenRouter, qui changent souvent).
+ANY_MODEL = "*"
+
+
 @dataclass(frozen=True, slots=True)
 class Route:
     provider: str
@@ -61,14 +66,14 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
         Route("deepseek", "deepseek-flash"),
         Route("anthropic", "claude-opus-5-5"),
         Route("openai", "gpt-5-mini"),
-        Route("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
     "chat": (
         Route("deepseek", "deepseek-flash"),
         Route("anthropic", "claude-opus-5-5"),
         Route("openai", "gpt-5"),
-        Route("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
     "reasoning": (
@@ -76,25 +81,25 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
         Route("anthropic", "claude-opus-5-5", thinking=True),
         Route("openai", "gpt-5", thinking=True),
         Route("deepseek", "deepseek-flash", thinking=True),
-        Route("openrouter", "google/gemma-4-31b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
     "extract": (
         Route("deepseek", "deepseek-flash"),
         Route("anthropic", "claude-haiku-5-5"),
         Route("openai", "gpt-5-mini"),
-        Route("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
     "title": (
         Route("deepseek", "deepseek-flash"),
         Route("anthropic", "claude-haiku-5-5"),
         Route("openai", "gpt-5-mini"),
-        Route("openrouter", "google/gemma-4-26b-a4b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
     "vision": (
-        Route("openrouter", "google/gemma-4-31b-it:free"),
+        Route("openrouter", ANY_MODEL),
         Route("anthropic", "claude-opus-5-5"),
         Route("openai", "gpt-5"),
         Route("ollama", "ministral-3:3b"),
@@ -187,12 +192,24 @@ class ModelRouter:
             )
         seen: set[str] = set()
         result: list[Route] = []
-        for route in candidates:
-            if route.key in seen or not self._fits(route, constraints):
+        for candidate in candidates:
+            route = self._resolve(candidate, constraints)
+            if route is None or route.key in seen or not self._fits(route, constraints):
                 continue
             seen.add(route.key)
             result.append(route)
         return result
+
+    def _resolve(self, route: Route, constraints: Constraints) -> Route | None:
+        if route.model != ANY_MODEL:
+            return route
+        for spec in self.catalog.all():
+            if spec.provider != route.provider:
+                continue
+            concrete = Route(spec.provider, spec.model, route.thinking)
+            if self._fits(concrete, constraints):
+                return concrete
+        return None
 
     # ---------------------------------------------------------------- santé des fournisseurs
 
@@ -325,6 +342,66 @@ class ModelRouter:
             return
         raise last_error or NoRouteAvailableError(f"aucune route n'a répondu pour {task}")
 
+    async def stream_traced(
+        self,
+        task: TaskType,
+        request: LLMRequest,
+        constraints: Constraints | None = None,
+        *,
+        state: RoutedStream | None = None,
+    ) -> AsyncIterator[StreamEvent | RouteInfo]:
+        """Comme `stream`, dans une étape de trace « appel LLM » (jetons, coût, latence)."""
+        state = state or RoutedStream()
+        start = time.perf_counter()
+        first_token: float | None = None
+        usage = Usage()
+        finish: str | None = None
+
+        async def events() -> AsyncIterator[StreamEvent | RouteInfo]:
+            nonlocal first_token, usage, finish
+            async for event in self.stream(task, request, constraints, state=state):
+                if isinstance(event, TextDelta | ToolCallReady) and first_token is None:
+                    first_token = time.perf_counter()
+                elif isinstance(event, StreamEnd):
+                    usage = event.usage
+                    finish = event.finish_reason
+                yield event
+
+        if self._tracer is None:
+            async for event in events():
+                yield event
+            return
+
+        async with self._tracer.span("appel LLM", kind="llm", task=task) as span:
+            try:
+                async for event in events():
+                    yield event
+            finally:
+                route = state.route
+                span.set(
+                    provider=route.provider if route else None,
+                    model=route.model if route else None,
+                    thinking=(request.thinking or route.thinking) if route else None,
+                    attempts=list(state.attempts),
+                    tokens_in=usage.input_tokens,
+                    tokens_out=usage.output_tokens,
+                    tokens_cached=usage.cached_input_tokens,
+                    cost_usd=self.cost(route, usage),
+                    ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
+                    finish_reason=finish,
+                )
+
+    def cost(self, route: Route | None, usage: Usage) -> float | None:
+        if route is None:
+            return None
+        return self.catalog.cost_usd(
+            route.provider,
+            route.model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+        )
+
     async def complete(
         self,
         task: TaskType,
@@ -344,65 +421,27 @@ class ModelRouter:
         info: RouteInfo | None = None
         blocks: tuple[object, ...] = ()
         state = RoutedStream()
-
-        async def run() -> None:
-            nonlocal first_token, usage, finish, info, blocks
-            async for event in self.stream(task, request, constraints, state=state):
-                if isinstance(event, RouteInfo):
-                    info = event
-                elif isinstance(event, TextDelta):
-                    if first_token is None:
-                        first_token = time.perf_counter()
-                    text.append(event.text)
-                    if on_text is not None:
-                        on_text(event.text)
-                elif isinstance(event, ReasoningDelta):
-                    reasoning.append(event.text)
-                elif isinstance(event, ToolCallReady):
-                    if first_token is None:
-                        first_token = time.perf_counter()
-                    calls.append(event.call)
-                elif isinstance(event, StreamEnd):
-                    usage = event.usage
-                    finish = event.finish_reason
-                    blocks = event.provider_blocks
-
-        if self._tracer is not None:
-            async with self._tracer.span("appel LLM", kind="llm", task=task) as span:
-                try:
-                    await run()
-                finally:
-                    route = state.route
-                    cost = (
-                        self.catalog.cost_usd(
-                            route.provider,
-                            route.model,
-                            input_tokens=usage.input_tokens,
-                            output_tokens=usage.output_tokens,
-                            cached_input_tokens=usage.cached_input_tokens,
-                        )
-                        if route
-                        else None
-                    )
-                    span.set(
-                        provider=route.provider if route else None,
-                        model=route.model if route else None,
-                        thinking=(request.thinking or route.thinking) if route else None,
-                        attempts=state.attempts,
-                        tokens_in=usage.input_tokens,
-                        tokens_out=usage.output_tokens,
-                        tokens_cached=usage.cached_input_tokens,
-                        cost_usd=cost,
-                        ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
-                        finish_reason=finish,
-                    )
-        else:
-            await run()
-
-        route = state.route
-        if info is None or route is None:
+        async for event in self.stream_traced(task, request, constraints, state=state):
+            if isinstance(event, RouteInfo):
+                info = event
+            elif isinstance(event, TextDelta):
+                if first_token is None:
+                    first_token = time.perf_counter()
+                text.append(event.text)
+                if on_text is not None:
+                    on_text(event.text)
+            elif isinstance(event, ReasoningDelta):
+                reasoning.append(event.text)
+            elif isinstance(event, ToolCallReady):
+                if first_token is None:
+                    first_token = time.perf_counter()
+                calls.append(event.call)
+            elif isinstance(event, StreamEnd):
+                usage = event.usage
+                finish = event.finish_reason
+                blocks = event.provider_blocks
+        if info is None:
             raise NoRouteAvailableError("aucune réponse")
-        latency_ms = (time.perf_counter() - start) * 1000
         return LLMResult(
             text="".join(text),
             reasoning="".join(reasoning),
@@ -411,15 +450,8 @@ class ModelRouter:
             finish_reason=finish,
             provider=info.provider,
             model=info.model,
-            cost_usd=self.catalog.cost_usd(
-                info.provider,
-                info.model,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                cached_input_tokens=usage.cached_input_tokens,
-            )
-            or 0.0,
-            latency_ms=round(latency_ms, 1),
+            cost_usd=self.cost(state.route, usage) or 0.0,
+            latency_ms=round((time.perf_counter() - start) * 1000, 1),
             ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
             provider_blocks=blocks,
         )

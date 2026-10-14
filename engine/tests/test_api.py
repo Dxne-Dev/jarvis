@@ -184,7 +184,7 @@ def test_perf_report_is_saved(client: TestClient, services: Services) -> None:
 
 def test_docs_hidden_outside_dev(config: EngineConfig) -> None:
     prod = EngineConfig(paths=config.paths, dev_mode=False, allowed_hosts=config.allowed_hosts)
-    app = create_app(prod, token=TOKEN, secret_backend=MemoryBackend())
+    app = create_app(prod, token=TOKEN, secret_backend=MemoryBackend(), discover=False)
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as c:
         assert c.get("/docs").status_code == 404
         assert c.get("/openapi.json").status_code == 404
@@ -196,7 +196,7 @@ def test_short_token_refused(config: EngineConfig) -> None:
 
 
 def test_unexpected_errors_are_normalized(config: EngineConfig) -> None:
-    app = create_app(config, token=TOKEN, secret_backend=MemoryBackend())
+    app = create_app(config, token=TOKEN, secret_backend=MemoryBackend(), discover=False)
     with TestClient(
         app, headers={"Authorization": f"Bearer {TOKEN}"}, raise_server_exceptions=False
     ) as raw:
@@ -214,12 +214,12 @@ def test_unexpected_errors_are_normalized(config: EngineConfig) -> None:
 def test_memory_keyring_only_in_dev(config: EngineConfig, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OJARVIS_MEMORY_KEYRING", "1")
     monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.null.Keyring")
-    app = create_app(config, token=TOKEN)
+    app = create_app(config, token=TOKEN, discover=False)
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as dev:
         assert dev.get("/v1/status").json()["keyring"] == "memoire"
     prod = EngineConfig(paths=config.paths, dev_mode=False, allowed_hosts=config.allowed_hosts)
     headers = {"Authorization": f"Bearer {TOKEN}"}
-    with TestClient(create_app(prod, token=TOKEN), headers=headers) as c:
+    with TestClient(create_app(prod, token=TOKEN, discover=False), headers=headers) as c:
         body = c.get("/v1/status").json()
     assert body["keyring"] == "indisponible"
     assert body["keyring_error"]

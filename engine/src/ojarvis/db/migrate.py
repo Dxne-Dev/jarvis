@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+#: Tables virtuelles (FTS5, sqlite-vec) et leurs tables internes : hors du modèle SQLAlchemy.
+_UNMANAGED = re.compile(r"^vec_|_fts($|_)")
+
+
+def managed_by_alembic(name: str | None, type_: str, _parents: object = None) -> bool:
+    """Filtre pour l'autogénération : ignore les tables virtuelles et leurs tables internes."""
+    return not (type_ == "table" and name is not None and _UNMANAGED.search(name))
 
 
 def alembic_config(db_path: Path) -> Config:

@@ -176,6 +176,10 @@ class SecretStore:
         self._db = db
         self._backend = backend
         self._redactor = redactor
+        # Les valeurs sont déjà en mémoire (filtre des logs) : ce cache évite un appel D-Bus
+        # au trousseau à chaque requête vers un modèle.
+        self._cache: dict[str, str | None] = {}
+        self._cache_lock = threading.Lock()
 
     @property
     def backend_name(self) -> str:
@@ -192,7 +196,17 @@ class SecretStore:
         """Usage interne au moteur uniquement : jamais exposé par l'API."""
         if name != LOCAL_KEY_NAME:
             self.spec(name)
-        return self._backend.get(name)
+        with self._cache_lock:
+            if name in self._cache:
+                return self._cache[name]
+        value = self._backend.get(name)
+        with self._cache_lock:
+            self._cache[name] = value
+        return value
+
+    def _forget(self, name: str) -> None:
+        with self._cache_lock:
+            self._cache.pop(name, None)
 
     def set(self, name: str, value: str, *, source: Source = "ui") -> None:
         self.spec(name)
@@ -200,6 +214,7 @@ class SecretStore:
         if not cleaned or len(cleaned) > 4096 or any(c in cleaned for c in "\r\n\0"):
             raise InvalidInputError("Valeur de secret invalide.")
         self._backend.set(name, cleaned)
+        self._forget(name)
         self._redactor.add_value(cleaned)
         now = utc_now()
         self._db.call(lambda s: s.merge(SecretMeta(name=name, source=source, updated_at=now)))
@@ -208,6 +223,7 @@ class SecretStore:
     def delete(self, name: str) -> None:
         self.spec(name)
         self._backend.delete(name)
+        self._forget(name)
         self._db.call(lambda s: s.query(SecretMeta).filter_by(name=name).delete())
         log.info("secret_deleted", name=name)
 

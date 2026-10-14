@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from ojarvis.app import create_app
 from ojarvis.config import TAURI_ORIGINS, EngineConfig, resolve_paths
+from ojarvis.llm.providers.fake import FakeProvider
+from ojarvis.memory.embeddings import HashEmbedder
 from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
@@ -55,8 +57,21 @@ def upstream() -> dict[str, Router]:
 
 
 @pytest.fixture
+def llm() -> dict[str, FakeProvider]:
+    """Fournisseurs simulés ; un test peut remplacer leur script de réponse."""
+    return {
+        "deepseek": FakeProvider("deepseek"),
+        "openrouter": FakeProvider("openrouter", configured=False),
+        "ollama": FakeProvider("ollama", configured=False, local=True),
+    }
+
+
+@pytest.fixture
 def client(
-    config: EngineConfig, backend: MemoryBackend, upstream: dict[str, Router]
+    config: EngineConfig,
+    backend: MemoryBackend,
+    upstream: dict[str, Router],
+    llm: dict[str, FakeProvider],
 ) -> Iterator[TestClient]:
     def handler(request: httpx.Request) -> httpx.Response:
         route = upstream.get(request.url.host)
@@ -69,6 +84,9 @@ def client(
         token=TOKEN,
         secret_backend=backend,
         http_transport=httpx.MockTransport(handler),
+        embedder=HashEmbedder(),
+        providers=dict(llm),
+        discover=False,
     )
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as test_client:
         yield test_client

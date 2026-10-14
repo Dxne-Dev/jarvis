@@ -10,10 +10,14 @@ dependencies = [
     "fastapi>=0.143.1",
     "httpx>=0.28.1",
     "keyring>=25.7.0",
+    "numpy>=2.5.4",
+    "onnxruntime>=1.31.0",
     "openai>=3.31.0",
     "pydantic-settings>=2.16.0",
     "sqlalchemy>=2.1.4",
+    "sqlite-vec>=0.1.9",
     "structlog>=26.1.0",
+    "tokenizers>=0.23.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -47,6 +51,8 @@ ignore = ["PLR0913", "PLR2004", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "PLR2004", "S311"]
+# Migrations : SQL construit à partir de noms de tables constants, jamais d'entrée utilisateur.
+"src/ojarvis/db/migrations/**" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -56,7 +62,7 @@ mypy_path = "src"
 packages = ["ojarvis"]
 
 [[tool.mypy.overrides]]
-module = ["keyring.*", "secretstorage.*", "jeepney.*"]
+module = ["keyring.*", "secretstorage.*", "jeepney.*", "sqlite_vec.*", "onnxruntime.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -1,0 +1,342 @@
+"""Un tour de conversation, du message de l'utilisateur à la réponse diffusée en direct.
+
+Utilisé par l'interface (texte), la voix et Telegram. Après la réponse, sans faire
+attendre l'utilisateur : titre de la conversation, vectorisation de l'échange et
+extraction des faits durables (visibles et modifiables dans l'écran Mémoire).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import time
+from collections.abc import AsyncGenerator, AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from ojarvis.context.engine import BuiltContext, ContextEngine
+from ojarvis.conversations.store import DEFAULT_TITLE, ConversationStore, MessageRecord
+from ojarvis.core.errors import InvalidInputError
+from ojarvis.core.logs import get_logger
+from ojarvis.events.bus import EventBus
+from ojarvis.llm.errors import LLMError
+from ojarvis.llm.router import ModelRouter, RoutedStream
+from ojarvis.llm.structured import generate_structured
+from ojarvis.llm.types import LLMRequest, Message, RouteInfo, StreamEnd, TaskType, TextDelta, Usage
+from ojarvis.memory.store import MemoryStore
+from ojarvis.tracing.tracer import Tracer
+
+log = get_logger(__name__)
+
+MAX_INPUT_CHARS = 8000
+Channel = Literal["app", "voice", "telegram"]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatEvent:
+    type: str  # start | context | route | delta | done | error
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+class ExtractedFact(BaseModel):
+    type: Literal["fait", "preference", "profil"]
+    contenu: str = Field(min_length=3, max_length=400)
+    confiance: float = Field(ge=0, le=1)
+    remplace: int | None = Field(default=None, description="id d'un souvenir que ce fait corrige")
+
+
+class Extraction(BaseModel):
+    faits: list[ExtractedFact] = Field(default_factory=list, max_length=8)
+
+
+EXTRACTION_PROMPT = (
+    "Tu tiens à jour la mémoire de Jarvis sur l'utilisateur. Lis l'échange ci-dessous et "
+    "relève seulement les informations durables que l'utilisateur donne sur lui-même : "
+    "identité, goûts, habitudes, projets, proches, contraintes. Ignore le temporaire (météo du "
+    "jour, humeur passagère), les suppositions et les connaissances générales. Chaque fait est "
+    "une phrase autonome à la troisième personne ; désigne l'utilisateur par son prénom s'il "
+    "est connu, sinon « L'utilisateur ». « profil » = identité stable (nom, ville, métier) ; "
+    "« preference » = goût ou façon de faire ; « fait » = le reste. Si un fait corrige un "
+    "souvenir existant, mets son id dans « remplace ». S'il n'y a rien à retenir, renvoie une "
+    "liste vide."
+)
+TITLE_PROMPT = (
+    "Donne un titre de trois à six mots, en français, sans guillemets ni point final, "
+    "pour la conversation suivante."
+)
+
+
+_TITLE_TRIM = " \t\n.!?:;«»\"'“”‘’"
+
+
+def clean_title(raw: str) -> str:
+    """Retire guillemets, ponctuation finale et espaces, dans n'importe quel ordre."""
+    first_line = raw.strip().splitlines()[0] if raw.strip() else ""
+    return " ".join(first_line.strip(_TITLE_TRIM).split())[:80]
+
+
+@dataclass
+class _Turn:
+    """État d'un tour en cours (réponse partielle, route, jetons, chronomètre)."""
+
+    assistant: MessageRecord
+    start: float
+    parts: list[str] = field(default_factory=list)
+    route: RouteInfo | None = None
+    usage: Usage = field(default_factory=Usage)
+    state: RoutedStream = field(default_factory=RoutedStream)
+    first_token_ms: float | None = None
+    trace_id: str = ""
+    finished: bool = False
+
+
+def _context_event(context: BuiltContext) -> dict[str, Any]:
+    return {
+        "budget": context.budget,
+        "used": context.used,
+        "items": [
+            {"kind": i.kind, "preview": i.text[:90], "kept": i.kept}
+            for i in context.items
+            if i.kind != "systeme"
+        ],
+    }
+
+
+class ChatService:
+    def __init__(
+        self,
+        *,
+        conversations: ConversationStore,
+        memory: MemoryStore,
+        context: ContextEngine,
+        router: ModelRouter,
+        tracer: Tracer,
+        bus: EventBus,
+        learn: bool = True,
+    ) -> None:
+        self._conversations = conversations
+        self._memory = memory
+        self._context = context
+        self._router = router
+        self._tracer = tracer
+        self._bus = bus
+        self.learn = learn
+        self._background: set[asyncio.Task[None]] = set()
+
+    async def respond(
+        self, *, text: str, conversation_id: str | None = None, channel: Channel = "app"
+    ) -> AsyncGenerator[ChatEvent]:
+        cleaned = text.strip()
+        if not cleaned or len(cleaned) > MAX_INPUT_CHARS:
+            raise InvalidInputError("Le message doit faire entre 1 et 8000 caractères.")
+        if conversation_id:
+            conversation = await self._conversations.get(conversation_id)
+        else:
+            conversation = await self._conversations.create(channel)
+            await self._bus.publish(
+                "conversation.created", {"id": conversation.id, "channel": channel}
+            )
+        history = await self._conversations.messages(conversation.id, limit=60)
+        user = await self._conversations.add_message(conversation.id, "user", cleaned)
+        assistant = await self._conversations.add_message(
+            conversation.id, "assistant", "", status="streaming"
+        )
+        turn = _Turn(assistant=assistant, start=time.perf_counter())
+        yield ChatEvent(
+            "start",
+            {
+                "conversation_id": conversation.id,
+                "user_message_id": user.id,
+                "assistant_message_id": assistant.id,
+            },
+        )
+        try:
+            async with self._tracer.trace(
+                f"Tour {'vocal' if channel == 'voice' else 'de conversation'}",
+                kind="voice" if channel == "voice" else "chat",
+                meta={"conversation_id": conversation.id, "channel": channel},
+            ) as trace:
+                turn.trace_id = trace.id
+                async with self._tracer.span("contexte", kind="context") as span:
+                    context = await self._context.build(
+                        conversation_id=conversation.id,
+                        user_text=cleaned,
+                        channel=channel,
+                        history=history,
+                    )
+                    span.set(**context.summary())
+                yield ChatEvent("context", _context_event(context))
+                request = LLMRequest(
+                    messages=context.messages, max_tokens=500 if channel == "voice" else 4000
+                )
+                task: TaskType = "voice" if channel == "voice" else "chat"
+                try:
+                    async for event in self._reply(task, request, turn):
+                        yield event
+                except LLMError as error:
+                    trace.fail(error.public)
+                    await self._finish(turn, "error")
+                    yield ChatEvent("error", {"message": error.public, "partial": bool(turn.parts)})
+                    return
+                await self._memory.touch(context.memory_ids)
+                record = await self._finish(turn, "ok")
+                yield ChatEvent("done", self._done_event(conversation.id, record, turn))
+                await self._bus.publish(
+                    "chat.completed",
+                    {
+                        "conversation_id": conversation.id,
+                        "message_id": record.id,
+                        "channel": channel,
+                    },
+                )
+                self._after(
+                    conversation.id,
+                    conversation.title == DEFAULT_TITLE and not history,
+                    user,
+                    record,
+                )
+        finally:
+            if not turn.finished:
+                # Interrompu (client parti, ou coupé par la voix) : on garde ce qui a été dit.
+                with contextlib.suppress(Exception):
+                    await self._finish(turn, "interrupted")
+
+    async def _reply(
+        self, task: TaskType, request: LLMRequest, turn: _Turn
+    ) -> AsyncIterator[ChatEvent]:
+        async for event in self._router.stream_traced(task, request, state=turn.state):
+            if isinstance(event, RouteInfo):
+                turn.route = event
+                yield ChatEvent(
+                    "route",
+                    {
+                        "provider": event.provider,
+                        "model": event.model,
+                        "fallback_from": event.fallback_from,
+                    },
+                )
+            elif isinstance(event, TextDelta):
+                if turn.first_token_ms is None:
+                    turn.first_token_ms = (time.perf_counter() - turn.start) * 1000
+                turn.parts.append(event.text)
+                yield ChatEvent("delta", {"text": event.text})
+            elif isinstance(event, StreamEnd):
+                turn.usage = event.usage
+
+    def _done_event(
+        self, conversation_id: str, record: MessageRecord, turn: _Turn
+    ) -> dict[str, Any]:
+        return {
+            "conversation_id": conversation_id,
+            "message_id": record.id,
+            "provider": turn.route.provider if turn.route else None,
+            "model": turn.route.model if turn.route else None,
+            "tokens_in": turn.usage.input_tokens,
+            "tokens_out": turn.usage.output_tokens,
+            "cost_usd": self._router.cost(turn.state.route, turn.usage),
+            "latency_ms": record.latency_ms,
+            "first_token_ms": round(turn.first_token_ms, 1) if turn.first_token_ms else None,
+            "trace_id": turn.trace_id,
+        }
+
+    async def _finish(self, turn: _Turn, status: str) -> MessageRecord:
+        turn.finished = True
+        route = turn.route
+        return await self._conversations.finish_message(
+            turn.assistant.id,
+            content="".join(turn.parts).strip(),
+            status=status,
+            provider=route.provider if route else None,
+            model=route.model if route else None,
+            tokens_in=turn.usage.input_tokens or None,
+            tokens_out=turn.usage.output_tokens or None,
+            cost_usd=self._router.cost(turn.state.route, turn.usage),
+            latency_ms=round((time.perf_counter() - turn.start) * 1000, 1),
+            trace_id=turn.trace_id or None,
+        )
+
+    # ------------------------------------------------------------------ après la réponse
+
+    def _after(
+        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+    ) -> None:
+        task = asyncio.create_task(self._learn_from(conversation_id, needs_title, user, reply))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _learn_from(
+        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+    ) -> None:
+        await self._conversations.index_exchange(user, reply)
+        if needs_title:
+            await self._title(conversation_id, user, reply)
+        if self.learn:
+            await self._extract(user, reply)
+
+    async def _title(self, conversation_id: str, user: MessageRecord, reply: MessageRecord) -> None:
+        try:
+            result = await self._router.complete(
+                "title",
+                LLMRequest(
+                    messages=[
+                        Message("system", TITLE_PROMPT),
+                        Message(
+                            "user", f"Utilisateur : {user.content}\nJarvis : {reply.content}"[:3000]
+                        ),
+                    ],
+                    max_tokens=30,
+                ),
+            )
+        except LLMError:
+            log.warning("title_generation_failed")
+            return
+        title = clean_title(result.text)
+        if title:
+            await self._conversations.rename(conversation_id, title[:80])
+            await self._bus.publish("conversation.updated", {"id": conversation_id})
+
+    async def _extract(self, user: MessageRecord, reply: MessageRecord) -> None:
+        known = await self._memory.search(user.content, k=8)
+        known_lines = "\n".join(
+            f"- id {h.record.id} [{h.record.kind}] {h.record.content}" for h in known
+        )
+        prompt = (
+            f"Souvenirs existants proches :\n{known_lines or '(aucun)'}\n\n"
+            f"Échange :\nUtilisateur : {user.content}\nJarvis : {reply.content}"
+        )[:6000]
+        try:
+            extraction = await generate_structured(
+                self._router,
+                "extract",
+                [Message("system", EXTRACTION_PROMPT), Message("user", prompt)],
+                Extraction,
+            )
+        except LLMError:
+            log.warning("memory_extraction_failed")
+            return
+        known_ids = {h.record.id for h in known}
+        for fact in extraction.faits:
+            if fact.confiance < 0.6:
+                continue
+            if fact.remplace is not None and fact.remplace in known_ids:
+                await self._memory.update(fact.remplace, content=fact.contenu, kind=fact.type)
+            else:
+                await self._memory.add(
+                    fact.type,
+                    fact.contenu,
+                    source="conversation",
+                    source_message_id=user.id,
+                    confidence=fact.confiance,
+                )
+
+    async def drain(self) -> None:
+        """Attend la fin des apprentissages en cours (tests, arrêt propre)."""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
+
+    async def close(self) -> None:
+        for task in list(self._background):
+            task.cancel()
+        await asyncio.gather(*list(self._background), return_exceptions=True)

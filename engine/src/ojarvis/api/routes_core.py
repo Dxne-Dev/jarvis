@@ -61,6 +61,7 @@ async def get_settings(services: ServicesDep) -> Preferences:
 @router.patch("/settings")
 async def patch_settings(changes: dict[str, Any], services: ServicesDep) -> Preferences:
     updated, changed = await services.settings.update(changes)
+    services.set_preferences(updated)
     if changed:
         await services.bus.publish(
             "settings.changed",

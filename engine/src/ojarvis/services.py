@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
-from dataclasses import dataclass
+from collections.abc import Coroutine
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import anyio.to_thread
 import httpx
 
 from ojarvis import __version__
+from ojarvis.chat.service import ChatService
 from ojarvis.config import EngineConfig
+from ojarvis.context.engine import ContextEngine
+from ojarvis.conversations.store import ConversationStore
 from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import UnavailableError
 from ojarvis.core.logs import get_logger
@@ -18,8 +24,14 @@ from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
 from ojarvis.events.bus import EventBus
 from ojarvis.events.store import EventStore
+from ojarvis.llm.catalog import Catalog
+from ojarvis.llm.providers.base import Provider
+from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
+from ojarvis.llm.router import ModelRouter
+from ojarvis.memory.embeddings import E5Embedder, Embedder
+from ojarvis.memory.store import MemoryStore
 from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBackend, SecretStore
-from ojarvis.settings_store import SettingsStore
+from ojarvis.settings_store import Preferences, SettingsStore
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 
 log = get_logger(__name__)
@@ -56,6 +68,16 @@ class Services:
     started_at: datetime
     keyring_error: str | None
     imported_secrets: list[str]
+    preferences: Preferences
+    catalog: Catalog
+    providers: dict[str, Provider]
+    router: ModelRouter
+    embedder: Embedder
+    memory: MemoryStore
+    conversations: ConversationStore
+    context: ContextEngine
+    chat: ChatService
+    background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
     async def start(
@@ -64,6 +86,9 @@ class Services:
         *,
         secret_backend: SecretBackend | None = None,
         http_transport: httpx.AsyncBaseTransport | None = None,
+        embedder: Embedder | None = None,
+        providers: dict[str, Provider] | None = None,
+        discover: bool = True,
     ) -> Services:
         config.paths.ensure()
         await anyio.to_thread.run_sync(upgrade_to_head, config.paths.db_path)
@@ -93,20 +118,61 @@ class Services:
                 imported = await anyio.to_thread.run_sync(secrets.import_dotenv, config.dotenv_path)
         await anyio.to_thread.run_sync(secrets.load_into_redactor)
 
+        settings = SettingsStore(db)
+        preferences = await settings.get()
+        tracer = Tracer(db, bus)
+        http = httpx.AsyncClient(timeout=httpx.Timeout(10.0), transport=http_transport)
+        catalog = Catalog()
+        providers = providers if providers is not None else build_providers(secrets)
+        holder: dict[str, Preferences] = {"value": preferences}
+        router = ModelRouter(
+            providers, catalog, bus=bus, tracer=tracer, overrides=lambda: holder["value"].routing
+        )
+        embedder = embedder or E5Embedder(
+            config.paths.cache_dir / "models" / "multilingual-e5-small"
+        )
+        memory = MemoryStore(db, embedder, bus)
+        await memory.start()
+        conversations = ConversationStore(db, embedder)
+        await conversations.start()
+        context = ContextEngine(memory, conversations, embedder_id=embedder.model_id)
+        chat = ChatService(
+            conversations=conversations,
+            memory=memory,
+            context=context,
+            router=router,
+            tracer=tracer,
+            bus=bus,
+            learn=preferences.learn_from_conversations,
+        )
+
         services = cls(
             config=config,
             db=db,
             bus=bus,
             events=events,
             secrets=secrets,
-            settings=SettingsStore(db),
-            tracer=Tracer(db, bus),
+            settings=settings,
+            tracer=tracer,
             traces=TraceQueries(db),
-            http=httpx.AsyncClient(timeout=httpx.Timeout(10.0), transport=http_transport),
+            http=http,
             started_at=utc_now(),
             keyring_error=keyring_error,
             imported_secrets=imported,
+            preferences=preferences,
+            catalog=catalog,
+            providers=providers,
+            router=router,
+            embedder=embedder,
+            memory=memory,
+            conversations=conversations,
+            context=context,
+            chat=chat,
         )
+        services._holder = holder
+        # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
+        if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
+            services.spawn(services._warm_up())
         await bus.publish(
             "engine.started",
             {
@@ -119,8 +185,43 @@ class Services:
         log.info("engine_started", version=__version__, keyring=backend.name)
         return services
 
+    _holder: dict[str, Preferences] = field(default_factory=dict)
+
+    def spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        """Tâche de fond suivie (annulée proprement à l'arrêt)."""
+        task = asyncio.create_task(coroutine)
+        self.background.add(task)
+        task.add_done_callback(self.background.discard)
+
+    def set_preferences(self, preferences: Preferences) -> None:
+        self.preferences = preferences
+        self._holder["value"] = preferences
+        self.chat.learn = preferences.learn_from_conversations
+
+    async def _warm_up(self) -> None:
+        """Au démarrage, sans bloquer : modèle d'embeddings, modèles gratuits, Ollama."""
+        ollama = self.providers.get("ollama")
+        if isinstance(ollama, OllamaProvider):
+            await ollama.refresh(self.http, force=True)
+        if self.providers.get("openrouter") is not None:
+            count = await discover_openrouter_free(self.catalog, self.http)
+            log.info("openrouter_free_models", count=count)
+        if isinstance(self.embedder, E5Embedder):
+            try:
+                await self.embedder.ensure(self.http)
+            except Exception:
+                log.exception("embedding_model_unavailable")
+                return
+            await self.memory.start()
+            await self.conversations.start()
+        await self.bus.publish("engine.ready", {"embeddings": self.embedder.status}, persist=False)
+
     async def stop(self) -> None:
         await self.bus.publish("engine.stopping", {})
+        await self.chat.close()
+        for task in list(self.background):
+            task.cancel()
+        await asyncio.gather(*list(self.background), return_exceptions=True)
         await self.bus.drain()
         await self.http.aclose()
         self.db.dispose()

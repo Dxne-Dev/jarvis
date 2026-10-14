@@ -24,6 +24,7 @@ def engine_env(home: Path) -> dict[str, str]:
     env["OJARVIS_HOME"] = str(home)
     # Trousseau neutre : le test ne touche jamais au vrai trousseau de l'utilisateur.
     env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+    env["OJARVIS_SKIP_WARMUP"] = "1"
     env.pop("OJARVIS_DOTENV", None)
     return env
 
