@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions de la fenêtre principale : le strict nécessaire.",
+  "description": "Fenêtre principale : écouter les événements du shell, rien d'autre. Les commandes de l'app (moteur, journal, quitter) sont déclarées dans le code.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

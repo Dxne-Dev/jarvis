@@ -24,10 +24,20 @@ async fn engine_restart(
     Ok(())
 }
 
+/// Une ligne de log venue de la fenêtre : tronquée, sans retour à la ligne ni caractère
+/// de contrôle (impossible de forger une fausse ligne de log).
+fn sanitize_log_line(message: &str) -> String {
+    message
+        .chars()
+        .take(2000)
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
 /// Journal de l'interface vers les logs du shell (disponible même sans moteur).
 #[tauri::command]
 fn ui_log(level: &str, message: &str) {
-    let text: String = message.chars().take(2000).collect();
+    let text = sanitize_log_line(message);
     match level {
         "error" => log::error!(target: "ui", "{text}"),
         "warn" => log::warn!(target: "ui", "{text}"),
@@ -110,4 +120,19 @@ pub fn run() {
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_log_line;
+
+    #[test]
+    fn log_lines_cannot_be_forged() {
+        let forged = "ok\n[2026-01-01][00:00:00][engine][INFO] faux\r\u{1b}[31m";
+        let clean = sanitize_log_line(forged);
+        assert!(!clean.contains('\n'));
+        assert!(!clean.contains('\r'));
+        assert!(!clean.contains('\u{1b}'));
+        assert_eq!(sanitize_log_line(&"é".repeat(5000)).chars().count(), 2000);
+    }
 }
