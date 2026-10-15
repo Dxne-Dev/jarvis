@@ -98,6 +98,9 @@ def test_jarvis_far_in_the_sentence_is_not_a_wake_word() -> None:
         ("Hey Jarvis.", ""),
         ("Quelle heure est-il ?", "Quelle heure est-il ?"),
         ("Dis à Jarvis de partir", "Dis à Jarvis de partir"),
+        ("him Jarvis.", ""),
+        ("pay Jarvis", ""),
+        ("Mon ami Jarvis est là", "Mon ami Jarvis est là"),
     ],
 )
 def test_wake_words_are_removed_from_the_request(text: str, expected: str) -> None:
