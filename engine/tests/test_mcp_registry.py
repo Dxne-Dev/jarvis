@@ -298,6 +298,10 @@ def test_search_try_install_use_then_remove(
     assert isolated[-1][2] == {"MCP_LOG_LEVEL": "info"}  # valeur par défaut de l'éditeur
 
     assert client.portal is not None
+    listed = client.portal.call(
+        services.gate.execute, "integrations_outils", {"serveur": "wikipedia-mcp-server"}
+    )
+    assert listed.external  # descriptions écrites par un tiers : une donnée
     read = client.portal.call(
         services.gate.execute,
         "integration_appeler",

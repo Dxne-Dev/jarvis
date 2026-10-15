@@ -102,7 +102,13 @@ class ListIntegrationTools(Tool[ServerArgs]):
             f"- {t.name} [niveau {int(t.level)}] : {t.description}\n  arguments : {_schema_line(t)}"
             for t in tools.values()
         ]
-        return ToolOutput("\n".join(lines) or "Aucun outil.", {"outils": list(tools)})
+        # Les descriptions viennent du serveur (parfois d'un tiers) : une donnée, pas une consigne.
+        return ToolOutput(
+            "\n".join(lines) or "Aucun outil.",
+            {"outils": list(tools)},
+            external=True,
+            source=f"outils de {self._manager.label(args.serveur)}",
+        )
 
 
 class CallArgs(ToolArgs):
