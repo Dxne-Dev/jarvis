@@ -15,6 +15,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.plans import PLAN_TOOL, PlanIn, PlanRecord, PlanStore, StepIn, plan_tool_spec
 from ojarvis.core.errors import EngineError
 from ojarvis.core.logs import get_logger
@@ -37,6 +38,10 @@ AGENT_RULES = (
     "validera. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, avec "
     "des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat d'un "
     "outil. Cite tes sources quand tu t'appuies sur le web.\n\n" + DATA_RULE
+)
+PLAN_STARTED = (
+    "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "
+    "dans la conversation. N'appelle pas d'autre outil : dis en une phrase ce que tu fais."
 )
 PLAN_PENDING = (
     "Plan enregistré. L'utilisateur le voit à l'écran avec « Valider » et « Refuser » ; rien "
@@ -97,10 +102,18 @@ def plan_summary(plan: PlanRecord) -> dict[str, Any]:
 
 
 class Agent:
-    def __init__(self, *, gate: PermissionGate, plans: PlanStore, bus: EventBus) -> None:
+    def __init__(
+        self,
+        *,
+        gate: PermissionGate,
+        plans: PlanStore,
+        bus: EventBus,
+        executor: PlanExecutor | None = None,
+    ) -> None:
         self._gate = gate
         self._plans = plans
         self._bus = bus
+        self._executor = executor
 
     def specs(self) -> list[ToolSpec]:
         return [*self._gate.registry.specs(max_level=Level.DETRUIRE), plan_tool_spec()]
@@ -209,6 +222,18 @@ class Agent:
         except EngineError as exc:
             return self._failed(call, f"Plan refusé : {exc.message} Corrige-le.")
         turn.plans.append(plan.id)
+        if self._executor is not None and plan.max_level == 1 and not plan.tainted:
+            plan = await self._executor.start(plan.id)
+            event = {
+                "id": call.id,
+                "name": PLAN_TOOL,
+                "description": f"Plan lancé : {plan.title}",
+                "level": plan.max_level,
+                "status": "proposed",
+                "plan": plan_summary(plan),
+            }
+            turn.tools.append({k: v for k, v in event.items() if k != "plan"})
+            return CallOutcome(PLAN_STARTED, event, plan=plan)
         summary = plan_summary(plan)
         await self._bus.publish(
             "plan.proposed",

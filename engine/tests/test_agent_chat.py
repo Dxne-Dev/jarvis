@@ -297,3 +297,44 @@ def test_a_crafted_address_after_reading_needs_approval(
     plan = next(d for e, d in events if e == "plan")
     assert plan["tainted"] is True
     assert "collecte.example" in plan["title"]
+
+
+def test_a_reading_plan_starts_without_waiting(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    """Validation selon le niveau : un plan qui ne fait que lire part tout de suite."""
+    echo, _, _ = tools
+    steps = [
+        {"outil": "echo", "arguments": {"texte": "un"}, "pourquoi": "lire"},
+        {"outil": "echo", "arguments": {"texte": "deux"}, "pourquoi": "lire encore"},
+    ]
+    llm["deepseek"]._script = scripted(
+        [[ToolCall("p", PLAN_TOOL, {"titre": "Deux lectures", "etapes": steps})]]
+    )
+    events = chat(client, "Lis deux choses.")
+    plan = next(d for e, d in events if e == "plan")
+    assert plan["max_level"] == 1
+    assert "part donc sans attendre" in tool_messages(llm["deepseek"])[0]
+    final = wait_plan(client, plan["id"])
+    assert final["status"] == "done"
+    assert echo.calls == ["un", "deux"]
+    # Lire n'est pas une action : rien au journal.
+    assert client.get("/v1/audit").json()["total"] == 0
+
+
+def test_a_reading_plan_after_external_content_waits(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    echo, _, _ = tools
+    steps = [{"outil": "echo", "arguments": {"texte": "suite"}, "pourquoi": "lire"}]
+    llm["deepseek"]._script = scripted(
+        [
+            [ToolCall("r", "echo", {"texte": "piege"})],
+            [ToolCall("p", PLAN_TOOL, {"titre": "Lire la suite", "etapes": steps})],
+        ]
+    )
+    events = chat(client, "Lis la boutique puis la suite.")
+    plan = next(d for e, d in events if e == "plan")
+    assert plan["tainted"] is True
+    assert client.get(f"/v1/plans/{plan['id']}").json()["status"] == "proposed"
+    assert echo.calls == ["piege"]

@@ -235,7 +235,7 @@ class Services:
             tracer=tracer,
             bus=bus,
             learn=preferences.learn_from_conversations,
-            agent=Agent(gate=gate, plans=plans, bus=bus),
+            agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
         )
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.

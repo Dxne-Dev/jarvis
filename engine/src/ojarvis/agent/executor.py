@@ -92,10 +92,24 @@ class PlanExecutor:
             },
         )
         await self._publish(plan_id, status="approved")
-        task = asyncio.create_task(self.run(plan_id, double_confirmed=double_confirm))
+        self._launch(plan_id, double_confirmed=double_confirm)
+        return await self._plans.get(plan_id)
+
+    async def start(self, plan_id: str) -> PlanRecord:
+        """Plan qui ne fait que lire (niveau 1), sans contenu externe lu avant : comme un
+        outil de lecture, il part sans attendre (« validation selon le niveau »)."""
+        plan = await self._plans.get(plan_id)
+        if plan.status != "proposed" or plan.max_level > 1 or plan.tainted:
+            raise ConflictError("Ce plan attend ta décision.", code="plan_needs_decision")
+        await self._plans.set_status(plan_id, "approved", decided=True)
+        await self._publish(plan_id, status="approved")
+        self._launch(plan_id, double_confirmed=False)
+        return await self._plans.get(plan_id)
+
+    def _launch(self, plan_id: str, *, double_confirmed: bool) -> None:
+        task = asyncio.create_task(self.run(plan_id, double_confirmed=double_confirmed))
         self._running[plan_id] = task
         task.add_done_callback(lambda _t: self._running.pop(plan_id, None))
-        return await self._plans.get(plan_id)
 
     async def refuse(self, plan_id: str) -> PlanRecord:
         plan = await self._plans.get(plan_id)
