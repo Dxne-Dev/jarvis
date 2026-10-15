@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineClient } from "./client";
 import { useEngineStore } from "./store";
 import type {
+  CartesiaVoice,
   CheckResult,
   Conversation,
   ConversationDetail,
@@ -16,6 +17,8 @@ import type {
   SecretStatus,
   TraceDetail,
   TraceSummary,
+  VoiceDevices,
+  VoiceStatus,
 } from "./types";
 
 function requireClient(client: EngineClient | null): EngineClient {
@@ -241,5 +244,51 @@ export function useLlmModels() {
     queryFn: () => requireClient(client).get<ModelInfo[]>("/v1/llm/models"),
     enabled: client !== null,
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------- voix
+
+export function useVoiceStatus() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "status"],
+    queryFn: () => requireClient(client).get<VoiceStatus>("/v1/voice/status"),
+    enabled: client !== null,
+  });
+}
+
+export function useVoiceDevices(enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "devices"],
+    queryFn: () => requireClient(client).get<VoiceDevices>("/v1/voice/devices"),
+    enabled: client !== null && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCartesiaVoices(enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "voices"],
+    queryFn: () => requireClient(client).get<CartesiaVoice[]>("/v1/voice/voices"),
+    enabled: client !== null && enabled,
+    staleTime: 600_000,
+  });
+}
+
+/** Parler sans dire « Hey Jarvis » (bouton micro, raccourci clavier). */
+export function useVoiceListen() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/voice/listen"),
+  });
+}
+
+export function useVoiceStop() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/voice/stop"),
   });
 }

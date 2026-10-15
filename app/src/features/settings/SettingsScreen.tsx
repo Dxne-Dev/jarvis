@@ -1,19 +1,13 @@
-import { RadioGroup } from "radix-ui";
-import { useId } from "react";
-
 import { PageHeader } from "../../components/PageHeader";
 import { ErrorState, LoadingState, OfflineState } from "../../components/States";
 import { describeError } from "../../lib/engine/client";
-import {
-  usePreferences,
-  useSecrets,
-  useStatus,
-  useUpdatePreferences,
-} from "../../lib/engine/queries";
+import { useSecrets, useStatus } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
-import type { Preferences, SecretGroup, SecretStatus } from "../../lib/engine/types";
+import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
 import { ModelsSection } from "./ModelsSection";
+import { Choice } from "./PreferenceControls";
 import { SecretRow } from "./SecretRow";
+import { VoiceSection } from "./VoiceSection";
 import styles from "./SettingsScreen.module.css";
 
 const GROUPS: { id: SecretGroup; title: string; description: string }[] = [
@@ -79,54 +73,6 @@ function ProvidersSection() {
   );
 }
 
-function Choice<K extends "reduced_motion" | "sphere_quality">({
-  name,
-  label,
-  options,
-}: {
-  name: K;
-  label: string;
-  options: { value: Preferences[K]; label: string; hint: string }[];
-}) {
-  const preferences = usePreferences();
-  const update = useUpdatePreferences();
-  const labelId = useId();
-  const value = preferences.data?.[name];
-  return (
-    <div className={styles.choice}>
-      <p id={labelId} className={styles.choiceLabel}>
-        {label}
-      </p>
-      <RadioGroup.Root
-        className={styles.radios}
-        aria-labelledby={labelId}
-        value={value ?? ""}
-        disabled={!preferences.data || update.isPending}
-        onValueChange={(next) => {
-          update.mutate({ [name]: next });
-        }}
-      >
-        {options.map((option) => (
-          <RadioGroup.Item key={option.value} value={option.value} className={styles.radio}>
-            <span className={styles.radioDot} aria-hidden="true">
-              <RadioGroup.Indicator className={styles.radioIndicator} />
-            </span>
-            <span className={styles.radioText}>
-              <span>{option.label}</span>
-              <span className={styles.radioHint}>{option.hint}</span>
-            </span>
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
-      {update.isError && (
-        <p className={styles.ko} role="alert">
-          {describeError(update.error)}
-        </p>
-      )}
-    </div>
-  );
-}
-
 export function SettingsScreen() {
   return (
     <div className={styles.page}>
@@ -145,6 +91,12 @@ export function SettingsScreen() {
           Modèles
         </h2>
         <ModelsSection />
+      </section>
+      <section className={styles.section} aria-labelledby="voix">
+        <h2 id="voix" className={styles.sectionTitle}>
+          Voix
+        </h2>
+        <VoiceSection />
       </section>
       <section className={styles.section} aria-labelledby="apparence">
         <h2 id="apparence" className={styles.sectionTitle}>

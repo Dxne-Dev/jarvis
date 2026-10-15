@@ -5,8 +5,9 @@ import { EngineClient } from "./client";
 import { onEngineStatus, resolveEngine, type EngineBootInfo } from "./connection";
 import { EventStream } from "./events";
 import { uiLog } from "../log";
+import { setVoiceLevel, useVoiceStore } from "../voice";
 import { useEngineStore } from "./store";
-import type { EngineEvent } from "./types";
+import type { EngineEvent, VoicePhase } from "./types";
 
 /** Requêtes à rafraîchir quand un événement du moteur arrive. */
 const INVALIDATIONS: [prefix: string, key: string][] = [
@@ -18,7 +19,23 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["conversation.", "conversations"],
   ["chat.completed", "conversations"],
   ["llm.", "llm"],
+  ["voice.status", "voice"],
+  ["voice.turn", "conversations"],
 ];
+
+function handleVoiceEvent(event: EngineEvent): void {
+  const voice = useVoiceStore.getState();
+  if (event.type === "voice.state") {
+    voice.setPhase(event.payload.state as VoicePhase);
+  } else if (event.type === "voice.status") {
+    voice.setPhase(event.payload.state as VoicePhase);
+  } else if (event.type === "voice.transcript") {
+    const text = event.payload.text;
+    voice.setTranscript(typeof text === "string" ? text : null);
+  } else if (event.type === "voice.turn" && typeof event.payload.conversation_id === "string") {
+    voice.setConversation(event.payload.conversation_id);
+  }
+}
 
 export function EngineProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -56,6 +73,13 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         setStream(state);
       });
       stream.onEvent((event: EngineEvent) => {
+        // Le niveau sonore arrive une douzaine de fois par seconde : il ne passe
+        // ni par le journal des événements ni par React.
+        if (event.type === "voice.level") {
+          setVoiceLevel(Number(event.payload.level) || 0);
+          return;
+        }
+        handleVoiceEvent(event);
         pushEvent(event);
         for (const [prefix, key] of INVALIDATIONS) {
           if (event.type.startsWith(prefix))

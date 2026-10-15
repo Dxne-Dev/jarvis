@@ -4,9 +4,17 @@ import { useSearchParams } from "react-router";
 
 import { Button } from "../../components/Button";
 import { ErrorState, LoadingState } from "../../components/States";
-import { usePreferences, useStatus } from "../../lib/engine/queries";
+import {
+  usePreferences,
+  useStatus,
+  useVoiceListen,
+  useVoiceStatus,
+  useVoiceStop,
+} from "../../lib/engine/queries";
 import { useEngineOnline, useEngineStore } from "../../lib/engine/store";
+import type { VoicePhase } from "../../lib/engine/types";
 import { useReducedMotion } from "../../lib/motion";
+import { useVoiceStore, voiceLevel } from "../../lib/voice";
 import styles from "../chat/Chat.module.css";
 import { ChatMessage } from "../chat/ChatMessage";
 import { Composer } from "../chat/Composer";
@@ -32,6 +40,23 @@ const SUBTITLES: Record<SphereState, string> = {
   awaiting: "Une action attend ta validation.",
   error: "Le moteur ne répond pas. Nouvel essai en cours…",
 };
+
+const VOICE_SPHERE: Partial<Record<VoicePhase, SphereState>> = {
+  listening: "listening",
+  thinking: "thinking",
+  speaking: "speaking",
+};
+
+const VOICE_ACTIVE: VoicePhase[] = ["listening", "thinking", "speaking"];
+
+/** Phrase sous le titre de l'accueil, selon la voix. */
+function idleSubtitle(live: SphereState, voice: VoicePhase): string {
+  if (live !== "idle") return SUBTITLES[live];
+  if (voice === "idle") return "Dis « Hey Jarvis », ou écris-moi.";
+  if (voice === "starting") return "Jarvis est prêt. La voix se prépare…";
+  if (voice === "error") return "Jarvis est prêt. La voix est indisponible.";
+  return SUBTITLES.idle;
+}
 
 /** État de la sphère quand rien ne se passe dans la conversation. */
 function useLiveSphereState(): SphereState {
@@ -63,10 +88,34 @@ export function HomeScreen() {
   );
   const chat = useChat(conversationId, openConversation);
 
+  const voicePhase = useVoiceStore((s) => s.phase);
+  const heard = useVoiceStore((s) => s.transcript);
+  const voiceConversation = useVoiceStore((s) => s.conversationId);
+  const setVoicePhase = useVoiceStore((s) => s.setPhase);
+  const voiceStatus = useVoiceStatus();
+  const listen = useVoiceListen();
+  const stopVoice = useVoiceStop();
+  useEffect(() => {
+    if (voiceStatus.data?.state) setVoicePhase(voiceStatus.data.state);
+  }, [voiceStatus.data, setVoicePhase]);
+  // Un tour vocal vient de finir : on montre sa conversation (sauf si on en lit une autre).
+  useEffect(() => {
+    if (voiceConversation && (conversationId === null || conversationId === voiceConversation))
+      setParams({ c: voiceConversation }, { replace: true });
+  }, [voiceConversation]); // eslint-disable-line react-hooks/exhaustive-deps
+  const voiceSphere = VOICE_SPHERE[voicePhase] ?? null;
+  const voiceActive = VOICE_ACTIVE.includes(voicePhase);
+
   const showPreview = params.has("demo") || status.data?.dev_mode === true;
-  const state: SphereState = probe.current ?? preview ?? chat.sphere ?? live;
+  const state: SphereState = probe.current ?? preview ?? chat.sphere ?? voiceSphere ?? live;
   const usesDemoLevel = preview === "listening" || preview === "speaking" || probe.current !== null;
-  const level = usesDemoLevel ? demoLevel : chat.sphere === "speaking" ? chat.level : undefined;
+  const level = usesDemoLevel
+    ? demoLevel
+    : chat.sphere === "speaking"
+      ? chat.level
+      : voiceSphere === "listening" || voiceSphere === "speaking"
+        ? voiceLevel
+        : undefined;
   const conversing = conversationId !== null || chat.items.length > 0;
 
   // Défile le fil lui-même (pas scrollIntoView, qui déplacerait le point de départ du
@@ -103,7 +152,7 @@ export function HomeScreen() {
             <h1 className={home.title}>{greeting(new Date())}.</h1>
           )}
           <p className={home.stateLabel} aria-live="polite" data-state={state}>
-            {conversing ? STATE_LABELS[state] : SUBTITLES[live]}
+            {conversing || voiceActive ? STATE_LABELS[state] : idleSubtitle(live, voicePhase)}
           </p>
         </div>
         {conversing && (
@@ -170,6 +219,11 @@ export function HomeScreen() {
             ))}
           </div>
         )}
+        {voiceActive && heard && (
+          <p className={styles.heard} aria-live="polite">
+            Tu as dit : « {heard} »
+          </p>
+        )}
         <Composer
           busy={chat.phase !== "idle"}
           disabled={!online}
@@ -178,6 +232,19 @@ export function HomeScreen() {
             void chat.send(text);
           }}
           onStop={chat.stop}
+          voice={
+            voicePhase === "off" || voicePhase === "error" || voicePhase === "starting"
+              ? undefined
+              : {
+                  active: voiceActive,
+                  onListen: () => {
+                    listen.mutate();
+                  },
+                  onStop: () => {
+                    stopVoice.mutate();
+                  },
+                }
+          }
         />
       </div>
     </div>

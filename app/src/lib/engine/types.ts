@@ -44,6 +44,42 @@ export interface Preferences {
   sphere_quality: "auto" | "high" | "low";
   routing: Record<string, string>;
   learn_from_conversations: boolean;
+  voice_enabled: boolean;
+  voice_input_device: string | null;
+  voice_output_device: string | null;
+  voice_name: string;
+  voice_engine: "auto" | "piper";
+  wake_sensitivity: "basse" | "normale" | "haute";
+  voice_follow_up: boolean;
+  voice_barge_in: boolean;
+  voice_headset: boolean;
+}
+
+export type VoicePhase =
+  "off" | "starting" | "idle" | "listening" | "thinking" | "speaking" | "error";
+
+export interface VoiceStatus {
+  state: VoicePhase;
+  enabled: boolean;
+  error: string | null;
+  models: Record<string, string>;
+  echo_cancel: boolean;
+  tts_engine: string | null;
+  tts_fallback: string | null;
+  last_latency_ms: number | null;
+  last_turn_at: number | null;
+}
+
+export interface VoiceDevices {
+  inputs: { name: string; label: string }[];
+  outputs: { name: string; label: string }[];
+}
+
+export interface CartesiaVoice {
+  id: string;
+  name: string;
+  gender: string | null;
+  description: string;
 }
 
 export interface EngineEvent {

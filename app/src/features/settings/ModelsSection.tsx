@@ -1,4 +1,3 @@
-import { Switch } from "radix-ui";
 import { useId } from "react";
 
 import { ErrorState, LoadingState } from "../../components/States";
@@ -10,6 +9,7 @@ import {
   useUpdatePreferences,
 } from "../../lib/engine/queries";
 import type { ModelInfo, ProviderStatus } from "../../lib/engine/types";
+import { PreferenceSwitch } from "./PreferenceControls";
 import styles from "./SettingsScreen.module.css";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -89,34 +89,6 @@ function TaskRouting({ models }: { models: ModelInfo[] }) {
   );
 }
 
-function LearnSwitch() {
-  const preferences = usePreferences();
-  const update = useUpdatePreferences();
-  const id = useId();
-  const checked = preferences.data?.learn_from_conversations ?? true;
-  return (
-    <div className={styles.switchRow}>
-      <label htmlFor={id} className={styles.routingLabel}>
-        <span>Apprendre de mes conversations</span>
-        <span className={styles.radioHint}>
-          Jarvis retient faits et préférences (visibles et modifiables dans Mémoire).
-        </span>
-      </label>
-      <Switch.Root
-        id={id}
-        className={styles.switch}
-        checked={checked}
-        disabled={!preferences.data || update.isPending}
-        onCheckedChange={(value) => {
-          update.mutate({ learn_from_conversations: value });
-        }}
-      >
-        <Switch.Thumb className={styles.switchThumb} />
-      </Switch.Root>
-    </div>
-  );
-}
-
 export function ModelsSection() {
   const status = useLlmStatus();
   const models = useLlmModels();
@@ -141,7 +113,11 @@ export function ModelsSection() {
         })}
       </ul>
       <TaskRouting models={models.data.filter((m) => configured.has(m.provider))} />
-      <LearnSwitch />
+      <PreferenceSwitch
+        name="learn_from_conversations"
+        label="Apprendre de mes conversations"
+        hint="Jarvis retient faits et préférences (visibles et modifiables dans Mémoire)."
+      />
     </>
   );
 }
