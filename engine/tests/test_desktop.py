@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 import io
+import os
 import shutil
 import struct
 import subprocess
@@ -28,7 +30,7 @@ from ojarvis.llm.types import LLMRequest, ToolCall
 from ojarvis.permissions.gate import OsControlDisabledError
 from ojarvis.services import Services
 from ojarvis.tools.base import Level
-from ojarvis.tools.desktop import LookAtScreen
+from ojarvis.tools.desktop import AppCatalog, CloseApp, LookAtScreen, RunningApps
 from tests.test_chat import read_sse
 
 ENTRY = """[Desktop Entry]
@@ -158,6 +160,66 @@ def test_closing_only_targets_your_own_matching_processes(tmp_path: Path) -> Non
     assert applications._processes("flatpak", proc) == []
 
 
+def fake_process(proc: Path, pid: int, argv0: str, exe: Path) -> None:
+    (proc / str(pid)).mkdir(parents=True)
+    (proc / str(pid) / "cmdline").write_bytes(argv0.encode() + b"\0--x")
+    os.symlink(exe, proc / str(pid) / "exe")
+
+
+async def test_a_script_launched_app_is_found_by_its_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Chrome : `google-chrome` est un script qui lance `chrome`, rangé dans le même dossier.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    chrome_dir = tmp_path / "opt" / "google" / "chrome"
+    chrome_dir.mkdir(parents=True)
+    (chrome_dir / "google-chrome").write_text("#!/bin/sh\nexec chrome\n")
+    folder = tmp_path / "applications"
+    write_app(folder, "google-chrome", "Google Chrome", f"{chrome_dir}/google-chrome %U")
+    write_app(folder, "youtube", "YouTube", f"{chrome_dir}/google-chrome --app-id=abc")
+    write_app(folder, "calc", "Calculatrice", "gnome-calculator")
+    proc = tmp_path / "proc"
+    fake_process(proc, 201, "/opt/google/chrome/chrome", chrome_dir / "chrome")
+    fake_process(proc, 202, "/opt/google/chrome/crashpad", chrome_dir / "crashpad")
+    fake_process(proc, 203, "python3", chrome_dir / "python3")  # protégé, même rangé là
+    fake_process(proc, 204, "/usr/bin/gnome-calculator", Path("/usr/bin/gnome-calculator"))
+    fake_process(proc, 205, "/usr/bin/vim", Path("/usr/bin/vim"))
+    apps = applications.index([folder])
+    chrome = apps["google-chrome"]
+    assert applications.app_root(chrome) == chrome_dir
+    assert applications.app_root(apps["calc"]) is None  # un vrai programme : son nom suffit
+    found = {e.id: pids for e, pids in applications.running(apps, proc)}
+    assert found == {"google-chrome": [201, 202], "youtube": [201, 202], "calc": [204]}
+    assert [e.id for e in applications.same_program(apps, chrome)] == ["youtube"]
+
+    # Ce que tu lis avant de valider : fermer YouTube ferme aussi Chrome.
+    catalog = AppCatalog(lambda: apps)
+    close = CloseApp(catalog)
+    assert close.describe(close.parse({"nom": "youtube"})) == (
+        "Fermer l'application YouTube (youtube) — même programme que Google Chrome : "
+        "tout se fermera ensemble"
+    )
+    monkeypatch.setattr(applications, "running", functools.partial(applications.running, proc=proc))
+    tool = RunningApps(catalog)
+    out = await tool.run(tool.parse({}), None)  # type: ignore[arg-type]
+    assert out.text.splitlines() == [
+        "Calculatrice (calc) — 1 processus",
+        "Google Chrome (google-chrome), YouTube (youtube) — même programme, 2 processus",
+    ]
+
+
+def test_a_script_in_a_shared_folder_gives_no_app_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / "Téléchargements").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    for script in (home / "lance.sh", home / "Téléchargements" / "lance.sh"):
+        script.write_text("#!/bin/sh\n")
+        entry = applications.AppEntry("x", "X", "lance.sh", script, command=str(script))
+        assert applications.app_root(entry) is None  # tout un dossier personnel : trop large
+
+
 async def test_a_running_app_is_closed_with_sigterm(tmp_path: Path) -> None:
     name = "ojarvis-test-app-close"
     # Un Python qui se présente sous ce nom (argv[0]) : c'est ce que lit /proc/<pid>/cmdline.
@@ -193,7 +255,7 @@ async def test_apps_are_launched_by_id_without_a_shell(
         "org.gnome.Calculator", "Calculatrice", "gnome-calculator", tmp_path
     )
     await applications.launch(entry)
-    assert calls.read_text() == "org.gnome.Calculator\n"
+    assert calls.read_text() == "--\norg.gnome.Calculator\n"
 
 
 # ---------------------------------------------------------------------- écran
@@ -341,7 +403,7 @@ def test_an_app_opens_only_after_validation(
     del services
     calls = menu.parent / "launched"
     fake = menu.parent / "gtk-launch"
-    fake.write_text(f'#!/bin/sh\nprintf "%s" "$1" > {calls}\n')
+    fake.write_text(f'#!/bin/sh\nprintf "%s" "$2" > {calls}\n')
     fake.chmod(0o755)
     real_which = shutil.which
     monkeypatch.setattr(

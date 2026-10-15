@@ -109,7 +109,15 @@ class RunningApps(Tool[NoArgs]):
         del args, ctx
         entries = await anyio.to_thread.run_sync(self._catalog.entries)
         running = await anyio.to_thread.run_sync(applications.running, entries)
-        lines = [f"{entry.label} — {len(pids)} processus" for entry, pids in running]
+        # Des entrées du menu partagent parfois un programme (Chrome et ses applis web).
+        groups: dict[tuple[int, ...], list[applications.AppEntry]] = {}
+        for entry, pids in running:
+            groups.setdefault(tuple(pids), []).append(entry)
+        lines = sorted(
+            f"{', '.join(e.label for e in group)} — "
+            f"{'même programme, ' if len(group) > 1 else ''}{len(pids)} processus"
+            for pids, group in groups.items()
+        )
         return ToolOutput("\n".join(lines) or "Aucune application reconnue n'est ouverte.")
 
 
@@ -154,9 +162,15 @@ class CloseApp(Tool[AppArgs]):
 
     def describe(self, args: AppArgs) -> str:
         try:
-            return f"Fermer l'application {self._catalog.find(args.nom).label}"
+            entry = self._catalog.find(args.nom)
         except NotFoundError:
             return f"Fermer l'application « {args.nom} »"
+        text = f"Fermer l'application {entry.label}"
+        others = applications.same_program(self._catalog.entries(), entry)
+        if others:
+            names = ", ".join(e.name for e in others[:3]) + (" …" if len(others) > 3 else "")
+            text += f" — même programme que {names} : tout se fermera ensemble"
+        return text
 
     async def run(self, args: AppArgs, ctx: ToolContext) -> ToolOutput:
         del ctx

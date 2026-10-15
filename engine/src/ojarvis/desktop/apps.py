@@ -8,6 +8,8 @@
   jamais un shell, jamais la commande `Exec` interprétée par Jarvis.
 - Fermer : seulement tes processus dont l'exécutable correspond à l'application, par
   SIGTERM (l'application peut demander d'enregistrer) ; jamais la session ni Jarvis.
+  Quand l'application démarre par un script (Chrome, LibreOffice, VS Code), le programme
+  qui tourne porte un autre nom : on le reconnaît à son dossier, celui du script.
 """
 
 from __future__ import annotations
@@ -52,6 +54,30 @@ PROTECTED = frozenset(
         "env",
     }
 )
+#: Dossiers communs à beaucoup de programmes : jamais le dossier propre d'une application.
+SHARED_DIRS = frozenset(
+    Path(d)
+    for d in (
+        "/",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/snap",
+        "/tmp",  # noqa: S108 - un dossier partagé, pas un fichier temporaire
+        "/usr",
+        "/usr/bin",
+        "/usr/sbin",
+        "/usr/games",
+        "/usr/lib",
+        "/usr/lib64",
+        "/usr/libexec",
+        "/usr/share",
+        "/usr/local",
+        "/usr/local/bin",
+        "/usr/local/lib",
+        "/usr/local/share",
+    )
+)
 _FIELD_CODES = re.compile(r"%[fFuUdDnNickvm]")
 _DOMAIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
 LOCALE_DIRS = (Path("/usr/share/locale-langpack"), Path("/usr/share/locale"))
@@ -65,6 +91,7 @@ class AppEntry:
     path: Path
     keywords: tuple[str, ...] = field(default_factory=tuple)
     aliases: tuple[str, ...] = field(default_factory=tuple)  # nom d'origine (« Calculator »)
+    command: str = ""  # programme lancé, tel qu'écrit dans `Exec` (nom ou chemin)
 
     @property
     def label(self) -> str:
@@ -176,6 +203,7 @@ def _parse(
         path,
         tuple(dict.fromkeys(k for k in keywords if k)),
         (original,) if original != name else (),
+        command[0] if command else "",
     )
 
 
@@ -238,6 +266,7 @@ async def launch(entry: AppEntry) -> int:
         raise UnavailableError("gtk-launch absent : impossible d'ouvrir une application.")
     process = await asyncio.create_subprocess_exec(
         launcher,
+        "--",  # un identifiant qui commence par « - » n'est jamais lu comme une option
         entry.id,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.DEVNULL,
@@ -250,10 +279,39 @@ async def launch(entry: AppEntry) -> int:
     return process.pid
 
 
-def _processes(exec_name: str, proc: Path = Path("/proc")) -> list[int]:
-    """Tes processus dont l'exécutable s'appelle `exec_name` (jamais ceux protégés)."""
-    if not exec_name or exec_name.casefold() in PROTECTED:
-        return []
+def app_root(entry: AppEntry) -> Path | None:
+    """Le dossier propre à l'application, quand elle démarre par un script.
+
+    `google-chrome` lance `/opt/google/chrome/chrome`, `libreoffice` lance `soffice.bin` :
+    le programme qui tourne est rangé à côté du script (ou au-dessus de son dossier `bin`).
+    """
+    command = entry.command
+    found = command if os.path.isabs(command) else shutil.which(command) if command else None
+    if not found:
+        return None
+    real = Path(found).resolve()
+    try:
+        with real.open("rb") as handle:
+            if handle.read(2) != b"#!":
+                return None  # un vrai programme : son nom suffit
+    except OSError:
+        return None
+    root = real.parent.parent if real.parent.name == "bin" else real.parent
+    home = Path.home()
+    if root in SHARED_DIRS or home in (root, root.parent) or len(root.parts) < 3:
+        return None  # dossier partagé (/usr/bin, ~/Téléchargements…) : trop large
+    return root
+
+
+@dataclass(frozen=True)
+class _Process:
+    pid: int
+    name: str  # argv[0] sans son chemin
+    exe: Path | None  # programme réellement exécuté
+
+
+def _scan(proc: Path = Path("/proc")) -> list[_Process]:
+    """Tes processus, jamais Jarvis lui-même ni un processus protégé."""
     uid = os.getuid()
     me = {os.getpid(), os.getppid()}
     found = []
@@ -266,20 +324,54 @@ def _processes(exec_name: str, proc: Path = Path("/proc")) -> list[int]:
             raw = (entry / "cmdline").read_bytes().split(b"\0")[0].decode(errors="replace")
         except OSError:
             continue
-        if raw and Path(raw).name == exec_name:
-            found.append(int(entry.name))
-    return sorted(found)
+        try:
+            exe: Path | None = Path(os.readlink(entry / "exe"))
+        except OSError:
+            exe = None
+        name = Path(raw).name if raw else ""
+        names = {name.casefold(), exe.name.casefold() if exe else ""}
+        if not names & PROTECTED:
+            found.append(_Process(int(entry.name), name, exe))
+    return found
+
+
+def _matching(processes: list[_Process], exec_name: str, root: Path | None) -> list[int]:
+    if not exec_name or exec_name.casefold() in PROTECTED:
+        return []
+    return sorted(
+        p.pid
+        for p in processes
+        if exec_name in (p.name, p.exe.name if p.exe else "")
+        or (root is not None and p.exe is not None and p.exe.parent == root)
+    )
+
+
+def _processes(exec_name: str, proc: Path = Path("/proc"), root: Path | None = None) -> list[int]:
+    """Tes processus de ce programme (par son nom, ou rangés dans le dossier `root`)."""
+    return _matching(_scan(proc), exec_name, root)
 
 
 def running(
     apps: dict[str, AppEntry], proc: Path = Path("/proc")
 ) -> list[tuple[AppEntry, list[int]]]:
+    processes = _scan(proc)
     out = []
     for entry in apps.values():
-        pids = _processes(entry.exec_name, proc)
+        pids = _matching(processes, entry.exec_name, app_root(entry))
         if pids:
             out.append((entry, pids))
     return out
+
+
+def same_program(apps: dict[str, AppEntry], entry: AppEntry) -> list[AppEntry]:
+    """Les autres entrées du menu qui lancent le même programme (elles se ferment ensemble)."""
+    root = app_root(entry)
+    return [
+        other
+        for other in apps.values()
+        if other.id != entry.id
+        and (other.exec_name == entry.exec_name or (root is not None and app_root(other) == root))
+    ]
 
 
 def _alive(pid: int) -> bool:
@@ -294,7 +386,7 @@ def _alive(pid: int) -> bool:
 
 async def close(entry: AppEntry, *, wait_s: float = 5.0) -> tuple[int, int]:
     """SIGTERM à ses processus ; rend (fermés, encore ouverts)."""
-    pids = _processes(entry.exec_name)
+    pids = _processes(entry.exec_name, root=app_root(entry))
     if not pids:
         raise NotFoundError(f"« {entry.name} » n'est pas ouverte.")
     for pid in pids:
