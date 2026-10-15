@@ -51,6 +51,11 @@ class Preferences(BaseModel):
     voice_headset: bool = False
     #: Briefing du matin : à la première session du jour, Jarvis résume ta journée.
     briefing_enabled: bool = True
+    #: Contrôle du PC (applications, écran, gestion des fichiers) : désactivé par défaut.
+    os_control_enabled: bool = False
+    #: Lecture de l'écran : modèle local (privé, lent ici) ou en ligne (rapide, l'image
+    #: part chez le fournisseur). Une capture est une donnée sensible : local par défaut.
+    screen_vision: Literal["local", "en_ligne"] = "local"
 
     @field_validator("voice_stt", mode="before")
     @classmethod

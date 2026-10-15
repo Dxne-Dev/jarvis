@@ -80,6 +80,9 @@ class Tool[A: ToolArgs](ABC):
     #: une action (niveau 2 ou 3). La cible (adresse, fichier, bouton) doit, elle, être
     #: connue au moment de ta validation.
     dynamic_fields: ClassVar[tuple[str, ...]] = ()
+    #: Contrôle du PC (applications, écran, gestion de fichiers) : désactivé par défaut,
+    #: tu l'actives dans Réglages.
+    os_control: ClassVar[bool] = False
 
     def parse(self, raw: dict[str, Any]) -> A:
         try:
@@ -140,8 +143,12 @@ class ToolRegistry:
     def all(self) -> list[Tool[Any]]:
         return list(self._tools.values())
 
-    def specs(self, *, max_level: Level) -> list[ToolSpec]:
-        return [t.spec() for t in self._tools.values() if t.level <= max_level]
+    def specs(self, *, max_level: Level, os_control: bool = True) -> list[ToolSpec]:
+        return [
+            t.spec()
+            for t in self._tools.values()
+            if t.level <= max_level and (os_control or not t.os_control)
+        ]
 
     def catalog(self) -> list[dict[str, Any]]:
         return [
@@ -150,6 +157,7 @@ class ToolRegistry:
                 "description": t.description,
                 "level": int(t.level),
                 "level_label": LEVEL_LABELS[t.level],
+                "os_control": t.os_control,
             }
             for t in self._tools.values()
         ]

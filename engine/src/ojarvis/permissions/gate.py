@@ -31,20 +31,33 @@ class ApprovalRequiredError(EngineError):
     code = "approval_required"
 
 
+class OsControlDisabledError(EngineError):
+    status_code = 403
+    code = "os_control_disabled"
+
+
 class PermissionGate:
     def __init__(
         self,
         registry: ToolRegistry,
         journal: AuditJournal,
         context: Callable[[], ToolContext],
+        *,
+        os_control: Callable[[], bool] = lambda: True,
     ) -> None:
         self.registry = registry
         self._journal = journal
         self._context = context
+        #: Contrôle du PC activé dans Réglages ? (désactivé par défaut)
+        self.os_control = os_control
 
     def check(self, name: str, raw_args: dict[str, Any]) -> tuple[Tool[Any], ToolArgs, Level]:
         """Outil connu, arguments valides, niveau calculé : sans rien exécuter."""
         tool = self.registry.get(name)
+        if tool.os_control and not self.os_control():
+            raise OsControlDisabledError(
+                "Le contrôle du PC est désactivé : active-le dans Réglages → Contrôle du PC."
+            )
         args = tool.parse(raw_args)
         return tool, args, tool.level_for(args)
 

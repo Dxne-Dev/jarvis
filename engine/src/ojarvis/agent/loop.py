@@ -118,7 +118,10 @@ class Agent:
         self._executor = executor
 
     def specs(self) -> list[ToolSpec]:
-        return [*self._gate.registry.specs(max_level=Level.DETRUIRE), plan_tool_spec()]
+        specs = self._gate.registry.specs(
+            max_level=Level.DETRUIRE, os_control=self._gate.os_control()
+        )
+        return [*specs, plan_tool_spec()]
 
     def describe(self, call: ToolCall) -> str:
         """Ce que fait l'appel, en clair (pour l'interface), sans rien exécuter."""

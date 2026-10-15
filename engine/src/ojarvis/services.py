@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +61,7 @@ from ojarvis.telegram.bot import TelegramService
 from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
+from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
@@ -148,6 +149,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     http: httpx.AsyncClient,
     router: ModelRouter,
     conversations: ConversationStore,
+    prefs: Callable[[], Preferences],
 ) -> _Actions:
     # Jarvis agit : journal immuable vérifié au démarrage, outils derrière une seule porte.
     journal = AuditJournal(db, bus)
@@ -179,7 +181,11 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     integrations = IntegrationManager(secrets.get)
     tools = build_registry(
         browser.session,
-        [*automation_tools(automations, scheduler), *integration_tools(integrations)],
+        [
+            *automation_tools(automations, scheduler),
+            *integration_tools(integrations),
+            *desktop_tools(router, lambda: prefs().screen_vision),
+        ],
     )
 
     def tool_context() -> ToolContext:
@@ -192,7 +198,9 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
             fetch_proxy=f"http://127.0.0.1:{guard.port}",
         )
 
-    gate = PermissionGate(tools, journal, tool_context)
+    gate = PermissionGate(
+        tools, journal, tool_context, os_control=lambda: prefs().os_control_enabled
+    )
     plans = PlanStore(db, gate)
     executor = PlanExecutor(
         plans=plans,
@@ -332,7 +340,9 @@ class Services:
         await conversations.start()
         context = ContextEngine(memory, conversations, embedder_id=embedder.model_id)
 
-        acts = await _assemble_actions(config, db, bus, secrets, http, router, conversations)
+        acts = await _assemble_actions(
+            config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
+        )
         journal, gate, plans, executor = acts.journal, acts.gate, acts.plans, acts.executor
         chat = ChatService(
             conversations=conversations,
