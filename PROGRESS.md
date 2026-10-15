@@ -52,6 +52,9 @@
 | 15/10 | Corpus vocal (36 fichiers : Piper, espeak-ng, Cartesia) | réveil 17/21, 0 faux réveil ; 6/6 accent français Cartesia (3 par vérification) |
 | 15/10 | Latence fin de phrase → premier son, vrai pipeline, DeepSeek + Cartesia | médiane 1,75 s, max 1,9 s (17 tours) |
 | 15/10 | Transcription Whisper base, fenêtre courte | 0,45 s (contre 1,7 s) ; `small` : 5 s, écarté |
+| 15/10 | Essai au vrai micro (Octave) | réveil OK ; transcription locale illisible (micro à 25 %, Whisper base) |
+| 15/10 | Transcription Cartesia Ink-2 contre Whisper base, corpus dégradé (−30 dB + souffle) | 0 % contre 93 % de mots faux ; texte 180 ms après la phrase |
+| 15/10 | Vrai pipeline avec Ink-2 + DeepSeek + Cartesia | 12/12 tours, 0 % d'erreurs, latence médiane 1,72 s |
 | 15/10 | Voix sur la machine réelle (micro, annulation d'écho) | prête en 6 s ; 50 trames en 4 s ; arrêt en 1,1 s, module retiré |
 | 15/10 | Moteur : ruff, mypy strict (code + tests), pytest | 0 erreur ; 346 tests ; couverture 91 % |
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 36 tests |

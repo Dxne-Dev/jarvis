@@ -38,10 +38,21 @@ Pendant tout ce temps, le micro reste écouté : on peut couper Jarvis en parlan
 - Le **test instable** signalé en phase 1 (flux WebSocket) venait d'une annulation mal reconnue : réécrit avec un groupe de tâches anyio.
 - Le banc d'essai a montré Jarvis appeler l'utilisateur « Kélela » : un faux prénom tiré d'une phrase mal transcrite. D'où le garde-fou sur la confiance.
 
+## Le premier essai au vrai micro
+
+Le réveil marchait, la transcription non : « Peuja mis », « Hey, Charles ! ». Deux causes :
+
+- **Le micro était réglé à 25 %** : la voix arrivait à −36 dB, trop faible. Il est à 80 %.
+- **Whisper `base` est trop petit** pour un micro intégré, à distance, avec du bruit. Sur le corpus rendu aussi faible et bruité, il se trompe sur 93 % des mots.
+
+Décision prise ensemble : **la phrase est transcrite par Cartesia Ink-2**, en ligne, pendant qu'on parle. Sur le même corpus dégradé : 0 % d'erreurs. Le texte arrive 180 ms après la fin de la phrase. Whisper local reste en secours si le réseau tombe, et rien ne sort avant « Hey Jarvis ».
+
+En chemin : le début d'une phrase dite juste après « Hey Jarvis » pouvait être coupé (le tampon d'avant la phrase n'était pas ajouté). Corrigé.
+
 ## Vérifié
 
 - Corpus de 36 fichiers : « Hey Jarvis, … » dit par Piper, espeak-ng et Cartesia, plus des phrases sans mot de réveil. Réveil : 17 sur 21 (toutes les voix sauf espeak-ng à l'accent français), aucun faux réveil.
-- **Latence de la fin de la phrase au premier son : médiane 1,75 s** (maximum 1,9 s) sur 17 tours réels, avec DeepSeek et Cartesia. Objectif : moins de 3 s.
+- **Latence de la fin de la phrase au premier son : médiane 1,72 s** (maximum 2,4 s) sur 12 tours réels, avec la transcription Cartesia, DeepSeek et la voix Cartesia ; 0 % d'erreurs de mots. Avec Whisper local : médiane 1,75 s. Objectif : moins de 3 s.
 - **Un fait donné dans une session est rappelé dans la suivante** (vrai DeepSeek) : « Thé à la menthe », « Tu habites à Cotonou ».
 - Moteur : 346 tests, couverture 91 %, ruff et mypy strict (code et tests) sans erreur, `pip-audit` sans faille.
 - Interface : 36 tests ; bout en bout : 11 scénarios dont un tour vocal complet (audio simulé) ; audit axe sans violation sérieuse.
