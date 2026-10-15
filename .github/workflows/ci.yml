@@ -26,6 +26,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
       - run: uv sync --frozen
+      - name: Navigateur de Jarvis (Chromium de Playwright)
+        run: uv run playwright install --with-deps chromium
       - name: Lint et format
         run: |
           uv run ruff check src tests
@@ -75,6 +77,9 @@ jobs:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
       - run: uv sync --frozen
+        working-directory: engine
+      - name: Navigateur de Jarvis (Chromium de Playwright)
+        run: uv run playwright install --with-deps chromium
         working-directory: engine
       - uses: pnpm/action-setup@v4
         with:
