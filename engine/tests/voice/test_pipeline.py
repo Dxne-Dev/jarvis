@@ -254,3 +254,17 @@ async def test_interrupt_from_the_interface_goes_back_to_sleep() -> None:
         assert r.pipeline.state == VoiceState.IDLE
         assert r.sink.stopped >= 1
 
+
+async def test_a_doubtful_transcript_is_answered_but_not_learned() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio, stt=FakeSTT(["Kélela Kapita, Bbena"], logprob=-1.1)) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        assert r.chat.calls[0]["learn"] is False
+        assert r.tts.sentences  # Jarvis répond quand même (et peut demander de répéter)
+
+
+async def test_a_clear_transcript_can_be_learned() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        assert r.chat.calls[0]["learn"] is True

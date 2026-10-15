@@ -50,12 +50,24 @@ SHORT_WINDOW_S = 10
 FRAMES_PER_S = 100
 
 
+#: En dessous, la transcription est douteuse (mesuré sur le corpus : les phrases ratées
+#: sont toutes sous -1, les bonnes au-dessus de -0,7).
+RELIABLE_LOGPROB = -0.6
+
+
 @dataclass(frozen=True)
 class Transcript:
     text: str
     audio_s: float
     duration_ms: float
     no_speech_prob: float = 0.0
+    #: Log-probabilité moyenne par jeton : la confiance de Whisper dans son texte.
+    avg_logprob: float = 0.0
+
+    @property
+    def reliable(self) -> bool:
+        """Assez sûre pour que Jarvis en retienne des faits (il répond dans tous les cas)."""
+        return self.avg_logprob >= RELIABLE_LOGPROB and self.no_speech_prob < 0.6
 
 
 class Transcriber(Protocol):
@@ -111,18 +123,19 @@ class WhisperTranscriber:
         seconds = len(samples) / RATE
         with self._lock:
             try:
-                text, no_speech = self._fast(samples, seconds)
+                text, no_speech, logprob = self._fast(samples, seconds)
             except Exception:
                 log.exception("whisper_fast_path_failed")
-                text, no_speech = self._standard(samples)
+                text, no_speech, logprob = self._standard(samples)
         return Transcript(
             text=text.strip(),
             audio_s=round(seconds, 2),
             duration_ms=round((time.perf_counter() - start) * 1000, 1),
             no_speech_prob=round(no_speech, 3),
+            avg_logprob=round(logprob, 3),
         )
 
-    def _fast(self, samples: Any, seconds: float) -> tuple[str, float]:
+    def _fast(self, samples: Any, seconds: float) -> tuple[str, float, float]:
         import ctranslate2  # noqa: PLC0415
 
         short = seconds <= SHORT_WINDOW_S - 2
@@ -141,11 +154,14 @@ class WhisperTranscriber:
             suppress_blank=True,
             suppress_tokens=self._suppress,
             return_no_speech_prob=True,
+            return_scores=True,
         )[0]
         tokens = [t for t in result.sequences_ids[0] if t < self._tokenizer.eot]
-        return self._tokenizer.decode(tokens), float(result.no_speech_prob)
+        # Score normalisé par la longueur : c'est la log-probabilité moyenne par jeton.
+        logprob = float(result.scores[0]) if result.scores else 0.0
+        return self._tokenizer.decode(tokens), float(result.no_speech_prob), logprob
 
-    def _standard(self, samples: Any) -> tuple[str, float]:
+    def _standard(self, samples: Any) -> tuple[str, float, float]:
         segments, _ = self._model.transcribe(
             samples,
             language=self._language,
@@ -156,4 +172,5 @@ class WhisperTranscriber:
         )
         parts = list(segments)
         no_speech = max((s.no_speech_prob for s in parts), default=1.0)
-        return " ".join(s.text.strip() for s in parts), no_speech
+        logprob = min((s.avg_logprob for s in parts), default=-10.0)
+        return " ".join(s.text.strip() for s in parts), no_speech, logprob

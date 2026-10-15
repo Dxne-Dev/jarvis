@@ -212,3 +212,20 @@ def test_e2e_script_is_predictable() -> None:
     assert tool.tool_calls[0].arguments == {"faits": []}
     title = e2e_script(LLMRequest([Message("system", "Donne un titre"), Message("user", "x")]))
     assert title.text == "Conversation de test"
+
+
+def test_a_turn_can_opt_out_of_learning(
+    client: TestClient, llm: dict[str, FakeProvider], services: Services
+) -> None:
+    llm["deepseek"]._script = smart_script
+
+    async def voice_turn() -> None:
+        events = services.chat.respond(
+            text="Je bois du café chaque matin.", channel="voice", learn=False
+        )
+        async for _ in events:
+            pass
+        await services.chat.drain()
+
+    client.portal.call(voice_turn)  # type: ignore[union-attr]
+    assert client.get("/v1/memory").json() == []

@@ -72,13 +72,14 @@ class FakeSTT:
 
     texts: list[str] = field(default_factory=lambda: ["Hey Jarvis, quelle heure est-il ?"])
     calls: list[float] = field(default_factory=list)
+    logprob: float = -0.2
 
     async def transcribe(self, audio: Pcm) -> Transcript:
         seconds = len(audio) / RATE
         self.calls.append(seconds)
         text = self.texts[min(len(self.calls) - 1, len(self.texts) - 1)]
         await asyncio.sleep(0)
-        return Transcript(text=text, audio_s=seconds, duration_ms=12.0)
+        return Transcript(text=text, audio_s=seconds, duration_ms=12.0, avg_logprob=self.logprob)
 
 
 @dataclass
@@ -117,9 +118,16 @@ class FakeChat:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     async def respond(
-        self, *, text: str, conversation_id: str | None = None, channel: str = "app"
+        self,
+        *,
+        text: str,
+        conversation_id: str | None = None,
+        channel: str = "app",
+        learn: bool = True,
     ) -> AsyncIterator[ChatEvent]:
-        self.calls.append({"text": text, "conversation_id": conversation_id, "channel": channel})
+        self.calls.append(
+            {"text": text, "conversation_id": conversation_id, "channel": channel, "learn": learn}
+        )
         yield ChatEvent("start", {"conversation_id": conversation_id or "conv-1"})
         if self.hang:
             await asyncio.Event().wait()

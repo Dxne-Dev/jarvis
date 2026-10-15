@@ -59,8 +59,9 @@ EXTRACTION_PROMPT = (
     "une phrase autonome à la troisième personne ; désigne l'utilisateur par son prénom s'il "
     "est connu, sinon « L'utilisateur ». « profil » = identité stable (nom, ville, métier) ; "
     "« preference » = goût ou façon de faire ; « fait » = le reste. Si un fait corrige un "
-    "souvenir existant, mets son id dans « remplace ». S'il n'y a rien à retenir, renvoie une "
-    "liste vide."
+    "souvenir existant, mets son id dans « remplace ». Un prénom ne se retient que s'il est "
+    "dit clairement (« je m'appelle… ») ; une phrase confuse ou incomplète ne donne rien. "
+    "S'il n'y a rien à retenir, renvoie une liste vide."
 )
 TITLE_PROMPT = (
     "Donne un titre de trois à six mots, en français, sans guillemets ni point final, "
@@ -126,8 +127,15 @@ class ChatService:
         self._background: set[asyncio.Task[None]] = set()
 
     async def respond(
-        self, *, text: str, conversation_id: str | None = None, channel: Channel = "app"
+        self,
+        *,
+        text: str,
+        conversation_id: str | None = None,
+        channel: Channel = "app",
+        learn: bool = True,
     ) -> AsyncGenerator[ChatEvent]:
+        """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
+        (par exemple une transcription vocale douteuse)."""
         cleaned = text.strip()
         if not cleaned or len(cleaned) > MAX_INPUT_CHARS:
             raise InvalidInputError("Le message doit faire entre 1 et 8000 caractères.")
@@ -197,6 +205,7 @@ class ChatService:
                     conversation.title == DEFAULT_TITLE and not history,
                     user,
                     record,
+                    learn=learn,
                 )
         finally:
             if not turn.finished:
@@ -261,19 +270,33 @@ class ChatService:
     # ------------------------------------------------------------------ après la réponse
 
     def _after(
-        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+        self,
+        conversation_id: str,
+        needs_title: bool,
+        user: MessageRecord,
+        reply: MessageRecord,
+        *,
+        learn: bool = True,
     ) -> None:
-        task = asyncio.create_task(self._learn_from(conversation_id, needs_title, user, reply))
+        task = asyncio.create_task(
+            self._learn_from(conversation_id, needs_title, user, reply, learn=learn)
+        )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
     async def _learn_from(
-        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+        self,
+        conversation_id: str,
+        needs_title: bool,
+        user: MessageRecord,
+        reply: MessageRecord,
+        *,
+        learn: bool = True,
     ) -> None:
         await self._conversations.index_exchange(user, reply)
         if needs_title:
             await self._title(conversation_id, user, reply)
-        if self.learn:
+        if self.learn and learn:
             await self._extract(user, reply)
 
     async def _title(self, conversation_id: str, user: MessageRecord, reply: MessageRecord) -> None:

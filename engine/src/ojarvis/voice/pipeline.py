@@ -478,7 +478,9 @@ class VoicePipeline:
                 anticipee=speculative,
                 modele="whisper-base",
             )
-            producer = asyncio.create_task(self._produce(text, queue, reply, done))
+            producer = asyncio.create_task(
+                self._produce(text, queue, reply, done, learn=transcript.reliable)
+            )
             self._sink.begin()
             first_chunk: float | None = None
             engine = None
@@ -503,7 +505,13 @@ class VoicePipeline:
                     await producer
             first_audio = self._sink.first_audio_at
             latency = round((first_audio - speech_end) * 1000, 1) if first_audio else None
-            trace.set(latence_ms=latency, transcription_ms=stt_ms, voix=engine)
+            trace.set(
+                latence_ms=latency,
+                transcription_ms=stt_ms,
+                voix=engine,
+                confiance=transcript.avg_logprob,
+                apprentissage=transcript.reliable,
+            )
             report = TurnReport(
                 text=text,
                 reply="".join(reply).strip(),
@@ -535,11 +543,13 @@ class VoicePipeline:
         queue: asyncio.Queue[str | None],
         reply: list[str],
         done: dict[str, Any],
+        *,
+        learn: bool,
     ) -> None:
         splitter = SentenceSplitter()
         try:
             events = self._chat.respond(
-                text=text, conversation_id=self._conversation_id(), channel="voice"
+                text=text, conversation_id=self._conversation_id(), channel="voice", learn=learn
             )
             async with contextlib.aclosing(events) as stream:
                 async for event in stream:
