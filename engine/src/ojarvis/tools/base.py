@@ -63,6 +63,8 @@ class ToolContext:
     sandbox: SandboxRunner | None = None
     #: Hôtes privés autorisés malgré la garde réseau (serveur local des tests seulement).
     allowed_private_hosts: tuple[str, ...] = ()
+    #: Proxy de garde (adresses publiques seulement, DNS épinglé) pour lire le web.
+    fetch_proxy: str | None = None
 
 
 class InvalidToolArgumentsError(InvalidInputError):

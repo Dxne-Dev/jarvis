@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -298,3 +299,51 @@ async def test_run_code_goes_to_the_sandbox_and_capabilities_list_levels(tmp_pat
     spec = registry.get("ecrire_fichier").spec()
     assert "niveau 2" in spec.description
     assert spec.parameters["additionalProperties"] is False
+
+
+async def test_reading_a_page_goes_through_the_guard_proxy(tmp_path: Path) -> None:
+    """Le proxy résout et vérifie lui-même : une adresse privée qui passerait la première
+    vérification (DNS changeant entre-temps) est bloquée quand même."""
+    from ojarvis.browser.proxy import GuardProxy  # noqa: PLC0415
+
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readuntil(b"\r\n\r\n")
+        body = b"<title>Locale</title><main>Contenu local</main>"
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n"
+            + f"Content-Length: {len(body)}\r\n\r\n".encode()
+            + body
+        )
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    allowed = GuardProxy(allowed_hosts=("127.0.0.1",))
+    strict = GuardProxy()
+    try:
+        tool = ReadPage()
+        args = tool.parse({"url": f"http://127.0.0.1:{port}/"})
+        ok_ctx = ToolContext(
+            http=httpx.AsyncClient(),
+            secret=lambda _: None,
+            home=tmp_path,
+            allowed_private_hosts=("127.0.0.1",),
+            fetch_proxy=f"http://127.0.0.1:{await allowed.start()}",
+        )
+        out = await tool.run(args, ok_ctx)
+        assert "Contenu local" in out.text
+        blocked_ctx = ToolContext(
+            http=httpx.AsyncClient(),
+            secret=lambda _: None,
+            home=tmp_path,
+            allowed_private_hosts=("127.0.0.1",),  # la première vérification laisse passer
+            fetch_proxy=f"http://127.0.0.1:{await strict.start()}",
+        )
+        with pytest.raises(UpstreamError, match="403"):
+            await tool.run(args, blocked_ctx)
+        assert strict.blocked == 1
+    finally:
+        await allowed.close()
+        await strict.close()
+        server.close()

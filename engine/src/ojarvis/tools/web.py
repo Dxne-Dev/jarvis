@@ -9,12 +9,13 @@ import re
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
+import httpx
 from bs4 import BeautifulSoup
 from pydantic import Field
 
 from ojarvis.core.errors import UpstreamError
 from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
-from ojarvis.tools.guards import check_public_url
+from ojarvis.tools.guards import BlockedTargetError, check_public_url
 
 MAX_PAGE_BYTES = 2_000_000
 MAX_PAGE_CHARS = 12_000
@@ -78,6 +79,25 @@ class ReadPageArgs(ToolArgs):
     url: str = Field(min_length=8, max_length=2000, description="Adresse http(s) de la page.")
 
 
+async def _follow(
+    http: httpx.AsyncClient, url: str, ctx: ToolContext
+) -> tuple[httpx.Response, str]:
+    """Redirections suivies à la main : chaque étape repasse par la garde réseau."""
+    for _ in range(MAX_REDIRECTS + 1):
+        response = await http.get(
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "fr,en;q=0.8"},
+            follow_redirects=False,
+            timeout=15.0,
+        )
+        if response.is_redirect and "location" in response.headers:
+            target = urljoin(url, response.headers["location"])
+            url = await check_public_url(target, allowed_hosts=ctx.allowed_private_hosts)
+            continue
+        return response, url
+    raise UpstreamError("Trop de redirections.")
+
+
 class ReadPage(Tool[ReadPageArgs]):
     name: ClassVar[str] = "lire_page"
     description: ClassVar[str] = "Lit le texte d'une page web publique (sans tes cookies)."
@@ -89,21 +109,16 @@ class ReadPage(Tool[ReadPageArgs]):
 
     async def run(self, args: ReadPageArgs, ctx: ToolContext) -> ToolOutput:
         url = await check_public_url(args.url, allowed_hosts=ctx.allowed_private_hosts)
-        # Redirections suivies à la main : chaque étape repasse par la garde réseau.
-        for _ in range(MAX_REDIRECTS + 1):
-            response = await ctx.http.get(
-                url,
-                headers={"User-Agent": USER_AGENT, "Accept-Language": "fr,en;q=0.8"},
-                follow_redirects=False,
-                timeout=15.0,
-            )
-            if response.is_redirect and "location" in response.headers:
-                target = urljoin(url, response.headers["location"])
-                url = await check_public_url(target, allowed_hosts=ctx.allowed_private_hosts)
-                continue
-            break
-        else:
-            raise UpstreamError("Trop de redirections.")
+        # Par le proxy de garde : il résout le nom et se connecte lui-même à l'adresse
+        # vérifiée (une réponse DNS qui changerait entre-temps ne mène nulle part).
+        own = httpx.AsyncClient(proxy=ctx.fetch_proxy) if ctx.fetch_proxy else None
+        try:
+            response, url = await _follow(own or ctx.http, url, ctx)
+        except httpx.ProxyError as exc:
+            raise BlockedTargetError("Adresse privée ou locale refusée.") from exc
+        finally:
+            if own is not None:
+                await own.aclose()
         if response.status_code != 200:
             raise UpstreamError(f"La page répond HTTP {response.status_code}.")
         kind = response.headers.get("content-type", "")

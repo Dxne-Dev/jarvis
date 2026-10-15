@@ -116,6 +116,7 @@ class BrowserSession:
         *,
         allowed_hosts: tuple[str, ...] = (),
         granted: Callable[[], set[str]] = set,
+        proxy: GuardProxy | None = None,
     ) -> None:
         self._vault = vault
         self._allowed_hosts = allowed_hosts
@@ -127,7 +128,9 @@ class BrowserSession:
         self._page: Any = None
         self._page_identity = False
         self._lock = asyncio.Lock()
-        self._proxy = GuardProxy(allowed_hosts=allowed_hosts)
+        # Proxy de garde partagé avec les autres outils web (sinon, le sien).
+        self._proxy = proxy or GuardProxy(allowed_hosts=allowed_hosts)
+        self._owns_proxy = proxy is None
         self._login: _LoginWindow | None = None
 
     # ------------------------------------------------------------------ décisions
@@ -230,7 +233,8 @@ class BrowserSession:
             if playwright is not None:
                 with contextlib.suppress(Exception):
                     await playwright.stop()
-            await self._proxy.close()
+            if self._owns_proxy:
+                await self._proxy.close()
 
     async def _persist(self) -> None:
         """Après un passage sur un domaine autorisé : sessions remises au coffre (filtrées)."""

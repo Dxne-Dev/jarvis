@@ -27,6 +27,7 @@ from ojarvis.browser.cookies import (
     read_cookies,
     safe_storage_password,
 )
+from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.session import BrowserSession
 from ojarvis.browser.vault import CookieVault, normalize_domain
 from ojarvis.core.clock import utc_now
@@ -57,6 +58,7 @@ class BrowserAccess:
         bus: EventBus,
         home: Path,
         allowed_hosts: tuple[str, ...] = (),
+        proxy: GuardProxy | None = None,
     ) -> None:
         self._db = db
         self._vault = vault
@@ -67,7 +69,7 @@ class BrowserAccess:
         self._login_domain: str | None = None
         self._finish_lock = asyncio.Lock()
         self.session = BrowserSession(
-            vault, allowed_hosts=allowed_hosts, granted=lambda: set(self._granted)
+            vault, allowed_hosts=allowed_hosts, granted=lambda: set(self._granted), proxy=proxy
         )
 
     async def start(self) -> None:

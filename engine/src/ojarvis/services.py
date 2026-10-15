@@ -19,6 +19,7 @@ from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.loop import Agent
 from ojarvis.agent.plans import PlanStore
 from ojarvis.audit.journal import AuditJournal
+from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.service import BrowserAccess
 from ojarvis.browser.vault import CookieVault
 from ojarvis.chat.service import ChatService
@@ -138,6 +139,7 @@ class Services:
     executor: PlanExecutor
     browser: BrowserAccess
     sandbox: SandboxRunner
+    guard: GuardProxy
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -189,6 +191,9 @@ class Services:
             config.paths.data_dir / "navigateur" / "coffre.bin",
             lambda: secrets.get(LOCAL_KEY_NAME),
         )
+        # Toute lecture du web (navigateur, pages) passe par ce proxy : adresses publiques.
+        guard = GuardProxy(allowed_hosts=config.tool_private_hosts)
+        await guard.start()
         browser = BrowserAccess(
             db=db,
             vault=vault,
@@ -196,6 +201,7 @@ class Services:
             bus=bus,
             home=user_home,
             allowed_hosts=config.tool_private_hosts,
+            proxy=guard,
         )
         await browser.start()
         sandbox = SandboxRunner()
@@ -208,6 +214,7 @@ class Services:
                 home=user_home,
                 sandbox=sandbox,
                 allowed_private_hosts=config.tool_private_hosts,
+                fetch_proxy=f"http://127.0.0.1:{guard.port}",
             )
 
         gate = PermissionGate(tools, journal, tool_context)
@@ -281,6 +288,7 @@ class Services:
             executor=executor,
             browser=browser,
             sandbox=sandbox,
+            guard=guard,
         )
         services._holder = holder
         await executor.recover()
@@ -362,6 +370,7 @@ class Services:
         await self.chat.close()
         await self.executor.close()
         await self.browser.close()
+        await self.guard.close()
         for task in list(self.background):
             task.cancel()
         await asyncio.gather(*list(self.background), return_exceptions=True)
