@@ -16,6 +16,7 @@ from ojarvis.voice.pipeline import SPOKEN_LLM_ERROR, VoiceConfig, VoicePipeline,
 from ojarvis.voice.vad import EndpointConfig
 from tests.voice.fakes import (
     FakeChat,
+    FakeCloudSTT,
     FakeStreamingSTT,
     FakeSTT,
     FakeTracer,
@@ -66,6 +67,7 @@ async def rig(
     tts: FakeTTS | None = None,
     wake: FakeWake | None = None,
     streaming: FakeStreamingSTT | None = None,
+    cloud: FakeCloudSTT | None = None,
     **changes: Any,
 ) -> AsyncIterator[Rig]:
     clock = VirtualClock()
@@ -100,6 +102,7 @@ async def rig(
         config=config(**changes),
         clock=clock,
         streaming_stt=streaming,
+        cloud_stt=cloud,
     )
     task = asyncio.create_task(parts.pipeline.run())
     try:
@@ -316,3 +319,52 @@ async def test_the_start_of_a_sentence_said_right_after_the_wake_word_is_kept() 
         await wait_until(lambda: r.pipeline.last_report is not None)
         # Marqueur restant (0,72 s) + phrase (1,2 s) + pause (0,16 s) + préroll (0,35 s).
         assert r.stt.calls[0] >= 2.3
+
+
+async def test_groq_transcribes_the_sentence_as_soon_as_it_pauses() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
+    cloud = FakeCloudSTT()
+    streaming = FakeStreamingSTT()
+    async with rig(audio, cloud=cloud, streaming=streaming) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "groq"
+        assert report.speculative is True  # envoyée dès la pause
+        assert len(cloud.calls) == 1
+        assert r.stt.calls == []
+        assert streaming.streams == []  # Cartesia ne sert qu'en relais
+
+
+async def test_without_groq_key_cartesia_takes_over() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    streaming = FakeStreamingSTT()
+    async with rig(audio, cloud=FakeCloudSTT(has_key=False), streaming=streaming) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "cartesia"
+        assert len(streaming.streams) == 1
+
+
+async def test_a_failing_groq_falls_back_to_local_whisper() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio, cloud=FakeCloudSTT(fail=True)) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "whisper"
+        assert len(r.stt.calls) == 1
+        await wait_until(lambda: "voice.stt_fallback" in r.types())
+
+
+async def test_when_groq_fails_the_recorded_sentence_goes_to_cartesia() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    streaming = FakeStreamingSTT(text="Quelle heure est-il ?")
+    async with rig(audio, cloud=FakeCloudSTT(fail=True), streaming=streaming) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "cartesia"
+        assert r.stt.calls == []  # Whisper local n'a pas servi
+        assert streaming.streams[0].samples > 16_000  # la phrase entière, d'un bloc

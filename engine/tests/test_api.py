@@ -66,7 +66,7 @@ def test_status(client: TestClient) -> None:
     assert body["version"] == "0.1.0"
     assert body["keyring"] == "memoire"
     assert body["keyring_error"] is None
-    assert body["secrets_total"] == 12
+    assert body["secrets_total"] == 13
     assert body["secrets_configured"] == 0
     assert body["events_published"] >= 1
 

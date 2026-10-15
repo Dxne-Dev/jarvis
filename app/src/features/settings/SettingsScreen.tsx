@@ -14,8 +14,8 @@ const GROUPS: { id: SecretGroup; title: string; description: string }[] = [
   { id: "llm", title: "Modèles de langage", description: "Le cerveau de Jarvis." },
   {
     id: "voice",
-    title: "Synthèse vocale",
-    description: "La voix naturelle de Jarvis (Cartesia).",
+    title: "Voix en ligne",
+    description: "Transcription de ta voix (Groq) et voix naturelle de Jarvis (Cartesia).",
   },
   { id: "search", title: "Recherche", description: "Recherche sur le web." },
   { id: "integrations", title: "Intégrations", description: "GitHub, Notion, Google Agenda." },

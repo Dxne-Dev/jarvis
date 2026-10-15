@@ -14,6 +14,7 @@ _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"\bsk_car_[A-Za-z0-9]{10,}"),
+    re.compile(r"\bgsk_[A-Za-z0-9]{20,}"),
     re.compile(r"\bghp_[A-Za-z0-9]{30,}"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{30,}"),
     re.compile(r"\bntn_[A-Za-z0-9]{30,}"),

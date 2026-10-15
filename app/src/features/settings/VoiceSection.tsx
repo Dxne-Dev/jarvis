@@ -159,14 +159,19 @@ export function VoiceSection() {
             label="Transcription"
             options={[
               {
-                value: "auto",
+                value: "groq",
+                label: "Groq (en ligne)",
+                hint: "Whisper large-v3, français imposé. Ta phrase part en ligne, jamais avant « Hey Jarvis ».",
+              },
+              {
+                value: "cartesia",
                 label: "Cartesia (en ligne)",
-                hint: "Très précise. Ta phrase part en ligne, jamais avant « Hey Jarvis ».",
+                hint: "En direct, mais il devine la langue seul et peut entendre de l'anglais.",
               },
               {
                 value: "local",
                 label: "Locale (Whisper)",
-                hint: "Tout reste sur la machine, mais elle comprend moins bien.",
+                hint: "Tout reste sur la machine, mais elle comprend beaucoup moins bien.",
               },
             ]}
           />

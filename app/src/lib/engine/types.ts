@@ -49,7 +49,7 @@ export interface Preferences {
   voice_output_device: string | null;
   voice_name: string;
   voice_engine: "auto" | "piper";
-  voice_stt: "auto" | "local";
+  voice_stt: "groq" | "cartesia" | "local";
   wake_sensitivity: "basse" | "normale" | "haute";
   voice_follow_up: boolean;
   voice_barge_in: boolean;

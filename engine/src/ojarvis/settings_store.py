@@ -40,14 +40,20 @@ class Preferences(BaseModel):
     #: Voix Cartesia (identifiant) ; Piper, local, sert de repli hors ligne.
     voice_name: str = Field(default=DEFAULT_CARTESIA_VOICE, pattern=r"^[0-9a-fA-F-]{8,64}$")
     voice_engine: Literal["auto", "piper"] = "auto"
-    #: Transcription : Cartesia en ligne (après « Hey Jarvis »), ou Whisper local seulement.
-    voice_stt: Literal["auto", "local"] = "auto"
+    #: Transcription, après « Hey Jarvis » : Groq (Whisper large-v3, français imposé),
+    #: Cartesia Ink-2 en flux, ou Whisper local seulement. Whisper local reste le secours.
+    voice_stt: Literal["groq", "cartesia", "local"] = "groq"
     wake_sensitivity: Literal["basse", "normale", "haute"] = "normale"
     #: Après une réponse, écouter encore quelques secondes sans mot de réveil.
     voice_follow_up: bool = True
     #: Couper Jarvis en parlant (avec l'annulation d'écho ou un casque).
     voice_barge_in: bool = True
     voice_headset: bool = False
+
+    @field_validator("voice_stt", mode="before")
+    @classmethod
+    def _legacy_stt(cls, value: object) -> object:
+        return "groq" if value == "auto" else value  # ancienne valeur (avant Groq)
 
     @field_validator("routing")
     @classmethod
