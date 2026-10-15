@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import shutil
 import subprocess
 import time
@@ -27,7 +28,13 @@ from ojarvis.events.bus import EventBus
 from ojarvis.security.secrets import SecretStore
 from ojarvis.settings_store import Preferences
 from ojarvis.tracing.tracer import Tracer
-from ojarvis.voice.audio import AudioSink, AudioSource, MicrophoneSource, SpeakerSink
+from ojarvis.voice.audio import (
+    AudioSink,
+    AudioSource,
+    MicrophoneSilentError,
+    MicrophoneSource,
+    SpeakerSink,
+)
 from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline, VoiceState
 from ojarvis.voice.stt import WHISPER_FILES, WhisperTranscriber
 from ojarvis.voice.tts import (
@@ -142,24 +149,34 @@ def _refresh_devices() -> None:
         sd._initialize()
 
 
-def list_devices() -> dict[str, list[dict[str, Any]]]:
-    import sounddevice as sd  # noqa: PLC0415
+def _pactl_devices(kind: str) -> list[dict[str, str]]:
+    """Micros (`sources`) ou sorties (`sinks`) vus par PipeWire, avec un nom lisible."""
+    pactl = shutil.which("pactl")
+    if pactl is None:
+        raise RuntimeError("pactl absent")
+    done = subprocess.run(  # noqa: S603 — binaire système, arguments fixes
+        [pactl, "--format=json", "list", kind],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    devices = []
+    for item in json.loads(done.stdout):
+        name = str(item.get("name", ""))
+        props = item.get("properties", {})
+        if not name or name.startswith("ojarvis_") or props.get("device.class") == "monitor":
+            continue
+        label = item.get("description")
+        if not label or label == "(null)":
+            label = props.get("device.description") or props.get("node.nick") or name
+        devices.append({"name": name, "label": str(label)})
+    return devices
 
-    _refresh_devices()
-    apis = sd.query_hostapis()
-    pulse = {i for i, api in enumerate(apis) if "Pulse" in api["name"]}
-    inputs, outputs = [], []
-    for device in sd.query_devices():
-        if pulse and device["hostapi"] not in pulse:
-            continue
-        name = str(device["name"])
-        if name.startswith("ojarvis_") or name.endswith(".monitor"):
-            continue
-        if device["max_input_channels"] > 0:
-            inputs.append({"name": name})
-        if device["max_output_channels"] > 0:
-            outputs.append({"name": name})
-    return {"inputs": inputs, "outputs": outputs}
+
+def list_devices() -> dict[str, list[dict[str, str]]]:
+    """Ne touche jamais à PortAudio : le réinitialiser couperait le micro en cours d'écoute."""
+    return {"inputs": _pactl_devices("sources"), "outputs": _pactl_devices("sinks")}
 
 
 class VoiceService:
@@ -213,6 +230,7 @@ class VoiceService:
 
     def snapshot(self) -> dict[str, Any]:
         data = asdict(self.status)
+        data["frames"] = self._pipeline.frames_seen if self._pipeline is not None else 0
         if self._pipeline is not None and self.status.error is None:
             data["state"] = self._pipeline.state.value
         return data
@@ -475,6 +493,8 @@ def _device_prefs(prefs: Preferences) -> dict[str, Any]:
 
 
 def _describe(exc: Exception) -> str:
+    if isinstance(exc, MicrophoneSilentError):
+        return "Le micro ne transmet plus rien. Nouvel essai en cours…"
     text = str(exc)
     if "PortAudio" in text or "Invalid device" in text or "No Default" in text:
         return "Micro ou haut-parleur introuvable."

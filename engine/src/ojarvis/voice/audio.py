@@ -176,21 +176,39 @@ class FileSource:
             yield Frame(pcm, self._now())
 
 
+class MicrophoneSilentError(RuntimeError):
+    """Le micro n'envoie plus rien : périphérique débranché ou flux audio bloqué."""
+
+
+async def close_stream(stream: Any, *, timeout_s: float = 2.0) -> None:
+    """Ferme un flux PortAudio hors de la boucle : un pilote bloqué ne fige pas le moteur."""
+
+    def close() -> None:
+        with contextlib.suppress(Exception):
+            stream.stop()
+        with contextlib.suppress(Exception):
+            stream.close()
+
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(asyncio.to_thread(close), timeout_s)
+
+
 class MicrophoneSource:
     """Micro via PortAudio. Le flux est ouvert en 16 kHz ; sinon à la fréquence du périphérique."""
 
-    def __init__(self, device: str | int | None = None, *, max_queue: int = 64) -> None:
+    def __init__(
+        self, device: str | int | None = None, *, max_queue: int = 64, silent_after_s: float = 3.0
+    ) -> None:
         self._device = device
         self._queue: asyncio.Queue[Frame | None] = asyncio.Queue(max_queue)
         self._stream: Any = None
         self._dropped = 0
+        self._silent_after_s = silent_after_s
 
     async def close(self) -> None:
         stream, self._stream = self._stream, None
         if stream is not None:
-            with contextlib.suppress(Exception):
-                stream.stop()
-                stream.close()
+            await close_stream(stream)
         with contextlib.suppress(asyncio.QueueFull):
             self._queue.put_nowait(None)
 
@@ -235,7 +253,13 @@ class MicrophoneSource:
     async def frames(self) -> AsyncIterator[Frame]:
         self._open(asyncio.get_running_loop())
         try:
-            while (frame := await self._queue.get()) is not None:
+            while True:
+                try:
+                    frame = await asyncio.wait_for(self._queue.get(), self._silent_after_s)
+                except TimeoutError as exc:
+                    raise MicrophoneSilentError("le micro ne transmet plus rien") from exc
+                if frame is None:
+                    return
                 yield frame
         finally:
             await self.close()
@@ -391,9 +415,7 @@ class SpeakerSink:
     async def close(self) -> None:
         stream, self._stream = self._stream, None
         if stream is not None:
-            with contextlib.suppress(Exception):
-                stream.stop()
-                stream.close()
+            await close_stream(stream)
 
 
 class MemorySink:

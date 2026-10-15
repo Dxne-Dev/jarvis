@@ -35,7 +35,7 @@ async def stop(services: ServicesDep) -> Response:
 
 
 @router.get("/devices")
-async def devices() -> dict[str, list[dict[str, Any]]]:
+async def devices() -> dict[str, list[dict[str, str]]]:
     try:
         return await anyio.to_thread.run_sync(list_devices)
     except Exception as exc:

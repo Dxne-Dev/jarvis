@@ -15,6 +15,7 @@ from ojarvis.voice.audio import (
     FRAME_SAMPLES,
     OUTPUT_RATE,
     FileSource,
+    MicrophoneSilentError,
     MicrophoneSource,
     SpeakerSink,
     read_wav,
@@ -147,3 +148,11 @@ async def test_file_source_plays_in_real_time_then_stops() -> None:
     frames = [frame async for frame in source.frames()]
     assert len(frames) == 4  # 2 trames du fichier + 0,16 s de silence
     assert source.finished_at is not None
+
+
+async def test_a_silent_microphone_is_reported(fake_sd: types.SimpleNamespace) -> None:
+    mic = MicrophoneSource(None, silent_after_s=0.05)
+    with pytest.raises(MicrophoneSilentError):
+        async for _ in mic.frames():
+            pass
+    assert fake_sd.created[0].closed

@@ -142,6 +142,8 @@ class VoicePipeline:
         self._conversation: tuple[str, float] | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
         self.last_report: TurnReport | None = None
+        #: Trames reçues du micro : le diagnostic « le micro transmet-il ? ».
+        self.frames_seen = 0
 
     # ------------------------------------------------------------------ état
 
@@ -176,6 +178,7 @@ class VoicePipeline:
     async def run(self) -> None:
         try:
             async for frame in self._source.frames():
+                self.frames_seen += 1
                 self._history.append(frame)
                 try:
                     await self._on_frame(frame)

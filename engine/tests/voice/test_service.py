@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import shutil
+import subprocess
+import types
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -15,7 +18,7 @@ from ojarvis.events.bus import EventBus
 from ojarvis.services import Services
 from ojarvis.settings_store import Preferences
 from ojarvis.voice.audio import FileSource, Frame, MemorySink, VirtualClock
-from ojarvis.voice.service import SENSITIVITY, EchoCancel, VoiceService
+from ojarvis.voice.service import SENSITIVITY, EchoCancel, VoiceService, list_devices
 from tests.conftest import Router
 from tests.voice.fakes import (
     FakeChat,
@@ -220,3 +223,28 @@ async def test_a_lost_microphone_is_reported_then_retried() -> None:
     await wait_until(lambda: service.status.error is not None)
     assert service.snapshot()["error"] == "Micro ou haut-parleur introuvable."
     await service.close()
+
+
+def test_devices_come_from_pipewire_with_readable_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing = {
+        "sources": [
+            {
+                "name": "alsa_input.pci",
+                "description": "(null)",
+                "properties": {"device.description": "Audio interne", "device.class": "sound"},
+            },
+            {"name": "alsa_output.pci.monitor", "properties": {"device.class": "monitor"}},
+            {"name": "ojarvis_micro", "description": "O-jarvis micro", "properties": {}},
+        ],
+        "sinks": [{"name": "alsa_output.pci", "description": "Haut-parleurs", "properties": {}}],
+    }
+
+    def fake_run(args: list[str], **_: Any) -> Any:
+        return types.SimpleNamespace(stdout=json.dumps(listing[args[-1]]))
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/pactl")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert list_devices() == {
+        "inputs": [{"name": "alsa_input.pci", "label": "Audio interne"}],
+        "outputs": [{"name": "alsa_output.pci", "label": "Haut-parleurs"}],
+    }

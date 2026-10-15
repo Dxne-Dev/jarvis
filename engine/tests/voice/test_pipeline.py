@@ -113,7 +113,8 @@ async def test_hey_jarvis_then_a_question_gets_a_spoken_answer() -> None:
     audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
     async with rig(audio) as r:
         await wait_until(lambda: r.pipeline.last_report is not None)
-        await wait_until(lambda: r.pipeline.state == VoiceState.IDLE)
+        # L'événement « veille » est publié par une tâche : on l'attend lui aussi.
+        await wait_until(lambda: r.states()[-1:] == ["idle"])
         report = r.pipeline.last_report
         assert report is not None
         assert report.text == "quelle heure est-il ?"
@@ -185,7 +186,9 @@ async def test_hey_jarvis_interrupts_a_slow_answer() -> None:
         await wait_until(lambda: "voice.interrupted" in r.types())
         interrupted = [e.payload["by"] for e in r.events if e.type == "voice.interrupted"]
         assert interrupted == ["mot de réveil"]
-        assert r.pipeline.state == VoiceState.LISTENING
+        # Après la coupure, Jarvis réécoute (l'horloge virtuelle a pu aller plus loin depuis).
+        states = r.states()
+        assert states[: states.index("thinking") + 2] == ["listening", "thinking", "listening"]
 
 
 async def test_hey_jarvis_alone_waits_for_the_question_then_sleeps() -> None:
@@ -250,3 +253,4 @@ async def test_interrupt_from_the_interface_goes_back_to_sleep() -> None:
         await r.pipeline.interrupt(by="ui")
         assert r.pipeline.state == VoiceState.IDLE
         assert r.sink.stopped >= 1
+
