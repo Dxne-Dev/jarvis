@@ -229,3 +229,17 @@ def test_a_turn_can_opt_out_of_learning(
 
     client.portal.call(voice_turn)  # type: ignore[union-attr]
     assert client.get("/v1/memory").json() == []
+
+
+def test_a_pasted_key_is_neither_stored_nor_sent(
+    client: TestClient, llm: dict[str, FakeProvider]
+) -> None:
+    key = "sk-" + "b" * 40
+    events = read_sse(client.post("/v1/chat", json={"text": f"Retiens ma clé {key}"}).text)
+    conversation = client.get(f"/v1/conversations/{events[0][1]['conversation_id']}").json()
+    assert key not in conversation["messages"][0]["content"]
+    assert "***" in conversation["messages"][0]["content"]
+    sent = llm["deepseek"].requests[-1][0].messages[-1].content
+    assert key not in sent
+    memory = client.post("/v1/memory", json={"kind": "fait", "content": f"Clé : {key}"}).json()
+    assert key not in memory["content"]

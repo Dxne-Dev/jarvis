@@ -23,6 +23,7 @@ from ojarvis.db.models import MemoryItem
 from ojarvis.events.bus import EventBus
 from ojarvis.memory.embeddings import Embedder, Vectors
 from ojarvis.memory.vectors import VectorIndex
+from ojarvis.security.redaction import REDACTOR
 
 log = get_logger(__name__)
 
@@ -121,6 +122,7 @@ class MemoryStore:
         pinned: bool = False,
     ) -> tuple[MemoryRecord, bool]:
         """Ajoute un souvenir, ou met à jour un quasi-doublon. Renvoie (souvenir, créé ?)."""
+        content = REDACTOR.redact(content)  # jamais de clé dans la mémoire
         if kind not in MEMORY_KINDS:
             raise InvalidInputError("Type de souvenir inconnu.")
         cleaned = _clean(content)
@@ -165,7 +167,7 @@ class MemoryStore:
     ) -> MemoryRecord:
         if kind is not None and kind not in MEMORY_KINDS:
             raise InvalidInputError("Type de souvenir inconnu.")
-        cleaned = _clean(content) if content is not None else None
+        cleaned = _clean(REDACTOR.redact(content)) if content is not None else None
 
         def write(session: Session) -> tuple[MemoryRecord, bool]:
             item = session.get(MemoryItem, item_id)

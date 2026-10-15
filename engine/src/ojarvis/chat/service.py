@@ -26,6 +26,7 @@ from ojarvis.llm.router import ModelRouter, RoutedStream
 from ojarvis.llm.structured import generate_structured
 from ojarvis.llm.types import LLMRequest, Message, RouteInfo, StreamEnd, TaskType, TextDelta, Usage
 from ojarvis.memory.store import MemoryStore
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
@@ -136,7 +137,8 @@ class ChatService:
     ) -> AsyncGenerator[ChatEvent]:
         """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
         (par exemple une transcription vocale douteuse)."""
-        cleaned = text.strip()
+        # Une clé collée par erreur n'est ni enregistrée en clair ni envoyée au modèle.
+        cleaned = REDACTOR.redact(text.strip())
         if not cleaned or len(cleaned) > MAX_INPUT_CHARS:
             raise InvalidInputError("Le message doit faire entre 1 et 8000 caractères.")
         if conversation_id:
@@ -256,7 +258,7 @@ class ChatService:
         route = turn.route
         return await self._conversations.finish_message(
             turn.assistant.id,
-            content="".join(turn.parts).strip(),
+            content=REDACTOR.redact("".join(turn.parts).strip()),
             status=status,
             provider=route.provider if route else None,
             model=route.model if route else None,

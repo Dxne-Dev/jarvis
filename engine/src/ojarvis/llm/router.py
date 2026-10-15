@@ -14,7 +14,7 @@ import asyncio
 import contextlib
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
@@ -42,6 +42,7 @@ from ojarvis.llm.types import (
     ToolCallReady,
     Usage,
 )
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
@@ -305,6 +306,7 @@ class ModelRouter:
             needs_vision=any(m.images for m in request.messages),
         )
         state = state or RoutedStream()
+        request = without_secrets(request)
         routes = self.routes(task, constraints)
         if not routes:
             raise NoRouteAvailableError(f"aucune route pour {task}")
@@ -483,6 +485,19 @@ class ModelRouter:
             ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
             provider_blocks=blocks,
         )
+
+
+def without_secrets(request: LLMRequest) -> LLMRequest:
+    """Aucune valeur du trousseau ni aucun format de clé connu ne part vers un modèle.
+
+    Tous les appels passent ici : message de l'utilisateur, souvenirs, historique,
+    et plus tard résultats d'outils. Une clé collée dans le chat devient « *** ».
+    """
+    messages = [
+        replace(message, content=REDACTOR.redact(message.content)) if message.content else message
+        for message in request.messages
+    ]
+    return replace(request, messages=messages)
 
 
 async def _first_event_within(
