@@ -267,6 +267,38 @@ async def automation_tomorrow(services: Services, home: Path, port: int) -> Outc
     return Outcome("automatisation ponctuelle", ok, detail, time.perf_counter() - start, names)
 
 
+async def github(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    start = time.perf_counter()
+    text, tools, plans = await converse(
+        services,
+        "Quelles sont les trois dernières issues ouvertes du dépôt github/github-mcp-server ?",
+    )
+    names = [t["name"] for t in tools]
+    used = [t for t in tools if t["name"] == "integration_appeler" and t["status"] == "done"]
+    ok = bool(used) and not plans
+    return Outcome("GitHub par MCP", ok, text[:220], time.perf_counter() - start, names)
+
+
+async def briefing(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    start = time.perf_counter()
+    run = await services.briefing.on_session_start(force=True)
+    if run is None:
+        return Outcome("briefing du matin", False, "pas lancé", time.perf_counter() - start)
+    for _ in range(300):
+        record = await services.workflows.get(run.id)
+        if record.status in ("done", "failed"):
+            break
+        await asyncio.sleep(0.2)
+    text = str(record.context.get("texte", ""))
+    ok = record.status == "done" and len(text) > 40
+    sources = sorted(record.context.get("sources", {}))
+    return Outcome(
+        "briefing du matin", ok, f"sources {sources} : {text[:300]}", time.perf_counter() - start
+    )
+
+
 SCENARIOS: dict[str, Any] = {
     "boutique": shop,
     "piege": trap,
@@ -275,6 +307,8 @@ SCENARIOS: dict[str, Any] = {
     "code": code,
     "automatisation": automation_daily,
     "rappel": automation_tomorrow,
+    "github": github,
+    "briefing": briefing,
 }
 
 

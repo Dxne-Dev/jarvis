@@ -45,6 +45,10 @@ step "Navigateur de Jarvis et bac à sable"
 # Image du bac à sable pour le code (si Docker est là ; sinon bubblewrap prend le relais).
 if have docker && docker info >/dev/null 2>&1; then
   docker pull --quiet python:3.12-alpine >/dev/null && echo "Bac à sable Docker prêt."
+  # Serveurs MCP officiels (GitHub, Notion) : versions épinglées dans integrations/manager.py.
+  docker pull --quiet ghcr.io/github/github-mcp-server:v1.12.2 >/dev/null &&
+    docker pull --quiet node:24.21.0-alpine3.24 >/dev/null &&
+    echo "Images des intégrations GitHub et Notion prêtes."
 else
   echo "Docker absent ou arrêté : le code tournera sous bubblewrap (bwrap)."
 fi
