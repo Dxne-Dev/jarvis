@@ -328,3 +328,27 @@ class McpServer(Base):
     enabled: Mapped[bool] = mapped_column(default=True)
     installed_at: Mapped[datetime]
     updated_at: Mapped[datetime]
+
+
+class AgentRunRecord(Base):
+    """Une mission confiée à un agent (dev, recherche, coach) : tâche, étapes, compte rendu."""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (Index("ix_agent_runs_started", "started_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    agent: Mapped[str] = mapped_column(String(16))
+    task: Mapped[str] = mapped_column(Text)
+    #: en_cours | fini | echec | interrompu
+    status: Mapped[str] = mapped_column(String(16))
+    #: chat (délégué par Jarvis) | interface (confié par toi)
+    origin: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(String(500))
+    #: Outils utilisés, dans l'ordre (nom, description, état).
+    steps: Mapped[list[dict[str, Any]]]
+    #: Plans proposés pendant la mission (ils attendent ta validation).
+    plans: Mapped[dict[str, Any]]
+    trace_id: Mapped[str | None] = mapped_column(String(32))
+    started_at: Mapped[datetime]
+    ended_at: Mapped[datetime | None]

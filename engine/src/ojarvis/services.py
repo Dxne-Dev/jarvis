@@ -19,6 +19,8 @@ from ojarvis import __version__
 from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.loop import Agent
 from ojarvis.agent.plans import PlanStore
+from ojarvis.agents.orchestrator import Orchestrator
+from ojarvis.agents.specialists import STARTERS
 from ojarvis.audit.journal import AuditJournal
 from ojarvis.automations.scheduler import AutomationScheduler
 from ojarvis.automations.steps import AutomationSteps
@@ -63,6 +65,7 @@ from ojarvis.skills.runner import SkillRunner
 from ojarvis.skills.service import SkillService
 from ojarvis.skills.store import SkillStore
 from ojarvis.telegram.bot import TelegramService
+from ojarvis.tools.agents import agent_tools
 from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
@@ -246,6 +249,51 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     )
 
 
+def _build_router(
+    providers: dict[str, Provider],
+    catalog: Catalog,
+    *,
+    bus: EventBus,
+    tracer: Tracer,
+    holder: dict[str, Preferences],
+    http: httpx.AsyncClient,
+) -> ModelRouter:
+    ollama = providers.get("ollama")
+    return ModelRouter(
+        providers,
+        catalog,
+        bus=bus,
+        tracer=tracer,
+        overrides=lambda: holder["value"].routing,
+        # Avant une demande « locale seulement », au plus une fois par minute.
+        refresh_local=(
+            functools.partial(ollama.refresh, http) if isinstance(ollama, OllamaProvider) else None
+        ),
+    )
+
+
+async def _assemble_agents(
+    acts: _Actions,
+    core: Agent,
+    *,
+    router: ModelRouter,
+    db: Database,
+    bus: EventBus,
+    tracer: Tracer,
+) -> Orchestrator:
+    """Les agents (dev, recherche, coach) passent par le même cœur : même porte, mêmes plans."""
+    orchestrator = Orchestrator(
+        {a.name: a(router=router, core=core) for a in STARTERS},
+        db=db,
+        bus=bus,
+        tracer=tracer,
+    )
+    for tool in agent_tools(orchestrator):
+        acts.tools.register(tool)
+    await orchestrator.recover()
+    return orchestrator
+
+
 async def _assemble_mcp(
     acts: _Actions,
     *,
@@ -343,6 +391,7 @@ class Services:
     google: GoogleAccount
     skills: SkillService
     mcp: McpRegistryService
+    orchestrator: Orchestrator
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -375,20 +424,7 @@ class Services:
             providers = {"deepseek": FakeProvider("deepseek", script=e2e_script, delay_s=0.05)}
         providers = providers if providers is not None else build_providers(secrets)
         holder: dict[str, Preferences] = {"value": preferences}
-        ollama = providers.get("ollama")
-        router = ModelRouter(
-            providers,
-            catalog,
-            bus=bus,
-            tracer=tracer,
-            overrides=lambda: holder["value"].routing,
-            # Avant une demande « locale seulement », au plus une fois par minute.
-            refresh_local=(
-                functools.partial(ollama.refresh, http)
-                if isinstance(ollama, OllamaProvider)
-                else None
-            ),
-        )
+        router = _build_router(providers, catalog, bus=bus, tracer=tracer, holder=holder, http=http)
         embedder = embedder or E5Embedder(
             config.paths.cache_dir / "models" / "multilingual-e5-small"
         )
@@ -401,7 +437,7 @@ class Services:
         acts = await _assemble_actions(
             config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
         )
-        journal, gate, plans, executor = acts.journal, acts.gate, acts.plans, acts.executor
+        core = Agent(gate=acts.gate, plans=acts.plans, bus=bus, executor=acts.executor)
         chat = ChatService(
             conversations=conversations,
             memory=memory,
@@ -410,7 +446,10 @@ class Services:
             tracer=tracer,
             bus=bus,
             learn=preferences.learn_from_conversations,
-            agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
+            agent=core,
+        )
+        orchestrator = await _assemble_agents(
+            acts, core, router=router, db=db, bus=bus, tracer=tracer
         )
         google, telegram = await _assemble_remote(acts, http, secrets, backend, bus, chat)
         mcp = await _assemble_mcp(acts, http=http, db=db, backend=backend, config=config, bus=bus)
@@ -458,11 +497,11 @@ class Services:
             context=context,
             chat=chat,
             voice=voice,
-            journal=journal,
+            journal=acts.journal,
             tools=acts.tools,
-            gate=gate,
-            plans=plans,
-            executor=executor,
+            gate=acts.gate,
+            plans=acts.plans,
+            executor=acts.executor,
             browser=acts.browser,
             sandbox=acts.sandbox,
             guard=acts.guard,
@@ -475,9 +514,10 @@ class Services:
             google=google,
             skills=acts.skills,
             mcp=mcp,
+            orchestrator=orchestrator,
         )
         services._holder = holder
-        await executor.recover()
+        await acts.executor.recover()
         acts.workflows.handlers.update(
             AutomationSteps(store=acts.automations, chat=chat, notifier=acts.notifier).handlers()
         )
@@ -587,6 +627,7 @@ class Services:
         await self.bus.publish("engine.stopping", {})
         await self.voice.close()
         await self.chat.close()
+        await self.orchestrator.close()
         await self.telegram.close()
         await self.integrations.close()
         await self.google.close()
