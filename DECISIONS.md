@@ -124,6 +124,18 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Briefing à la première session du jour = première ouverture de l'app** (annoncée par l'interface) ; date notée tout de suite (deux fenêtres → un seul briefing) ; c'est un workflow (rassembler, rédiger, dire) ; la voix sait dire un texte d'elle-même, interruptible.
 - **Interface : relecture complète à chaque reconnexion du flux d'événements** — une coupure faisait manquer des événements (un test a échoué une fois en CI).
 
+## Jarvis contrôle le PC (phase 5, 15/10/2026)
+
+- **Désactivé par défaut, une seule marque sur les outils** (`os_control`) — tant que le réglage est éteint, la porte refuse ces outils et le modèle ne les voit pas ; il sait dire où l'activer. L'activer demande une confirmation dans Réglages ; chaque changement est journalisé (niveau 3, par toi).
+- **Capture : portail `org.freedesktop.portal.Screenshot` sous Wayland (jeepney), `mss` sous X11** — GNOME 50 n'a plus de session X11 et Wayland interdit la lecture directe de l'écran. Mesuré : 1366 × 768 en 4,1 s, sans boîte de dialogue. Le fichier écrit par le portail est effacé dès sa lecture.
+- **Lecture de l'écran en local par défaut (`ministral-3:3b`, image de 768 px)** — un écran peut montrer un secret qu'aucun filtre ne sait masquer dans une image, et les offres gratuites en ligne peuvent garder ce qu'elles reçoivent. Mesuré sur une capture de test : juste (« 1 045 € ») ; 30 s modèle chargé, 94 s pour une nouvelle image de 768 px, plus de 2 min à froid. À 512 px, c'est plus rapide (34 s), mais un texte de 13 px sur l'écran tombe à 5 px.
+- **« En ligne » au choix (OpenRouter, 1 600 px), repli local** — rapide quand OpenRouter répond ; l'offre gratuite renvoie souvent 429 : l'écran est alors relu en local avec l'image de 768 px (en 1 600 px, le modèle local dépassait son délai).
+- **Ollama revérifié avant une demande « locale seulement »** (au plus une fois par minute) — juste après le démarrage, ou si Ollama démarre après le moteur, la lecture locale échouait (« aucun modèle disponible »).
+- **Ouvrir : `gtk-launch -- <identifiant>`** — l'entrée du menu telle quelle, comme GNOME, sous Wayland comme sous X11 ; jamais de shell, jamais `Exec` interprété par Jarvis ; `--` empêche un identifiant de passer pour une option.
+- **Noms traduits par gettext** — sous Ubuntu, 86 fichiers `.desktop` sur 126 n'ont pas de `Name[fr]` : le nom français vient du catalogue désigné par `X-Ubuntu-Gettext-Domain` (ou `X-GNOME-Gettext-Domain`). Le nom d'origine reste reconnu ; un nom de catalogue qui sortirait du dossier des traductions est ignoré.
+- **Fermer : SIGTERM, tes processus seulement, jamais un processus protégé** — session, shells, Python, Jarvis, lanceurs partagés (`flatpak`, `snap`, `env`). Une application lancée par un script (Chrome, LibreOffice, VS Code) est reconnue à son dossier, jamais un dossier partagé (`/usr/bin`, ton dossier personnel). Les entrées du menu qui partagent ce programme sont nommées à la validation.
+- **Fichiers : déplacer, copier, créer un dossier = niveau 2** — mêmes garde-fous que la phase 3 (dossier personnel, dossiers sensibles refusés, liens suivis avant la vérification).
+
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.

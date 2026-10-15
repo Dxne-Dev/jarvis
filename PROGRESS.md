@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**4 — Jarvis s'organise.** Terminée : une automatisation survit à un redémarrage ; le briefing se joue à la première session du jour ; un message Telegram est traité (API simulée ; le vrai bot répond, l'essai depuis ton téléphone est dans la checklist). PR `dev → main` ouverte. Prochaine : phase 5.
+**5 — Contrôle du PC.** Terminée : une application s'ouvre après validation (vrai modèle, vraie calculatrice) ; « regarde mon écran » décrit correctement une capture de test, en local et en ligne ; tests de sécurité OS verts. Les commits s'ajoutent à la PR #3 (`dev → main`). Prochaine : phase 6.
 
 ## Fait
 
@@ -45,16 +45,26 @@
 - Briefing du matin à la première session du jour.
 - Docs : `docs/journal/04-jarvis-s-organise.md`, sécurité, architecture, checklist.
 
+### Phase 5 — Contrôle du PC (15/10/2026)
+- Applications : index du menu (noms traduits comme dans Ubuntu), ouvrir (`gtk-launch`), fermer (SIGTERM, tes processus seulement, programmes lancés par un script reconnus), voir ce qui est ouvert.
+- Écran : portail Wayland, X11 en direct ; « regarde mon écran » lu en local par défaut (Ollama), en ligne au choix avec repli local.
+- Fichiers : déplacer, copier, créer un dossier, avec les garde-fous de la phase 3.
+- Contrôle du PC désactivé par défaut ; activé après confirmation (Réglages → Contrôle du PC) ; chaque changement journalisé ; Jarvis sait dire où l'activer.
+- Docs : `docs/journal/05-controle-du-pc.md`, sécurité, architecture, checklist.
+
 ## Ensuite
 
-1. Phase 5 — Contrôle du PC : ouvrir et fermer des applications, gérer des fichiers, lire l'écran (X11 et Wayland, portails), « regarde mon écran » (vision), contrôle de l'OS désactivé par défaut.
+1. Phase 6 — Jarvis s'étend : registre MCP, registre de skills, auto-extension contrôlée (sandbox, double confirmation), agents (`BaseAgent`, orchestrateur, dev, recherche, coach), mémoire graphe et sa vue, apprentissage, anticipation.
 
 ## Problèmes ouverts
 
 - Deux moteurs orphelins d'une ancienne tentative tournent encore (PID 53438 et 56076, ports 8765 et 40227) : sans effet, à arrêter avec `kill 53438 56076`.
 - `braces` (outil de lint) a une faille « haute » sans correctif : accepté, voir `DECISIONS.md`.
 - Mot de réveil prononcé avec l'accent français d'espeak-ng : non détecté (0/4) ; les voix naturelles le sont. À confirmer au vrai micro (checklist).
-- OpenRouter gratuit renvoie souvent 429 : il ne sert que de second repli.
+- OpenRouter gratuit renvoie souvent 429 : il ne sert que de second repli ; pour l'écran « en ligne », la lecture repasse en local.
+- Lecture locale de l'écran lente sur cette machine (30 s à 2 min) : c'est le prix du « rien ne sort ».
+- Une application Flatpak ne se ferme pas (son lanceur `flatpak` est protégé) : aucune n'est installée ici ; `flatpak kill` serait la voie.
+- Bout en bout : 3 échecs au tout premier passage après des changements (sans doute la première compilation de Vite), puis 3 passages verts de suite ; à surveiller en CI.
 
 ## Vérifications
 
@@ -108,3 +118,11 @@
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 48 tests |
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 16/16 ; aucune violation sérieuse |
 | 15/10 | `pip-audit` | aucune faille (mcp 2.3, jsonschema 4.26) |
+| 15/10 | Capture d'écran par le portail Wayland (machine réelle) | 1366 × 768 en 4,1 s, sans boîte de dialogue ; fichier effacé |
+| 15/10 | Banc « application » avec le vrai DeepSeek | désactivé : il le dit et indique Réglages ; activé : plan, validation, calculatrice ouverte puis fermée |
+| 15/10 | Banc « écran » sur une capture de test (total 1 045 €) | local : juste en 30 s ; en ligne : OpenRouter 429 → repli local juste en 136 s |
+| 15/10 | Sécurité du contrôle du PC | désactivé par défaut ; outils refusés et invisibles ; écran piégé → plan signalé en attente ; changements journalisés ; processus protégés |
+| 15/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 532 tests ; couverture 89 % |
+| 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 49 tests |
+| 15/10 | Bout en bout Playwright + vrai moteur + axe | 17/17 ; aucune violation sérieuse |
+| 15/10 | `pip-audit` / `pnpm audit --prod` | aucune faille (pillow, mss, jeepney compris) |

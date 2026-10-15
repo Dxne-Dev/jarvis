@@ -45,3 +45,12 @@ Ce que je ne peux pas vérifier seul. Coche au fur et à mesure.
 - [ ] Dire « Hey Jarvis, rappelle-moi dans dix minutes de m'étirer » : valider le plan ; le rappel arrive à l'heure (app et téléphone).
 - [ ] Le lendemain matin, ouvrir l'app : le briefing se dit à voix haute.
 - [ ] Laisser une automatisation « chaque jour à … » active, éteindre le PC à l'heure dite, le rallumer moins de 6 h après : elle est rattrapée.
+
+## Phase 5 — Contrôle du PC
+
+- [ ] Réglages → Contrôle du PC : il est « Désactivé » ; « Activer… » ouvre une confirmation ; « Annuler » ne change rien ; « Activer » l'active.
+- [ ] Dire « Hey Jarvis, ouvre la calculatrice » : un plan attend ; après « Valider », la calculatrice s'ouvre.
+- [ ] « Ferme la calculatrice » : un plan attend ; après « Valider », elle se ferme.
+- [ ] Avec une page ou un document ouvert, dire « Hey Jarvis, regarde mon écran » : la description (lecture sur ce PC, compter 30 s à 2 min) correspond à ce que tu vois.
+- [ ] Choisir « En ligne », redemander : la réponse arrive plus vite (ou, si OpenRouter est saturé, la lecture repasse sur ce PC).
+- [ ] Désactiver le contrôle du PC, redemander « ouvre la calculatrice » : Jarvis répond qu'il ne peut pas.

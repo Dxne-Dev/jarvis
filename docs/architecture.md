@@ -109,6 +109,22 @@ flowchart LR
 - **Telegram** (`telegram/`) : écoute par « long polling », seul ton identifiant est servi.
 - **Briefing** (`briefing/`) : à la première session du jour, un workflow rassemble, rédige, puis dit.
 
+## Jarvis contrôle le PC
+
+```mermaid
+flowchart LR
+  R["Réglages<br/>contrôle du PC"] -- "activé ?" --> P{"Porte des<br/>permissions"}
+  M["Modèle"] --> P
+  P -- "ouvrir / fermer<br/>(plan validé)" --> A["Applications<br/>gtk-launch, SIGTERM"]
+  P -- "regarder (lecture)" --> S["Capture<br/>portail Wayland ou X11"]
+  S --> V["Vision<br/>Ollama (défaut) ou OpenRouter"]
+  V -- "description encadrée<br/>&lt;donnees&gt;" --> M
+```
+
+- **Applications** (`desktop/apps.py`) : index du menu (fichiers `.desktop`, noms traduits), ouverture par `gtk-launch`, fermeture par SIGTERM de tes seuls processus.
+- **Écran** (`desktop/screen.py`) : portail `xdg-desktop-portal` sous Wayland, `mss` sous X11 ; image réduite en JPEG, jamais gardée.
+- **Outils** (`tools/desktop.py`) : marqués « contrôle du PC » ; la porte les refuse tant que le réglage est éteint.
+
 ## Qui protège quoi
 
 | Menace | Protection |
@@ -128,6 +144,10 @@ flowchart LR
 | Un inconnu écrit au bot Telegram | Ignoré et journalisé ; seul ton identifiant est servi |
 | Une destruction validée depuis le téléphone | Impossible : la double confirmation n'existe que dans l'app |
 | Un serveur MCP tiers | Conteneur sans privilèges, version épinglée, niveaux tirés de ses annotations |
+| Jarvis touche au PC sans ton accord | Contrôle du PC désactivé par défaut ; outils refusés par la porte ; changement journalisé |
+| Ton écran part en ligne | Lecture locale par défaut ; « en ligne » est un choix explicite |
+| Un texte à l'écran donne des ordres | Description encadrée comme donnée ; toute action passe par un plan signalé |
+| Fermer la session ou Jarvis par erreur | Processus protégés ; tes processus seulement ; programme partagé annoncé à la validation |
 
 ## Où sont les données
 
@@ -152,6 +172,7 @@ flowchart LR
 | `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base, modèles, mémoire, contexte, chat, voix |
 | `engine/src/ojarvis/{tools,permissions,agent,audit,browser,sandbox}` | Outils, porte des permissions, plans et exécuteur, journal, navigateur, bac à sable |
 | `engine/src/ojarvis/{automations,workflows,integrations,telegram,briefing}` | Automatisations, workflows, intégrations MCP, Telegram, briefing |
-| `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit ») |
+| `engine/src/ojarvis/desktop` | Applications et capture d'écran (contrôle du PC) |
+| `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit », contrôle du PC) |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |

@@ -7,8 +7,10 @@ Jarvis peut lire, agir et détruire pour toi. Cette page dit qui décide de quoi
 | Niveau | Exemples | Qui décide |
 |---|---|---|
 | 1 · Lecture | chercher sur le web, lire une page ou un fichier, lister un dossier, lancer du code en bac à sable | Jarvis, seul |
-| 2 · Action | cliquer, remplir un champ, écrire un fichier, utiliser ta session sur un site | toi : un plan à valider |
+| 2 · Action | cliquer, remplir un champ, écrire un fichier, utiliser ta session sur un site, ouvrir ou fermer une application | toi : un plan à valider |
 | 3 · Destruction | mettre un fichier à la corbeille, (plus tard) installer un skill, changer une permission | toi, deux fois |
+
+Lire l'écran est une lecture (niveau 1), mais tout ce qui touche au PC (applications, fichiers rangés, écran) n'existe qu'une fois le contrôle du PC activé (voir plus bas).
 
 Le niveau de chaque outil est fixé dans le code et visible dans Réglages → Permissions. Il peut dépendre des arguments : ouvrir une page est de niveau 1, sauf sur un domaine où Jarvis a ta session (niveau 2).
 
@@ -53,6 +55,15 @@ Le navigateur de Jarvis et la lecture de pages passent par un proxy local (`brow
 ## Les fichiers
 
 Seulement dans ton dossier personnel, et jamais dans : `.ssh`, `.gnupg`, trousseaux, profils de navigateurs, `.aws`, `.kube`, `.docker`, la configuration de `gh`, les données d'O-jarvis ; ni les fichiers `.env`, `.netrc`, `*.pem`, `*.key`, `id_*`… Les liens symboliques sont suivis avant la vérification. Supprimer, c'est mettre à la corbeille.
+
+## Le contrôle du PC
+
+Désactivé par défaut. Tant qu'il l'est, les outils du PC (applications, déplacer ou copier des fichiers, lire l'écran) ne sont pas proposés au modèle et la porte les refuse, même appelés directement. L'activer passe par une confirmation dans Réglages ; l'activer, le désactiver ou choisir la lecture de l'écran en ligne est écrit au journal (niveau 3, par toi).
+
+- **Ouvrir** : `gtk-launch -- <identifiant>`, comme le menu d'Ubuntu ; jamais de shell, jamais la commande `Exec` interprétée par Jarvis. Ouvrir est une action : un plan à valider.
+- **Fermer** : SIGTERM (l'application peut demander d'enregistrer), seulement à tes processus, et jamais à la session, à un shell, à Python, à Jarvis ni à un lanceur partagé (`flatpak`, `snap`). Si d'autres entrées du menu partagent le programme (Chrome et ses applis web), l'écran de validation le dit.
+- **L'écran** : la capture passe par le portail du bureau sous Wayland ; le fichier écrit par le portail est effacé dès qu'il est lu ; rien n'est gardé ni écrit dans les traces. Par défaut, elle est lue **en local** (Ollama) : aucun filtre ne sait masquer un secret affiché dans une image, et les offres gratuites en ligne peuvent garder ce qu'on leur envoie. « En ligne » (OpenRouter) est un choix explicite ; la description qui revient est une donnée encadrée, et ses secrets connus sont masqués avant d'aller au modèle principal.
+- **Les fichiers** : déplacer, copier et créer suivent les règles des fichiers ci-dessus (dossier personnel seulement, dossiers sensibles refusés) ; ce sont des actions à valider.
 
 ## Le code
 
