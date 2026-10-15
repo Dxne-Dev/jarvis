@@ -43,6 +43,12 @@ function common(path: string): [number, unknown] | null {
   if (path.startsWith("/v1/plans")) return [200, []];
   if (path === "/v1/browser") return [200, { sources: [], grants: [], login_domain: null }];
   if (path === "/v1/tools") return [200, []];
+  if (path === "/v1/integrations") return [200, []];
+  if (path === "/v1/telegram")
+    return [
+      200,
+      { configured: false, connected: false, bot: null, last_error: null, handled: 0, rejected: 0 },
+    ];
   if (path === "/v1/llm/status") return [200, []];
   if (path === "/v1/llm/models") return [200, []];
   if (path === "/v1/voice/status") return [200, VOICE];

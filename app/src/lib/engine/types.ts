@@ -54,6 +54,7 @@ export interface Preferences {
   voice_follow_up: boolean;
   voice_barge_in: boolean;
   voice_headset: boolean;
+  briefing_enabled: boolean;
 }
 
 export type VoicePhase =
@@ -402,4 +403,28 @@ export interface AutomationDraft {
   name: string;
   trigger: AutomationTrigger;
   action: AutomationAction;
+}
+
+// ---------------------------------------------------------------- intégrations
+
+export interface Integration {
+  name: "github" | "notion" | "agenda";
+  label: string;
+  about: string;
+  configured: boolean;
+  status: "arrêté" | "connexion" | "prêt" | "erreur";
+  error: string | null;
+  tools: number;
+  detail: string | null;
+  account_configured?: boolean;
+  account_connected?: boolean;
+}
+
+export interface TelegramStatus {
+  configured: boolean;
+  connected: boolean;
+  bot: string | null;
+  last_error: string | null;
+  handled: number;
+  rejected: number;
 }

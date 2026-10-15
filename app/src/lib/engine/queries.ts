@@ -10,6 +10,8 @@ import type {
   BrowserGrant,
   BrowserState,
   CartesiaVoice,
+  Integration,
+  TelegramStatus,
   CheckResult,
   Conversation,
   ConversationDetail,
@@ -498,5 +500,67 @@ export function useRunAutomation() {
     mutationFn: (id: string) =>
       requireClient(client).post<AutomationRun>(`/v1/automations/${encodeURIComponent(id)}/run`),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["automations"] }),
+  });
+}
+
+// ---------------------------------------------------------------- intégrations et téléphone
+
+export function useIntegrations() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["integrations"],
+    queryFn: () => requireClient(client).get<Integration[]>("/v1/integrations"),
+    enabled: client !== null,
+    refetchInterval: (query) =>
+      query.state.data?.some((i) => i.status === "connexion") ? 2000 : false,
+  });
+}
+
+export function useReconnectIntegration() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      requireClient(client).post<Integration[]>(
+        `/v1/integrations/${encodeURIComponent(name)}/reconnect`,
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["integrations"] }),
+  });
+}
+
+export function useGoogleAccount() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    /** « connect » rend l'adresse de la page de consentement de Google. */
+    mutationFn: async (action: "connect" | "disconnect"): Promise<string | null> => {
+      if (action === "connect") {
+        const { url } = await requireClient(client).post<{ url: string }>(
+          "/v1/integrations/google/connect",
+        );
+        return url;
+      }
+      await requireClient(client).post<Integration[]>("/v1/integrations/google/disconnect");
+      return null;
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["integrations"] }),
+  });
+}
+
+export function useTelegram() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["telegram"],
+    queryFn: () => requireClient(client).get<TelegramStatus>("/v1/telegram"),
+    enabled: client !== null,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useStartBriefing() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: (force: boolean) =>
+      requireClient(client).post<{ briefing: string | null }>("/v1/session", { force }),
   });
 }

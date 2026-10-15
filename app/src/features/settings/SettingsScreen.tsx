@@ -5,6 +5,7 @@ import { useSecrets, useStatus } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
 import { BrowserSection } from "./BrowserSection";
+import { IntegrationsSection } from "./IntegrationsSection";
 import { ModelsSection } from "./ModelsSection";
 import { PermissionsSection } from "./PermissionsSection";
 import { Choice } from "./PreferenceControls";
@@ -103,6 +104,12 @@ export function SettingsScreen() {
           Voix
         </h2>
         <VoiceSection />
+      </section>
+      <section className={styles.section} aria-labelledby="integrations">
+        <h2 id="integrations" className={styles.sectionTitle}>
+          Intégrations et téléphone
+        </h2>
+        <IntegrationsSection />
       </section>
       <section className={styles.section} aria-labelledby="navigateur">
         <h2 id="navigateur" className={styles.sectionTitle}>
