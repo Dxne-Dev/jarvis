@@ -5,7 +5,7 @@ import { describeError } from "../../lib/engine/client";
 import { useConversation } from "../../lib/engine/queries";
 import { readEvents } from "../../lib/engine/sse";
 import { useEngineClient } from "../../lib/engine/store";
-import type { ContextItemSummary, StoredMessage } from "../../lib/engine/types";
+import type { ContextItemSummary, StoredMessage, ToolActivity } from "../../lib/engine/types";
 import type { SphereState } from "../sphere/states";
 
 export interface TurnMeta {
@@ -27,6 +27,10 @@ export interface ChatItem {
   meta: TurnMeta | null;
   context: ContextItemSummary[] | null;
   error: string | null;
+  /** Outils utilisés pendant le tour (lecture d'une page, recherche…). */
+  tools: ToolActivity[];
+  /** Plans proposés pendant le tour : ils attendent ta décision. */
+  plans: string[];
 }
 
 export type ChatPhase = "idle" | "waiting" | "streaming";
@@ -52,7 +56,16 @@ function fromStored(message: StoredMessage): ChatItem {
         : null,
     context: null,
     error: message.status === "error" ? "La réponse n'a pas pu aboutir." : null,
+    tools: message.meta?.tools ?? [],
+    plans: message.meta?.plans ?? [],
   };
+}
+
+/** Ajoute ou met à jour l'activité d'un outil (même appel : même identifiant). */
+function upsertTool(tools: ToolActivity[], tool: ToolActivity): ToolActivity[] {
+  const index = tools.findIndex((t) => t.id === tool.id);
+  if (index === -1) return [...tools, tool];
+  return tools.map((t, i) => (i === index ? { ...t, ...tool } : t));
 }
 
 /**
@@ -102,6 +115,8 @@ export function useChat(conversationId: string | null, onConversation: (id: stri
           meta: null,
           context: null,
           error: null,
+          tools: [],
+          plans: [],
         },
         {
           key: replyKey,
@@ -112,6 +127,8 @@ export function useChat(conversationId: string | null, onConversation: (id: stri
           meta: null,
           context: null,
           error: null,
+          tools: [],
+          plans: [],
         },
       ]);
       setPhase("waiting");
@@ -119,6 +136,8 @@ export function useChat(conversationId: string | null, onConversation: (id: stri
       abortRef.current = controller;
       let content = "";
       let fallbackFrom: string | null = null;
+      let tools: ToolActivity[] = [];
+      const plans: string[] = [];
       try {
         const response = await client.stream(
           "/v1/chat",
@@ -141,6 +160,21 @@ export function useChat(conversationId: string | null, onConversation: (id: stri
               break;
             case "route":
               fallbackFrom = event.fallback_from;
+              break;
+            case "tool":
+              tools = upsertTool(tools, {
+                id: event.id,
+                name: event.name,
+                description: event.description,
+                status: event.status,
+                ...(event.level === undefined ? {} : { level: event.level }),
+                ...(event.error === undefined ? {} : { error: event.error }),
+              });
+              patchLive(replyKey, { tools });
+              break;
+            case "plan":
+              if (!plans.includes(event.id)) plans.push(event.id);
+              patchLive(replyKey, { plans: [...plans] });
               break;
             case "delta":
               content += event.text;

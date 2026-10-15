@@ -1,4 +1,5 @@
 import { CheckCircle2, CircleDashed, XCircle } from "lucide-react";
+import { Tabs } from "radix-ui";
 import { useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -8,6 +9,7 @@ import { useTrace, useTraces } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { Span, TraceDetail, TraceSummary } from "../../lib/engine/types";
 import { formatDateTime, formatDuration, formatRelative } from "../../lib/format";
+import { AuditPanel } from "./AuditPanel";
 import styles from "./JournalScreen.module.css";
 
 const KIND_LABEL: Record<string, string> = {
@@ -163,14 +165,29 @@ export function JournalScreen() {
     <div className={styles.page}>
       <PageHeader
         title="Journal et traces"
-        description="Chaque requête suivie étape par étape : durée, modèle, coût."
+        description="Les actions que Jarvis a faites pour toi, et chaque requête suivie étape par étape."
       />
-      <div className={styles.columns}>
-        <section aria-label="Liste des traces">{list}</section>
-        <section aria-label="Détail de la trace">
-          <TraceDetailPanel id={selected} />
-        </section>
-      </div>
+      <Tabs.Root defaultValue="traces">
+        <Tabs.List className={styles.tabs} aria-label="Journal">
+          <Tabs.Trigger value="traces" className={styles.tab}>
+            Traces
+          </Tabs.Trigger>
+          <Tabs.Trigger value="actions" className={styles.tab}>
+            Actions
+          </Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="traces" className={styles.tabPanel}>
+          <div className={styles.columns}>
+            <section aria-label="Liste des traces">{list}</section>
+            <section aria-label="Détail de la trace">
+              <TraceDetailPanel id={selected} />
+            </section>
+          </div>
+        </Tabs.Content>
+        <Tabs.Content value="actions" className={styles.tabPanel}>
+          <AuditPanel />
+        </Tabs.Content>
+      </Tabs.Root>
     </div>
   );
 }

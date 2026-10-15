@@ -1,8 +1,9 @@
-import { BrainCircuit, History, Orbit, ScrollText, Settings2 } from "lucide-react";
+import { BrainCircuit, History, ListChecks, Orbit, ScrollText, Settings2 } from "lucide-react";
 import { useEffect, type ComponentType, type SVGProps } from "react";
 import { NavLink, Outlet } from "react-router";
 
 import { quitApp } from "../lib/engine/connection";
+import { usePlans } from "../lib/engine/queries";
 import { useEngineStore } from "../lib/engine/store";
 import { useReducedMotion } from "../lib/motion";
 import { Notices } from "./Notices";
@@ -18,6 +19,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "Accueil", icon: Orbit },
   { to: "/historique", label: "Historique", icon: History },
   { to: "/memoire", label: "Mémoire", icon: BrainCircuit },
+  { to: "/actions", label: "Actions à valider", icon: ListChecks },
   { to: "/journal", label: "Journal et traces", icon: ScrollText },
   { to: "/reglages", label: "Réglages", icon: Settings2 },
 ];
@@ -75,6 +77,19 @@ function useQuitShortcut() {
   }, []);
 }
 
+/** Nombre de plans qui attendent ta décision (affiché à côté de « Actions à valider »). */
+function PendingBadge() {
+  const pending = usePlans("pending");
+  const count = pending.data?.length ?? 0;
+  if (count === 0) return null;
+  return (
+    <span className={styles.badge}>
+      {count}
+      <span className="visually-hidden"> en attente</span>
+    </span>
+  );
+}
+
 export function Shell() {
   useReducedMotion();
   useQuitShortcut();
@@ -101,6 +116,7 @@ export function Shell() {
               >
                 <Icon className={styles.linkIcon} aria-hidden="true" />
                 <span className={styles.linkLabel}>{label}</span>
+                {to === "/actions" && <PendingBadge />}
               </NavLink>
             </li>
           ))}
