@@ -49,6 +49,8 @@ class Preferences(BaseModel):
     #: Couper Jarvis en parlant (avec l'annulation d'écho ou un casque).
     voice_barge_in: bool = True
     voice_headset: bool = False
+    #: Briefing du matin : à la première session du jour, Jarvis résume ta journée.
+    briefing_enabled: bool = True
 
     @field_validator("voice_stt", mode="before")
     @classmethod
@@ -89,6 +91,23 @@ class SettingsStore:
 
     async def get(self) -> Preferences:
         return await self._db.run(self._read)
+
+    async def get_state(self, key: str) -> Any:
+        """État interne du moteur (ex. date du dernier briefing), hors préférences."""
+
+        def read(session: Session) -> Any:
+            row = session.get(Setting, f"etat.{key}")
+            return json.loads(row.value) if row is not None else None
+
+        return await self._db.run(read)
+
+    async def set_state(self, key: str, value: Any) -> None:
+        now = utc_now()
+
+        def write(session: Session) -> None:
+            session.merge(Setting(key=f"etat.{key}", value=json.dumps(value), updated_at=now))
+
+        await self._db.run(write)
 
     async def update(self, changes: dict[str, Any]) -> tuple[Preferences, list[str]]:
         unknown = sorted(set(changes) - set(Preferences.model_fields))

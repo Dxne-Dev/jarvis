@@ -84,6 +84,7 @@ def create_app(
     app.include_router(routes_voice.router)
     app.include_router(routes_agent.router)
     app.include_router(routes_automations.router)
+    app.include_router(routes_automations.session_router)
     app.include_router(routes_integrations.router)
 
     # Ordre : le dernier ajouté est le plus externe.

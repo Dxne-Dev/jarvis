@@ -187,6 +187,38 @@ class VoicePipeline:
         """Parler sans mot de réveil (raccourci clavier, bouton micro) ; coupe Jarvis s'il parle."""
         self._listen_request = True
 
+    def say(self, text: str) -> bool:
+        """Dire un texte de lui-même (ex. le briefing du matin), seulement s'il est en veille.
+
+        On peut l'interrompre comme une réponse : « Hey Jarvis » ou en parlant."""
+        if self._state != VoiceState.IDLE or self._turn is not None or not text.strip():
+            return False
+        self._turn = asyncio.ensure_future(self._speak(text))
+        return True
+
+    async def _speak(self, text: str) -> None:
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        splitter = SentenceSplitter()
+        for sentence in [*splitter.feed(text), *splitter.flush()]:
+            queue.put_nowait(sentence)
+        queue.put_nowait(None)
+        self._set_state(VoiceState.SPEAKING)
+        self._sink.begin()
+        try:
+            async with contextlib.aclosing(
+                self._tts.stream(_sentences(queue, self._bus))
+            ) as chunks:
+                async for chunk in chunks:
+                    await self._sink.play(chunk.pcm, chunk.rate)
+            await self._sink.drain()
+        except TTSError as error:
+            log.warning("tts_failed", error=str(error))
+        finally:
+            if self._turn is asyncio.current_task():
+                self._turn = None
+            if self._state == VoiceState.SPEAKING:
+                self._go_idle()
+
     async def interrupt(self, *, by: str = "ui") -> None:
         """Coupe la réponse en cours et revient en veille."""
         if self._turn is not None or self._listening is not None:

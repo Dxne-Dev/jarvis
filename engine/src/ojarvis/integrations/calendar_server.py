@@ -28,7 +28,7 @@ def _parse_day(value: str | None, tz: tzinfo) -> datetime:
     return parsed
 
 
-def _event_line(event: dict[str, Any], tz: tzinfo) -> str:
+def event_line(event: dict[str, Any], tz: tzinfo) -> str:
     start = event.get("start", {})
     end = event.get("end", {})
     title = event.get("summary") or "(sans titre)"
@@ -87,7 +87,7 @@ def build_server(http: httpx.AsyncClient, token: Callable[[], Awaitable[str]]) -
         events = await list_events(
             http, await token(), start=start, end=end, calendar=calendrier, tz=tz
         )
-        return "\n".join(_event_line(e, tz) for e in events) or "Aucun événement."
+        return "\n".join(event_line(e, tz) for e in events) or "Aucun événement."
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False))
     async def creer_evenement(
@@ -110,7 +110,7 @@ def build_server(http: httpx.AsyncClient, token: Callable[[], Awaitable[str]]) -
             timeout=20.0,
         )
         response.raise_for_status()
-        return f"Événement créé : {_event_line(response.json(), tz)}"
+        return f"Événement créé : {event_line(response.json(), tz)}"
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True))
     async def supprimer_evenement(identifiant: str) -> str:

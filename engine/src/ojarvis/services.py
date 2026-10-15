@@ -22,6 +22,7 @@ from ojarvis.audit.journal import AuditJournal
 from ojarvis.automations.scheduler import AutomationScheduler
 from ojarvis.automations.steps import AutomationSteps
 from ojarvis.automations.store import AutomationStore
+from ojarvis.briefing.service import BriefingService
 from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.service import BrowserAccess
 from ojarvis.browser.vault import CookieVault
@@ -287,6 +288,7 @@ class Services:
     telegram: TelegramService
     integrations: IntegrationManager
     google: GoogleAccount
+    briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -408,6 +410,20 @@ class Services:
         acts.workflows.handlers.update(
             AutomationSteps(store=acts.automations, chat=chat, notifier=acts.notifier).handlers()
         )
+        services.briefing = BriefingService(
+            settings=settings,
+            workflows=acts.workflows,
+            router=router,
+            conversations=conversations,
+            automations=acts.automations,
+            integrations=acts.integrations,
+            google=google,
+            voice=voice,
+            notifier=acts.notifier,
+            bus=bus,
+            http=http,
+        )
+        acts.workflows.handlers.update(services.briefing.handlers())
         await acts.workflows.start()
         await acts.scheduler.start()
         # Telegram : seulement pour un vrai lancement (un banc d'essai ou un test ne doit pas

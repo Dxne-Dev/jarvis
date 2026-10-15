@@ -368,3 +368,29 @@ async def test_when_groq_fails_the_recorded_sentence_goes_to_cartesia() -> None:
         assert report.stt_engine == "cartesia"
         assert r.stt.calls == []  # Whisper local n'a pas servi
         assert streaming.streams[0].samples > 16_000  # la phrase entière, d'un bloc
+
+
+async def test_jarvis_can_say_a_text_on_his_own_when_idle() -> None:
+    audio = build_audio(("silence", 3.0))
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.frames_seen > 2)
+        assert r.pipeline.say("Bonjour Octave. Voici ta journée.")
+        assert not r.pipeline.say("Pas deux à la fois.")
+        await wait_until(lambda: r.states()[-1:] == ["idle"] and "speaking" in r.states())
+        assert r.tts.sentences == ["Bonjour Octave.", "Voici ta journée."]
+        captions = [e.payload["text"] for e in r.events if e.type == "voice.sentence"]
+        assert captions == ["Bonjour Octave.", "Voici ta journée."]
+        assert r.chat.calls == []  # rien n'est demandé au modèle
+        assert not r.pipeline.say("   ")
+
+
+async def test_what_he_says_on_his_own_can_be_interrupted() -> None:
+    audio = build_audio(("silence", 20.0))
+    async with rig(audio, tts=FakeTTS(seconds_per_sentence=6.0)) as r:
+        await wait_until(lambda: r.pipeline.frames_seen > 1)
+        assert r.pipeline.say("Un très long briefing. Avec beaucoup de phrases.")
+        await wait_until(lambda: "speaking" in r.states())
+        await r.pipeline.interrupt(by="interface")
+        await wait_until(lambda: "voice.interrupted" in r.types())
+        assert [e.payload["by"] for e in r.events if e.type == "voice.interrupted"] == ["interface"]
+        assert r.sink.stopped >= 1

@@ -506,6 +506,12 @@ class VoiceService:
             self._on_listen()
         return True
 
+    def say(self, text: str) -> bool:
+        """Faire dire un texte à Jarvis (briefing) ; faux si la voix est éteinte ou occupée."""
+        if self._pipeline is None:
+            return False
+        return self._pipeline.say(text)
+
     async def interrupt(self) -> bool:
         if self._pipeline is None:
             return False
