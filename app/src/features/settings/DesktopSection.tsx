@@ -24,7 +24,7 @@ export function DesktopSection() {
           <div className={styles.grantHead}>
             <MonitorCog className={styles.secretIcon} aria-hidden="true" />
             <div className={styles.secretText}>
-              <p className={styles.secretLabel}>Contrôle du PC</p>
+              <p className={styles.secretLabel}>Applications, fichiers et écran</p>
               <p className={styles.secretHelp}>
                 Ouvrir et fermer tes applications, déplacer, copier et créer des fichiers dans ton
                 dossier personnel, regarder ton écran. Chaque action attend ta validation ; seule la
