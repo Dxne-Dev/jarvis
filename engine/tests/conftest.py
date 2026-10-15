@@ -39,6 +39,7 @@ def config(home: Path) -> EngineConfig:
         dotenv_path=None,
         allowed_origins=(*TAURI_ORIGINS, DEV_ORIGIN),
         allowed_hosts=("testserver", "127.0.0.1", "localhost"),
+        user_home=home / "perso",
     )
 
 

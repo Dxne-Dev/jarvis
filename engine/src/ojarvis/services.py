@@ -8,12 +8,19 @@ import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
 import httpx
 
 from ojarvis import __version__
+from ojarvis.agent.executor import PlanExecutor
+from ojarvis.agent.loop import Agent
+from ojarvis.agent.plans import PlanStore
+from ojarvis.audit.journal import AuditJournal
+from ojarvis.browser.service import BrowserAccess
+from ojarvis.browser.vault import CookieVault
 from ojarvis.chat.service import ChatService
 from ojarvis.config import EngineConfig
 from ojarvis.context.engine import ContextEngine
@@ -32,8 +39,18 @@ from ojarvis.llm.providers.registry import OllamaProvider, build_providers, disc
 from ojarvis.llm.router import ModelRouter
 from ojarvis.memory.embeddings import E5Embedder, Embedder
 from ojarvis.memory.store import MemoryStore
-from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBackend, SecretStore
+from ojarvis.permissions.gate import PermissionGate
+from ojarvis.sandbox.runner import SandboxRunner
+from ojarvis.security.secrets import (
+    LOCAL_KEY_NAME,
+    KeyringBackend,
+    MemoryBackend,
+    SecretBackend,
+    SecretStore,
+)
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.tools.base import ToolContext, ToolRegistry
+from ojarvis.tools.catalog import build_registry
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
@@ -114,6 +131,13 @@ class Services:
     context: ContextEngine
     chat: ChatService
     voice: VoiceService
+    journal: AuditJournal
+    tools: ToolRegistry
+    gate: PermissionGate
+    plans: PlanStore
+    executor: PlanExecutor
+    browser: BrowserAccess
+    sandbox: SandboxRunner
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -156,6 +180,46 @@ class Services:
         conversations = ConversationStore(db, embedder)
         await conversations.start()
         context = ContextEngine(memory, conversations, embedder_id=embedder.model_id)
+
+        # Jarvis agit : journal immuable vérifié au démarrage, outils derrière une seule porte.
+        journal = AuditJournal(db, bus)
+        integrity = await journal.verify()
+        user_home = config.user_home or Path.home()
+        vault = CookieVault(
+            config.paths.data_dir / "navigateur" / "coffre.bin",
+            lambda: secrets.get(LOCAL_KEY_NAME),
+        )
+        browser = BrowserAccess(
+            db=db,
+            vault=vault,
+            journal=journal,
+            bus=bus,
+            home=user_home,
+            allowed_hosts=config.tool_private_hosts,
+        )
+        await browser.start()
+        sandbox = SandboxRunner()
+        tools = build_registry(browser.session)
+
+        def tool_context() -> ToolContext:
+            return ToolContext(
+                http=http,
+                secret=secrets.get,
+                home=user_home,
+                sandbox=sandbox,
+                allowed_private_hosts=config.tool_private_hosts,
+            )
+
+        gate = PermissionGate(tools, journal, tool_context)
+        plans = PlanStore(db, gate)
+        executor = PlanExecutor(
+            plans=plans,
+            gate=gate,
+            journal=journal,
+            router=router,
+            conversations=conversations,
+            bus=bus,
+        )
         chat = ChatService(
             conversations=conversations,
             memory=memory,
@@ -164,6 +228,7 @@ class Services:
             tracer=tracer,
             bus=bus,
             learn=preferences.learn_from_conversations,
+            agent=Agent(gate=gate, plans=plans, bus=bus),
         )
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
@@ -209,8 +274,16 @@ class Services:
             context=context,
             chat=chat,
             voice=voice,
+            journal=journal,
+            tools=tools,
+            gate=gate,
+            plans=plans,
+            executor=executor,
+            browser=browser,
+            sandbox=sandbox,
         )
         services._holder = holder
+        await executor.recover()
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
@@ -223,6 +296,7 @@ class Services:
                 "dev_mode": config.dev_mode,
                 "keyring": backend.name,
                 "imported_secrets": imported,
+                "audit_ok": integrity.ok,
             },
         )
         log.info("engine_started", version=__version__, keyring=backend.name)
@@ -286,6 +360,8 @@ class Services:
         await self.bus.publish("engine.stopping", {})
         await self.voice.close()
         await self.chat.close()
+        await self.executor.close()
+        await self.browser.close()
         for task in list(self.background):
             task.cancel()
         await asyncio.gather(*list(self.background), return_exceptions=True)
