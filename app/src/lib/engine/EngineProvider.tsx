@@ -14,6 +14,10 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["settings.", "settings"],
   ["trace.finished", "traces"],
   ["engine.", "status"],
+  ["memory.", "memory"],
+  ["conversation.", "conversations"],
+  ["chat.completed", "conversations"],
+  ["llm.", "llm"],
 ];
 
 export function EngineProvider({ children }: { children: ReactNode }) {

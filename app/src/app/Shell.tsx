@@ -1,10 +1,11 @@
-import { Orbit, ScrollText, Settings2 } from "lucide-react";
+import { BrainCircuit, History, Orbit, ScrollText, Settings2 } from "lucide-react";
 import { useEffect, type ComponentType, type SVGProps } from "react";
 import { NavLink, Outlet } from "react-router";
 
 import { quitApp } from "../lib/engine/connection";
 import { useEngineStore } from "../lib/engine/store";
 import { useReducedMotion } from "../lib/motion";
+import { Notices } from "./Notices";
 import styles from "./Shell.module.css";
 
 interface NavItem {
@@ -15,6 +16,8 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: "/", label: "Accueil", icon: Orbit },
+  { to: "/historique", label: "Historique", icon: History },
+  { to: "/memoire", label: "Mémoire", icon: BrainCircuit },
   { to: "/journal", label: "Journal et traces", icon: ScrollText },
   { to: "/reglages", label: "Réglages", icon: Settings2 },
 ];
@@ -109,6 +112,7 @@ export function Shell() {
         <main id="contenu" className={styles.content} tabIndex={-1}>
           <Outlet />
         </main>
+        <Notices />
       </div>
     </div>
   );

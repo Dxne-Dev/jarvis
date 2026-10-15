@@ -1,7 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenêtre principale : écouter les événements du shell, rien d'autre. Les commandes de l'app (moteur, journal, quitter) sont déclarées dans le code.",
-  "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "description": "Fenêtre principale : écouter les événements du shell et ouvrir les liens web dans le navigateur, rien d'autre. Les commandes de l'app (moteur, journal, quitter) sont déclarées dans le code.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        }
+      ]
+    }
+  ]
 }

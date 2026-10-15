@@ -7,7 +7,9 @@ afterEach(() => {
   cleanup();
 });
 
-// jsdom n'a ni WebGL, ni matchMedia, ni ResizeObserver : on les simule a minima.
+// jsdom n'a ni WebGL, ni matchMedia, ni ResizeObserver, ni scrollIntoView : on les simule a minima.
+Element.prototype.scrollIntoView = () => undefined;
+Element.prototype.scrollTo = () => undefined;
 HTMLCanvasElement.prototype.getContext = (() =>
   null) as typeof HTMLCanvasElement.prototype.getContext;
 

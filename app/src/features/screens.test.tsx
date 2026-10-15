@@ -23,6 +23,13 @@ const STATUS = {
   timezone: "Europe/Paris",
 };
 
+/** Réponses communes du faux moteur (modèles), à combiner avec celles d'un test. */
+function common(path: string): [number, unknown] | null {
+  if (path === "/v1/llm/status") return [200, []];
+  if (path === "/v1/llm/models") return [200, []];
+  return null;
+}
+
 function secret(over: Partial<SecretStatus>): SecretStatus {
   return {
     name: "DEEPSEEK_API_KEY",
@@ -43,6 +50,8 @@ function secret(over: Partial<SecretStatus>): SecretStatus {
 describe("Réglages", () => {
   it("affiche les clés par groupe sans jamais montrer de valeur", async () => {
     const { client } = fakeEngine((_method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets")
         return [
           200,
@@ -76,6 +85,8 @@ describe("Réglages", () => {
     const user = userEvent.setup();
     let configured = false;
     const { client, calls } = fakeEngine((method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets")
         return [
           200,
@@ -112,6 +123,8 @@ describe("Réglages", () => {
   it("demande confirmation avant de supprimer une clé", async () => {
     const user = userEvent.setup();
     const { client, calls } = fakeEngine((method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets") return [200, [secret({ configured: true, source: "ui" })]];
       if (method === "DELETE") return [204, null];
       if (path === "/v1/status") return [200, STATUS];
@@ -137,6 +150,8 @@ describe("Réglages", () => {
   it("change la préférence d'animations", async () => {
     const user = userEvent.setup();
     const { client, calls } = fakeEngine((method, path, body) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/settings" && method === "PATCH")
         return [200, { sphere_quality: "auto", ...(body as object) }];
       if (path === "/v1/settings")

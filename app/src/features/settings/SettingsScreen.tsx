@@ -12,6 +12,7 @@ import {
 } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { Preferences, SecretGroup, SecretStatus } from "../../lib/engine/types";
+import { ModelsSection } from "./ModelsSection";
 import { SecretRow } from "./SecretRow";
 import styles from "./SettingsScreen.module.css";
 
@@ -78,7 +79,7 @@ function ProvidersSection() {
   );
 }
 
-function Choice<K extends keyof Preferences>({
+function Choice<K extends "reduced_motion" | "sphere_quality">({
   name,
   label,
   options,
@@ -138,6 +139,12 @@ export function SettingsScreen() {
           Fournisseurs et clés
         </h2>
         <ProvidersSection />
+      </section>
+      <section className={styles.section} aria-labelledby="modeles">
+        <h2 id="modeles" className={styles.sectionTitle}>
+          Modèles
+        </h2>
+        <ModelsSection />
       </section>
       <section className={styles.section} aria-labelledby="apparence">
         <h2 id="apparence" className={styles.sectionTitle}>
