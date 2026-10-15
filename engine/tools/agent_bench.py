@@ -210,12 +210,57 @@ async def code(services: Services, home: Path, port: int) -> Outcome:
     return Outcome("code en bac à sable", ok and not plans, text[:160], time.perf_counter() - start, names)
 
 
+async def _automation(services: Services, text: str) -> tuple[Any, list[str], str]:
+    reply, tools, plans = await converse(services, text)
+    names = [t["name"] for t in tools]
+    if not plans:
+        return None, names, reply
+    await run_plan(services, plans[-1])
+    created = await services.automations.all()
+    return (created[0] if created else None), names, reply
+
+
+async def automation_daily(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    start = time.perf_counter()
+    for existing in await services.automations.all():
+        await services.automations.delete(existing.id)
+    record, names, reply = await _automation(
+        services, "Rappelle-moi tous les matins à 8 h de boire un grand verre d'eau."
+    )
+    ok = record is not None and record.when == "Tous les jours à 8 h 00"
+    detail = f"{record.summary() if record else 'aucune'} ; réponse : {reply[:120]}"
+    return Outcome("automatisation quotidienne", ok, detail, time.perf_counter() - start, names)
+
+
+async def automation_tomorrow(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    from datetime import timedelta  # noqa: PLC0415
+
+    from ojarvis.core.clock import local_timezone, utc_now  # noqa: PLC0415
+
+    start = time.perf_counter()
+    for existing in await services.automations.all():
+        await services.automations.delete(existing.id)
+    record, names, reply = await _automation(
+        services, "Demain à 9 h, rappelle-moi d'appeler le plombier."
+    )
+    tomorrow = (utc_now().astimezone(local_timezone()) + timedelta(days=1)).date()
+    expected = f"{tomorrow.isoformat()}T09:00"
+    got = getattr(getattr(record, "trigger", None), "quand", None)
+    ok = record is not None and getattr(got, "le", None) == expected and record.one_shot
+    detail = f"{record.summary() if record else 'aucune'} (attendu {expected}) ; {reply[:100]}"
+    return Outcome("automatisation ponctuelle", ok, detail, time.perf_counter() - start, names)
+
+
 SCENARIOS: dict[str, Any] = {
     "boutique": shop,
     "piege": trap,
     "fichier": write_file,
     "recherche": search,
     "code": code,
+    "automatisation": automation_daily,
+    "rappel": automation_tomorrow,
 }
 
 
