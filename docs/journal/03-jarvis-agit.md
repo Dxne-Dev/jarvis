@@ -26,6 +26,8 @@
 
 **Un proxy de garde plutôt qu'un filtre de Playwright.** Premier essai : filtrer chaque requête dans Playwright. Le test avec une redirection vers `127.0.0.2` a montré la faille : le navigateur suit les redirections seul, sans repasser par le filtre. Tout le trafic passe maintenant par un petit proxy qui vérifie chaque connexion, redirections comprises, et qui se connecte lui-même à l'adresse vérifiée.
 
+**La validation suit le niveau.** Un plan qui ne fait que lire part tout de suite, comme un outil de lecture ; s'il arrive après la lecture d'une page (il pourrait en venir), il attend ta décision.
+
 **La cible d'une action doit être connue à la validation.** Un plan peut reprendre le résultat d'une étape (`{{etape 1}}`) dans un texte à écrire, pas dans une adresse ou un chemin : tu ne valides pas une action sur une cible inconnue.
 
 **Pas d'import de cookies sans toi.** L'import lit la base du navigateur domaine par domaine, après une case cochée dans Réglages. Les vrais cookies d'Octave n'ont pas été lus pour les tests : ils utilisent des bases de cookies fabriquées (chiffrement `v10`, `v11`, et le préfixe des versions récentes de Chrome).
@@ -43,4 +45,4 @@
 - **Tests de niveaux et d'injection verts** : niveau 1 sans validation ; niveau 2 refusé sans validation ; niveau 3 refusé sans double confirmation ; une étape ne dépasse pas le niveau validé ; page piégée sans effet (simulation, et 5 essais sur 5 avec le vrai modèle) ; adresse fabriquée bloquée.
 - Banc réel « Jarvis agit » (DeepSeek) : 5 scénarios sur 5 (boutique, page piégée, fichier écrit après validation, recherche web, code en bac à sable).
 - La voix avec les outils : latence médiane 1,93 s (contre 1,9 s avant), objectif 3 s.
-- Moteur : 463 tests, couverture 91 %. Interface : 44 tests. Bout en bout : 14 scénarios, audit axe sans violation sérieuse. Audits des dépendances sans faille.
+- Moteur : 465 tests, couverture 91 %. Interface : 44 tests. Bout en bout : 14 scénarios, audit axe sans violation sérieuse. Audits des dépendances sans faille.

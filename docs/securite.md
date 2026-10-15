@@ -27,6 +27,8 @@ Le modèle propose un plan avec l'outil `proposer_un_plan`. S'il appelle directe
 
 À l'écran : ce qui va se passer, sur quoi, à quel niveau ; « Refuser » et « Valider » côte à côte, de même taille. Un plan coupé par un arrêt du moteur n'est jamais relancé seul.
 
+La validation suit le niveau : un plan qui ne fait que lire (niveau 1) part sans attendre, comme un outil de lecture, sauf s'il est proposé après la lecture d'un contenu externe ; dans ce cas, il attend ta décision.
+
 ## Le contenu externe est une donnée
 
 Ce qui vient d'une page, d'un fichier ou d'un résultat d'outil arrive au modèle encadré par `<donnees>…</donnees>`, avec la consigne de n'y suivre aucun ordre. Une fausse balise de fermeture dans la page est neutralisée.

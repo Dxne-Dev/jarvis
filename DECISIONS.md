@@ -95,6 +95,7 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Plan signalé après un contenu externe** (« tainted ») — l'écran de validation prévient : vérifie que les étapes correspondent à ta demande.
 - **Après une lecture externe, une adresse fabriquée demande ta validation** — lire est autonome, donc une page pouvait faire ouvrir « https://…/?d= ce que tu sais » ; suivre un lien réellement lu reste libre.
 - **Un plan coupé par un arrêt du moteur n'est jamais relancé** — marqué en échec et journalisé ; une action ne se rejoue pas sans toi.
+- **Validation selon le niveau** — un plan qui ne fait que lire (niveau 1) part sans attendre, sauf s'il suit la lecture d'un contenu externe ; niveau 2 : ta validation ; niveau 3 : double confirmation.
 - **Synthèse finale par le modèle**, à partir des résultats encadrés comme données ; repli sur un résumé chiffré si le modèle ne répond pas.
 - **Navigateur : Playwright + Chromium, deux contextes** — un anonyme (aucun cookie) pour lire, un « identité » limité aux domaines autorisés ; y naviguer est une action de niveau 2. Une page piégée lue anonymement n'a jamais tes sessions.
 - **Sessions dans un coffre chiffré plutôt qu'un profil Chromium persistant** — Chromium lancé par Playwright chiffre ses cookies avec une clé fixe ; ici, Fernet avec une clé dérivée (HKDF) de la clé locale du trousseau, fichier en 0600, filtré par domaine autorisé.

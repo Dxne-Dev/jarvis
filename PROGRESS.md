@@ -29,7 +29,7 @@
 
 ### Phase 3 — Jarvis agit (15/10/2026)
 - Outils à schéma strict et niveau de permission : recherche web (Tavily), lecture de page, fichiers, code en bac à sable, navigateur, capacités.
-- Porte unique des permissions ; plans vérifiés, validés ou refusés, exécutés étape par étape avec synthèse ; plans interrompus jamais relancés.
+- Porte unique des permissions ; plans vérifiés, validés ou refusés (un plan de lecture seule part sans attendre), exécutés étape par étape avec synthèse ; plans interrompus jamais relancés.
 - Journal des actions immuable (ajout seul, chaîne SHA-256, vérifié au démarrage), en lecture seule dans l'interface.
 - Navigateur de Jarvis : contexte anonyme et contexte « identité », proxy de garde, coffre chiffré, connexion dans sa fenêtre, import de cookies par domaine, révocation.
 - Défenses contre l'injection : contenu externe encadré, action toujours en plan, plan signalé, adresse fabriquée validée.
@@ -83,7 +83,7 @@
 | 15/10 | Redirection d'une page publique vers une adresse privée (navigateur) | bloquée (après correctif : proxy de garde) |
 | 15/10 | Bac à sable Docker et bubblewrap | sans réseau, dossier perso invisible, temps et mémoire bornés, conteneur supprimé |
 | 15/10 | Latence vocale avec les outils | médiane 1,93 s (6/6 tours) |
-| 15/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 463 tests ; couverture 91 % |
+| 15/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 465 tests ; couverture 91 % |
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 44 tests |
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 14/14 ; aucune violation sérieuse |
 | 15/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
