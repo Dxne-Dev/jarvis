@@ -84,8 +84,27 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Masquage central avant tout appel à un modèle** — le routeur remplace chaque valeur du trousseau et chaque format de clé connu par `***` ; le chat et la mémoire font de même avant d'enregistrer. Une clé collée dans le chat ne part jamais au modèle et ne reste pas en clair dans la base (15/10/2026).
 - **Noms de périphériques audio à caractères sûrs** — ils sont passés à `pactl` : pas d'espace, donc pas d'option glissée en plus.
 - **Trois niveaux de permission appliqués par une seule couche** — lire, agir (validation), détruire ou s'étendre (sandbox puis double confirmation).
-- **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage.
+- **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage. Chaque action y est écrite avant (« Lancé : ») et après (« Fait : » ou « Échec : ») ; chaque décision sur un plan aussi.
 - **Sandbox : Docker sans réseau, limites CPU, mémoire, PID et durée, nettoyage garanti** ; bubblewrap en repli.
+
+## Jarvis agit (phase 3, 15/10/2026)
+
+- **Une seule porte d'exécution des outils** (`permissions/gate.py`) — niveau calculé avec les vrais arguments ; niveau 2 sur validation d'une étape de plan, niveau 3 sur double confirmation ; une étape ne dépasse jamais le niveau que tu as vu (ex. une adresse reprise d'une étape qui mène à un site où tu es connecté).
+- **Un appel direct à une action devient un plan d'une étape** — plutôt que de le refuser : la porte tient même si le modèle se trompe ou est manipulé.
+- **Un plan est vérifié avant d'être montré** — outils connus, arguments valides, niveaux calculés ; la cible d'une action (adresse, fichier, bouton) doit être connue à la validation : `{{etape N}}` n'est permis que dans un contenu (texte à écrire, valeur d'un champ).
+- **Plan signalé après un contenu externe** (« tainted ») — l'écran de validation prévient : vérifie que les étapes correspondent à ta demande.
+- **Après une lecture externe, une adresse fabriquée demande ta validation** — lire est autonome, donc une page pouvait faire ouvrir « https://…/?d= ce que tu sais » ; suivre un lien réellement lu reste libre.
+- **Un plan coupé par un arrêt du moteur n'est jamais relancé** — marqué en échec et journalisé ; une action ne se rejoue pas sans toi.
+- **Synthèse finale par le modèle**, à partir des résultats encadrés comme données ; repli sur un résumé chiffré si le modèle ne répond pas.
+- **Navigateur : Playwright + Chromium, deux contextes** — un anonyme (aucun cookie) pour lire, un « identité » limité aux domaines autorisés ; y naviguer est une action de niveau 2. Une page piégée lue anonymement n'a jamais tes sessions.
+- **Sessions dans un coffre chiffré plutôt qu'un profil Chromium persistant** — Chromium lancé par Playwright chiffre ses cookies avec une clé fixe ; ici, Fernet avec une clé dérivée (HKDF) de la clé locale du trousseau, fichier en 0600, filtré par domaine autorisé.
+- **Tout le trafic du navigateur par un proxy de garde maison** (`browser/proxy.py`, ~150 lignes) — le filtrage de Playwright ne voit pas les redirections (vérifié : une redirection vers `127.0.0.2` passait). Le proxy résout, vérifie toutes les adresses, se connecte lui-même à l'adresse vérifiée (DNS épinglé) ; WebRTC limité au proxy. `lire_page` passe par le même proxy.
+- **Connexion : fenêtre visible, l'utilisateur se connecte lui-même** — Jarvis garde seulement les cookies du domaine choisi (et de ses domaines parents utiles, ex. `.google.com` pour `mail.google.com`) ; il ne remplit jamais un mot de passe, une carte ou un code à usage unique.
+- **Import de cookies Chrome/Chromium/Brave domaine par domaine** — base copiée puis lue ; `v10` (clé fixe), `v11` (mot de passe du navigateur dans le trousseau), préfixe SHA-256 du domaine des versions récentes retiré. Testé sur des bases fabriquées : les vrais cookies ne sont lus que sur ta demande, depuis Réglages.
+- **Recherche web : Tavily** — la clé existe déjà ; résultats encadrés comme données.
+- **Bac à sable : Docker `python:3.12-alpine`** sans réseau, en lecture seule, utilisateur `nobody`, 1 CPU, 256 Mo, 64 processus, 10 s ; **bubblewrap + prlimit** en repli. Le code tourne en niveau 1 : il n'atteint ni le réseau ni tes fichiers.
+- **Suppression = corbeille** (`gio trash`) — récupérable ; sans `gio`, rien n'est supprimé.
+- **Les outils sont proposés aussi à la voix** — ~2 000 jetons de plus par requête ; latence vocale mesurée : médiane 1,93 s (1,9 s avant).
 
 ## Interface
 
@@ -104,6 +123,8 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Notifications du bureau seulement fenêtre en arrière-plan** — fournisseur en panne, voix de secours, voix arrêtée.
 - **Niveau sonore hors de React** — une douzaine de mesures par seconde, lissées et lues par la sphère à chaque image, sans redessiner l'écran.
 - **Sous-titres** — chaque phrase dite par Jarvis s'affiche à l'accueil, au rythme de sa voix.
+- **Validation : « Refuser » et « Valider » de même taille, côte à côte** (brief : refuser aussi simple qu'accepter) ; niveau 3 : « Valider… » ouvre une seconde confirmation qui nomme l'action destructrice.
+- **Plans dans la conversation et dans un écran dédié** — la même carte, tenue à jour par les événements du moteur ; compteur des plans en attente dans la navigation ; la sphère passe en « action en attente ».
 
 ## Qualité
 
