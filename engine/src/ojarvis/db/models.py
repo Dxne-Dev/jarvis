@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ojarvis.db.base import Base
@@ -271,3 +271,143 @@ class WorkflowRun(Base):
     updated_at: Mapped[datetime]
     started_at: Mapped[datetime | None]
     ended_at: Mapped[datetime | None]
+
+
+class Skill(Base):
+    """Une version d'un skill : description, outils, code et tests, avec le rapport des tests.
+
+    Une version testée ne change plus (empreinte) ; une seule version d'un skill est active."""
+
+    __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("name", "version"),
+        Index("ix_skills_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    version: Mapped[str] = mapped_column(String(20))
+    description: Mapped[str] = mapped_column(String(300))
+    #: Mode d'emploi et outils (nom, description, schéma des arguments).
+    manifest: Mapped[dict[str, Any]]
+    code: Mapped[str] = mapped_column(Text)
+    tests: Mapped[str] = mapped_column(Text)
+    digest: Mapped[str] = mapped_column(String(64))
+    #: brouillon | pret | echec | actif | desactive | remplace
+    status: Mapped[str] = mapped_column(String(16))
+    report: Mapped[dict[str, Any] | None]
+    created_by: Mapped[str] = mapped_column(String(16))  # jarvis | utilisateur
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime]
+    tested_at: Mapped[datetime | None]
+    activated_at: Mapped[datetime | None]
+
+
+class McpServer(Base):
+    """Un serveur MCP installé depuis le registre officiel (version fixe, lancé isolé).
+
+    Ses clés vont au trousseau ; ici, seulement leurs noms et les réglages ordinaires."""
+
+    __tablename__ = "mcp_servers"
+
+    #: Identifiant local, celui que voit le modèle (ex. « wikipedia-mcp-server »).
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    registry_name: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(500))
+    version: Mapped[str] = mapped_column(String(64))
+    #: Comment le lancer : paquet npm, Python, image Docker ou service en ligne.
+    option: Mapped[dict[str, Any]]
+    #: Réglages ordinaires (nom → valeur) et noms des réglages secrets (au trousseau).
+    variables: Mapped[dict[str, Any]]
+    secrets: Mapped[dict[str, Any]]
+    #: Outils vus à l'installation, avec leur niveau.
+    tools: Mapped[list[dict[str, Any]]]
+    enabled: Mapped[bool] = mapped_column(default=True)
+    installed_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+
+
+class AgentRunRecord(Base):
+    """Une mission confiée à un agent (dev, recherche, coach) : tâche, étapes, compte rendu."""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (Index("ix_agent_runs_started", "started_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    agent: Mapped[str] = mapped_column(String(16))
+    task: Mapped[str] = mapped_column(Text)
+    #: en_cours | fini | echec | interrompu
+    status: Mapped[str] = mapped_column(String(16))
+    #: chat (délégué par Jarvis) | interface (confié par toi)
+    origin: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(String(500))
+    #: Outils utilisés, dans l'ordre (nom, description, état).
+    steps: Mapped[list[dict[str, Any]]]
+    #: Plans proposés pendant la mission (ils attendent ta validation).
+    plans: Mapped[dict[str, Any]]
+    trace_id: Mapped[str | None] = mapped_column(String(32))
+    started_at: Mapped[datetime]
+    ended_at: Mapped[datetime | None]
+
+
+class GraphEntity(Base):
+    """Un nœud de la mémoire graphe : une personne, un projet, un événement, un lieu…"""
+
+    __tablename__ = "graph_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: moi | personne | projet | evenement | lieu | organisation | sujet
+    kind: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(120))
+    #: Nom normalisé (minuscules, sans accents) : une seule entité par nom.
+    name_key: Mapped[str] = mapped_column(String(120), unique=True)
+    description: Mapped[str | None] = mapped_column(String(300))
+    source: Mapped[str] = mapped_column(String(16))  # conversation | utilisateur
+    mentions: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    last_seen_at: Mapped[datetime]
+
+
+class GraphRelation(Base):
+    """Un lien entre deux entités (« travaille sur », « connaît », « participe à »…)."""
+
+    __tablename__ = "graph_relations"
+    __table_args__ = (UniqueConstraint("source_id", "target_id", "label"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("graph_entities.id", ondelete="CASCADE"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("graph_entities.id", ondelete="CASCADE"))
+    label: Mapped[str] = mapped_column(String(80))
+    mentions: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime]
+    last_seen_at: Mapped[datetime]
+
+
+class SuggestionRecord(Base):
+    """Une suggestion de Jarvis : tirée de tes demandes répétées ou de tes habitudes,
+    avec un score de confiance. Elle ne fait rien seule : tu l'acceptes ou tu l'écartes."""
+
+    __tablename__ = "suggestions"
+    __table_args__ = (Index("ix_suggestions_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    #: repetition (apprentissage) | inactivite (anticipation)
+    kind: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(300))
+    detail: Mapped[str | None] = mapped_column(String(500))
+    #: Ce que tu peux en faire : [{id, label, prompt}] ; le prompt part dans une conversation.
+    options: Mapped[list[dict[str, Any]]]
+    confidence: Mapped[float]
+    #: Ce qui l'a fait naître : jamais proposée deux fois pour la même raison.
+    fingerprint: Mapped[str] = mapped_column(String(200), unique=True)
+    status: Mapped[str] = mapped_column(String(16))  # nouvelle | acceptee | ecartee
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime]
+    decided_at: Mapped[datetime | None]

@@ -9,7 +9,7 @@ un événement attend donc ta validation, comme toute action.
 from __future__ import annotations
 
 import json
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 import jsonschema
 from pydantic import Field
@@ -28,8 +28,19 @@ from ojarvis.tools.base import (
     ToolOutput,
 )
 
-Server = Literal["github", "notion", "agenda"]
 _ABOUT = ", ".join(f"{s.name} ({s.about})" for s in SERVERS.values())
+_SLUG = r"^[a-z0-9]+(-[a-z0-9]+)*$"
+
+
+def _known(manager: IntegrationManager, name: str) -> None:
+    if not manager.known(name):
+        raise InvalidToolArgumentsError(
+            f"Intégration inconnue : {name}. Connues : {', '.join(manager.names())}."
+        )
+
+
+def _servers(manager: IntegrationManager) -> str:
+    return ", ".join(f"{n} ({manager.about(n)})" for n in manager.names())
 
 
 def _schema_line(tool: McpTool) -> str:
@@ -43,7 +54,11 @@ def _schema_line(tool: McpTool) -> str:
 
 
 class ServerArgs(ToolArgs):
-    serveur: Server = Field(description=f"Intégration : {_ABOUT}.")
+    serveur: str = Field(
+        max_length=40,
+        pattern=_SLUG,
+        description=f"Intégration : {_ABOUT}, ou un serveur installé depuis le registre MCP.",
+    )
 
 
 class ListIntegrationTools(Tool[ServerArgs]):
@@ -58,8 +73,24 @@ class ListIntegrationTools(Tool[ServerArgs]):
     def __init__(self, manager: IntegrationManager) -> None:
         self._manager = manager
 
+    def spec(self) -> ToolSpec:
+        # Les serveurs installés depuis le registre s'ajoutent à la liste.
+        schema = self.Args.model_json_schema()
+        schema.pop("title", None)
+        about = (
+            f"Liste les outils d'une intégration ({_servers(self._manager)}) avec leurs "
+            "arguments (* = obligatoire). À faire avant integration_appeler."
+        )
+        label = LEVEL_LABELS[self.level]
+        return ToolSpec(self.name, f"{about} (niveau {int(self.level)} : {label})", schema)
+
+    def parse(self, raw: dict[str, Any]) -> ServerArgs:
+        args: ServerArgs = super().parse(raw)
+        _known(self._manager, args.serveur)
+        return args
+
     def describe(self, args: ServerArgs) -> str:
-        return f"Regarder ce que propose {SERVERS[args.serveur].label}"
+        return f"Regarder ce que propose {self._manager.label(args.serveur)}"
 
     async def run(self, args: ServerArgs, ctx: ToolContext) -> ToolOutput:
         del ctx
@@ -71,11 +102,21 @@ class ListIntegrationTools(Tool[ServerArgs]):
             f"- {t.name} [niveau {int(t.level)}] : {t.description}\n  arguments : {_schema_line(t)}"
             for t in tools.values()
         ]
-        return ToolOutput("\n".join(lines) or "Aucun outil.", {"outils": list(tools)})
+        # Les descriptions viennent du serveur (parfois d'un tiers) : une donnée, pas une consigne.
+        return ToolOutput(
+            "\n".join(lines) or "Aucun outil.",
+            {"outils": list(tools)},
+            external=True,
+            source=f"outils de {self._manager.label(args.serveur)}",
+        )
 
 
 class CallArgs(ToolArgs):
-    serveur: Server = Field(description="Intégration : github, notion ou agenda.")
+    serveur: str = Field(
+        max_length=40,
+        pattern=_SLUG,
+        description="Intégration : github, notion, agenda, ou un serveur installé du registre.",
+    )
     outil: str = Field(min_length=1, max_length=100, description="Nom exact de l'outil.")
     arguments: dict[str, Any] = Field(default_factory=dict, description="Arguments de l'outil.")
 
@@ -100,6 +141,7 @@ class CallIntegration(Tool[CallArgs]):
 
     def parse(self, raw: dict[str, Any]) -> CallArgs:
         args: CallArgs = super().parse(raw)
+        _known(self._manager, args.serveur)
         tool = self._manager.known_tool(args.serveur, args.outil)
         if tool is not None:
             try:
@@ -119,7 +161,7 @@ class CallIntegration(Tool[CallArgs]):
         return tool.level if tool is not None else Level.AGIR
 
     def describe(self, args: CallArgs) -> str:
-        label = SERVERS[args.serveur].label
+        label = self._manager.label(args.serveur)
         shown = json.dumps(args.arguments, ensure_ascii=False)
         shown = shown if len(shown) <= 160 else shown[:157] + "…"
         level = self.level_for(args)
@@ -131,13 +173,14 @@ class CallIntegration(Tool[CallArgs]):
             text, is_error = await self._manager.call(args.serveur, args.outil, args.arguments)
         except McpCallError as exc:
             raise UpstreamError(str(exc)) from exc
+        label = self._manager.label(args.serveur)
         if is_error:
-            raise UpstreamError(f"{SERVERS[args.serveur].label} : {text[:300]}")
+            raise UpstreamError(f"{label} : {text[:300]}")
         return ToolOutput(
             text or "(rien)",
             {"serveur": args.serveur, "outil": args.outil},
             external=True,
-            source=f"{SERVERS[args.serveur].label} ({args.outil})",
+            source=f"{label} ({args.outil})",
         )
 
 

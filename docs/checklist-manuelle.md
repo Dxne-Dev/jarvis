@@ -54,3 +54,13 @@ Ce que je ne peux pas vérifier seul. Coche au fur et à mesure.
 - [ ] Avec une page ou un document ouvert, dire « Hey Jarvis, regarde mon écran » : la description (lecture sur ce PC, compter 30 s à 2 min) correspond à ce que tu vois.
 - [ ] Choisir « En ligne », redemander : la réponse arrive plus vite (ou, si OpenRouter est saturé, la lecture repasse sur ce PC).
 - [ ] Désactiver le contrôle du PC, redemander « ouvre la calculatrice » : Jarvis répond qu'il ne peut pas.
+
+## Phase 6 — Jarvis s'étend
+
+- [ ] Demander « Crée-toi un skill qui convertit des degrés Fahrenheit en Celsius » : Skills et plugins montre le code, les tests réussis ; la confirmation (deux fois) l'active ; « combien font 100 °F ? » utilise le skill.
+- [ ] Skills et plugins → chercher « wikipedia » → Essayer → Installer… : le serveur apparaît « Prêt » ; demander « que dit Wikipédia de Ouidah ? ».
+- [ ] (Si Docker est démarré) refaire l'essai : le serveur tourne en conteneur (`docker ps` pendant l'essai).
+- [ ] Agents : confier au coach « explique-moi les closures en JavaScript » ; la mission apparaît en direct, puis son compte rendu.
+- [ ] Parler de tes projets et de tes proches pendant quelques jours : Mémoire → Graphe les relie ; corriger ou oublier une entité.
+- [ ] Après avoir posé la même question trois jours différents, une suggestion apparaît à l'accueil ; « En faire une automatisation » ouvre une conversation avec un plan à valider.
+

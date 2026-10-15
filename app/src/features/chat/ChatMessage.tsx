@@ -7,13 +7,13 @@ import {
   LoaderCircle,
   XCircle,
 } from "lucide-react";
-import { memo, useId, useState, type ComponentProps } from "react";
+import { memo, useId, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { ExternalLink } from "../../components/RichText";
 import type { ToolActivity } from "../../lib/engine/types";
 import { formatDuration } from "../../lib/format";
-import { openExternal } from "../../lib/links";
 import actions from "../actions/Actions.module.css";
 import { PlanCard } from "../actions/PlanCard";
 import styles from "./Chat.module.css";
@@ -25,21 +25,6 @@ const KIND_LABEL: Record<string, string> = {
   preference: "préférence",
   souvenir: "échange passé",
 };
-
-function ExternalLink({ href, children }: ComponentProps<"a">) {
-  return (
-    <a
-      href={href}
-      onClick={(event) => {
-        event.preventDefault();
-        if (href) void openExternal(href);
-      }}
-      rel="noreferrer"
-    >
-      {children}
-    </a>
-  );
-}
 
 function formatCost(cost: number | null): string | null {
   if (cost === null) return null;

@@ -384,6 +384,91 @@ async def screen(services: Services, home: Path, port: int) -> Outcome:
     return Outcome("regarder l'écran", ok, " | ".join(results), 0.0)
 
 
+async def skill(services: Services, home: Path, port: int) -> Outcome:
+    """Critère de la phase 6 : Jarvis crée un skill, le teste, demande, puis l'utilise."""
+    del home, port
+    start = time.perf_counter()
+    said, tools, plans = await converse(
+        services,
+        "Crée-toi un skill qui compte le nombre de jours entre deux dates au format "
+        "AAAA-MM-JJ, avec ses tests.",
+    )
+    names = [t["name"] for t in tools]
+    drafts = [r for r in services.skills.records() if r.status in ("pret", "echec")]
+    if not plans:
+        detail = (
+            f"aucun plan d'activation ; brouillons : {[r.label for r in drafts]} ; {said[:120]!r}"
+        )
+        return Outcome("créer un skill", False, detail, time.perf_counter() - start, names)
+    activated = await run_plan(services, plans[-1], double=True)
+    active = [r for r in services.skills.records() if r.status == "actif"]
+    answer, used, _ = await converse(
+        services, "Combien de jours y a-t-il entre le 1er janvier 2026 et le 15 octobre 2026 ?"
+    )
+    skill_calls = [t["name"] for t in used if "__" in t["name"]]
+    ok = activated["status"] == "done" and bool(active) and bool(skill_calls) and "287" in answer
+    report = active[0].report.summary() if active and active[0].report else "?"
+    detail = (
+        f"skill : {[r.label for r in active]} ({report}) ; activation {activated['status']} ; "
+        f"outils {skill_calls} ; réponse {answer[:100]!r}"
+    )
+    return Outcome("créer un skill", ok, detail, time.perf_counter() - start, names)
+
+
+async def mcp_registry(services: Services, home: Path, port: int) -> Outcome:
+    """Critère de la phase 6 : un serveur MCP installé depuis le registre fonctionne."""
+    del home, port
+    start = time.perf_counter()
+    said, tools, plans = await converse(
+        services,
+        "Installe depuis le registre MCP officiel le serveur Wikipédia de cyanheads "
+        "(io.github.cyanheads/wikipedia-mcp-server).",
+    )
+    names = [t["name"] for t in tools]
+    if not plans:
+        detail = f"aucun plan d'installation ; {said[:160]!r}"
+        return Outcome("serveur MCP du registre", False, detail, time.perf_counter() - start, names)
+    installed = await run_plan(services, plans[-1], double=True)
+    servers = [s.id for s in services.mcp.installed()]
+    answer, used, _ = await converse(
+        services, "Selon Wikipédia, qu'est-ce que Cotonou ? Réponds en une phrase."
+    )
+    calls = [(t["name"], t["status"]) for t in used if t["name"].startswith("integration")]
+    ok = (
+        installed["status"] == "done"
+        and bool(servers)
+        and ("integration_appeler", "done") in calls
+        and "Bénin" in answer
+    )
+    runtimes = services.mcp.last_runtimes
+    runner = runtimes.runner(services.mcp.installed()[0].option) if runtimes and servers else "?"
+    detail = (
+        f"installation {installed['status']} ({runner}) : {servers} ; appels {calls} ; "
+        f"réponse {answer[:120]!r}"
+    )
+    return Outcome("serveur MCP du registre", ok, detail, time.perf_counter() - start, names)
+
+
+async def agents(services: Services, home: Path, port: int) -> Outcome:
+    """Jarvis délègue une recherche à son agent ; l'agent cherche seul et rend un compte rendu."""
+    del home, port
+    start = time.perf_counter()
+    said, tools, _ = await converse(
+        services,
+        "Confie à ton agent de recherche cette tâche : en quelle année a été fondée la ville "
+        "de Porto-Novo selon les sources ? Puis réponds-moi en une phrase.",
+    )
+    names = [t["name"] for t in tools]
+    runs = await services.orchestrator.runs(limit=1)
+    run = runs[0] if runs else None
+    steps = [s["tool"] for s in run.steps] if run else []
+    ok = "deleguer" in names and run is not None and run.status == "fini" and bool(steps)
+    detail = (
+        f"mission {run.status if run else '?'} ; outils de l'agent {steps} ; réponse {said[:140]!r}"
+    )
+    return Outcome("déléguer à un agent", ok, detail, time.perf_counter() - start, names)
+
+
 SCENARIOS: dict[str, Any] = {
     "boutique": shop,
     "piege": trap,
@@ -396,6 +481,9 @@ SCENARIOS: dict[str, Any] = {
     "briefing": briefing,
     "application": application,
     "ecran": screen,
+    "skill": skill,
+    "mcp": mcp_registry,
+    "agents": agents,
 }
 
 

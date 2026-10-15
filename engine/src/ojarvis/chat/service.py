@@ -43,6 +43,7 @@ from ojarvis.llm.types import (
     ToolCallReady,
     Usage,
 )
+from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
 from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
@@ -66,8 +67,22 @@ class ExtractedFact(BaseModel):
     remplace: int | None = Field(default=None, description="id d'un souvenir que ce fait corrige")
 
 
+class ExtractedEntity(BaseModel):
+    nom: str = Field(min_length=1, max_length=120)
+    type: Literal["moi", "personne", "projet", "evenement", "lieu", "organisation", "sujet"]
+    description: str | None = Field(default=None, max_length=300)
+
+
+class ExtractedRelation(BaseModel):
+    source: str = Field(min_length=1, max_length=120)
+    lien: str = Field(min_length=2, max_length=80)
+    cible: str = Field(min_length=1, max_length=120)
+
+
 class Extraction(BaseModel):
     faits: list[ExtractedFact] = Field(default_factory=list, max_length=8)
+    entites: list[ExtractedEntity] = Field(default_factory=list, max_length=10)
+    relations: list[ExtractedRelation] = Field(default_factory=list, max_length=10)
 
 
 EXTRACTION_PROMPT = (
@@ -80,7 +95,12 @@ EXTRACTION_PROMPT = (
     "« preference » = goût ou façon de faire ; « fait » = le reste. Si un fait corrige un "
     "souvenir existant, mets son id dans « remplace ». Un prénom ne se retient que s'il est "
     "dit clairement (« je m'appelle… ») ; une phrase confuse ou incomplète ne donne rien. "
-    "S'il n'y a rien à retenir, renvoie une liste vide."
+    "Relève aussi, pour la mémoire graphe, les entités durables de sa vie (personnes, projets, "
+    "événements, lieux, organisations, sujets qu'il étudie) et les relations entre elles : "
+    "l'utilisateur est l'entité « moi » (type moi) ; une relation est courte, au présent "
+    "(« travaille sur », « connaît », « habite à », « participe à », « apprend ») et relie deux "
+    "entités de la liste. Réutilise exactement les noms déjà connus. "
+    "S'il n'y a rien à retenir, renvoie des listes vides."
 )
 TITLE_PROMPT = (
     "Donne un titre de trois à six mots, en français, sans guillemets ni point final, "
@@ -146,9 +166,11 @@ class ChatService:
         bus: EventBus,
         learn: bool = True,
         agent: Agent | None = None,
+        graph: GraphStore | None = None,
     ) -> None:
         self._conversations = conversations
         self._memory = memory
+        self._graph = graph
         self._context = context
         self._router = router
         self._tracer = tracer
@@ -454,8 +476,11 @@ class ChatService:
         known_lines = "\n".join(
             f"- id {h.record.id} [{h.record.kind}] {h.record.content}" for h in known
         )
+        names = await self._graph.known_names() if self._graph else []
+        entity_lines = ", ".join(f"{n} ({k})" for n, k in names)
         prompt = (
             f"Souvenirs existants proches :\n{known_lines or '(aucun)'}\n\n"
+            f"Entités déjà connues : {entity_lines or '(aucune)'}\n\n"
             f"Échange :\nUtilisateur : {user.content}\nJarvis : {reply.content}"
         )[:6000]
         try:
@@ -482,6 +507,11 @@ class ChatService:
                     source_message_id=user.id,
                     confidence=fact.confiance,
                 )
+        if self._graph is not None and (extraction.entites or extraction.relations):
+            await self._graph.remember(
+                [(e.nom, e.type, e.description) for e in extraction.entites],
+                [(r.source, r.lien, r.cible) for r in extraction.relations],
+            )
 
     async def drain(self) -> None:
         """Attend la fin des apprentissages en cours (tests, arrêt propre)."""

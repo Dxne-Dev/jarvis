@@ -13,12 +13,17 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from ojarvis import __version__
 from ojarvis.api import (
     routes_agent,
+    routes_agents,
     routes_automations,
     routes_chat,
     routes_core,
+    routes_graph,
     routes_integrations,
+    routes_mcp,
     routes_secrets,
+    routes_skills,
     routes_stream,
+    routes_suggestions,
     routes_voice,
 )
 from ojarvis.config import EngineConfig
@@ -80,12 +85,17 @@ def create_app(
     app.include_router(routes_core.router)
     app.include_router(routes_secrets.router)
     app.include_router(routes_stream.router)
+    app.include_router(routes_graph.router)
     app.include_router(routes_chat.router)
     app.include_router(routes_voice.router)
     app.include_router(routes_agent.router)
+    app.include_router(routes_agents.router)
     app.include_router(routes_automations.router)
     app.include_router(routes_automations.session_router)
     app.include_router(routes_integrations.router)
+    app.include_router(routes_skills.router)
+    app.include_router(routes_mcp.router)
+    app.include_router(routes_suggestions.router)
 
     # Ordre : le dernier ajouté est le plus externe.
     app.add_middleware(TokenAuthMiddleware, token=token, public_paths=PUBLIC_PATHS)

@@ -125,6 +125,30 @@ flowchart LR
 - **Écran** (`desktop/screen.py`) : portail `xdg-desktop-portal` sous Wayland, `mss` sous X11 ; image réduite en JPEG, jamais gardée.
 - **Outils** (`tools/desktop.py`) : marqués « contrôle du PC » ; la porte les refuse tant que le réglage est éteint.
 
+## Jarvis s'étend
+
+```mermaid
+flowchart LR
+  M["Modèle"] -- "creer_skill" --> SK["Skill en brouillon"]
+  SK -- "tests" --> SB["Bac à sable<br/>sans réseau ni fichiers"]
+  SK -- "plan niveau 3" --> V["Double confirmation"]
+  V --> REG["Registre des outils"]
+  M -- "mcp_chercher / mcp_installer" --> R["Registre MCP officiel"]
+  R -- "essai isolé" --> C["Conteneur ou bubblewrap"]
+  C --> I["Intégrations"]
+  M -- "deleguer" --> O["Orchestrateur"]
+  O --> A["Agents dev, recherche, coach"]
+  A --> P{"Porte des permissions"}
+  CH["Conversations"] -- "extraction" --> G[("Graphe")]
+  CH -- "demandes" --> S["Suggestions"]
+  G -- "lecture seule" --> S
+```
+
+- **Skills** (`skills/`) : versions en base, tests et appels dans le bac à sable, outils ajoutés au registre à l'activation.
+- **Registre MCP** (`integrations/registry.py`, `integrations/mcp_registry.py`) : recherche, essai, installation ; les serveurs installés rejoignent les intégrations.
+- **Agents** (`agents/`) : `BaseAgent`, trois agents de départ, un orchestrateur qui lance, suit et rapporte.
+- **Graphe** (`memory/graph.py`) et **suggestions** (`anticipation/`) : apprentissage des demandes répétées, anticipation en lecture seule.
+
 ## Qui protège quoi
 
 | Menace | Protection |
@@ -148,6 +172,10 @@ flowchart LR
 | Ton écran part en ligne | Lecture locale par défaut ; « en ligne » est un choix explicite |
 | Un texte à l'écran donne des ordres | Description encadrée comme donnée ; toute action passe par un plan signalé |
 | Fermer la session ou Jarvis par erreur | Processus protégés ; tes processus seulement ; programme partagé annoncé à la validation |
+| Du code écrit par un modèle (skill) | Jamais dans le moteur : bac à sable sans réseau ni fichiers ; tests réussis et double confirmation avant l'activation |
+| Un serveur MCP tiers malveillant | Essai isolé, double confirmation, conteneur sans privilèges (ou bubblewrap sans tes fichiers), version fixe, niveaux par outil |
+| Un agent qui sort de son rôle | Ses seuls outils, même dans un plan ; même porte et mêmes plans que Jarvis |
+| Une suggestion qui agit pendant ton absence | Impossible : l'accepter ouvre une conversation où l'action passe par un plan |
 
 ## Où sont les données
 
@@ -162,6 +190,9 @@ flowchart LR
 | Journal des actions, plans | dans la base SQLite (tables `audit_log`, `plans`) |
 | Automatisations, exécutions de workflows | dans la base SQLite (tables `automations`, `workflow_runs`) |
 | Accès à Google Agenda (jeton durable) | trousseau GNOME |
+| Skills (code, tests, rapports), serveurs MCP installés, missions des agents, graphe, suggestions | dans la base SQLite (tables `skills`, `mcp_servers`, `agent_runs`, `graph_entities`, `graph_relations`, `suggestions`) |
+| Clés des serveurs MCP | trousseau GNOME (`OJARVIS_MCP_…`) |
+| Cache d'un serveur MCP lancé par bubblewrap | `~/.local/share/o-jarvis/mcp/<serveur>/` |
 
 ## Les dossiers du dépôt
 
@@ -173,6 +204,7 @@ flowchart LR
 | `engine/src/ojarvis/{tools,permissions,agent,audit,browser,sandbox}` | Outils, porte des permissions, plans et exécuteur, journal, navigateur, bac à sable |
 | `engine/src/ojarvis/{automations,workflows,integrations,telegram,briefing}` | Automatisations, workflows, intégrations MCP, Telegram, briefing |
 | `engine/src/ojarvis/desktop` | Applications et capture d'écran (contrôle du PC) |
+| `engine/src/ojarvis/{skills,agents,anticipation}` | Skills, agents et orchestrateur, apprentissage et anticipation |
 | `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit », contrôle du PC) |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |

@@ -45,6 +45,17 @@ class ToolArgs(BaseModel):
 
 
 @dataclass(frozen=True)
+class FollowUp:
+    """Action que l'outil lui-même propose ensuite : elle devient un plan qui t'attend.
+
+    Seul le code d'un outil peut en créer une, jamais un contenu lu (page, fichier, écran)."""
+
+    tool: str
+    arguments: dict[str, Any]
+    why: str
+
+
+@dataclass(frozen=True)
 class ToolOutput:
     #: Ce que le modèle lira (s'il vient de l'extérieur, il sera marqué comme donnée).
     text: str
@@ -53,6 +64,7 @@ class ToolOutput:
     #: Contenu venu du web, d'un fichier ou d'une page : une donnée, jamais une instruction.
     external: bool = False
     source: str | None = None
+    follow_up: FollowUp | None = None
 
 
 @dataclass
@@ -130,6 +142,10 @@ class ToolRegistry:
         if tool.name in self._tools:
             raise ValueError(f"outil déjà enregistré : {tool.name}")
         self._tools[tool.name] = tool
+
+    def unregister(self, name: str) -> None:
+        """Retire un outil (un skill désactivé, un serveur MCP désinstallé)."""
+        self._tools.pop(name, None)
 
     def get(self, name: str) -> Tool[Any]:
         tool = self._tools.get(name)

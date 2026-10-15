@@ -16,6 +16,7 @@ import {
 import { useEngineOnline } from "../../lib/engine/store";
 import type { MemoryItem, MemoryKind } from "../../lib/engine/types";
 import { formatRelative } from "../../lib/format";
+import { MemoryGraphView } from "./MemoryGraph";
 import styles from "./MemoryScreen.module.css";
 
 const KINDS: { value: MemoryKind | "tout"; label: string }[] = [
@@ -199,6 +200,7 @@ function AddMemory() {
 }
 
 export function MemoryScreen() {
+  const [view, setView] = useState<"liste" | "graphe">("liste");
   const [tab, setTab] = useState<MemoryKind | "tout">("tout");
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
@@ -242,43 +244,63 @@ export function MemoryScreen() {
         title="Mémoire"
         description="Ce que Jarvis sait de toi. Tout est modifiable ; rien ne quitte ta machine pour être indexé."
       />
-      <AddMemory />
       <Tabs.Root
-        value={tab}
+        value={view}
         onValueChange={(value) => {
-          setTab(value as MemoryKind | "tout");
+          setView(value as "liste" | "graphe");
         }}
       >
-        <div className={styles.toolbar}>
-          <Tabs.List className={styles.tabs} aria-label="Catégories de souvenirs">
+        <Tabs.List className={styles.views} aria-label="Vue de la mémoire">
+          <Tabs.Trigger value="liste" className={styles.tab}>
+            Souvenirs
+          </Tabs.Trigger>
+          <Tabs.Trigger value="graphe" className={styles.tab}>
+            Graphe
+          </Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="graphe" className={styles.panel}>
+          {view === "graphe" && <MemoryGraphView />}
+        </Tabs.Content>
+        <Tabs.Content value="liste" className={styles.panel}>
+          <AddMemory />
+          <Tabs.Root
+            value={tab}
+            onValueChange={(value) => {
+              setTab(value as MemoryKind | "tout");
+            }}
+          >
+            <div className={styles.toolbar}>
+              <Tabs.List className={styles.tabs} aria-label="Catégories de souvenirs">
+                {KINDS.map((k) => (
+                  <Tabs.Trigger key={k.value} value={k.value} className={styles.tab}>
+                    {k.label}
+                  </Tabs.Trigger>
+                ))}
+              </Tabs.List>
+              <div className={styles.search}>
+                <Search aria-hidden="true" />
+                <label htmlFor={searchId} className="visually-hidden">
+                  Rechercher dans la mémoire
+                </label>
+                <input
+                  id={searchId}
+                  type="search"
+                  className={styles.searchInput}
+                  placeholder="Rechercher…"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                  }}
+                />
+              </div>
+            </div>
             {KINDS.map((k) => (
-              <Tabs.Trigger key={k.value} value={k.value} className={styles.tab}>
-                {k.label}
-              </Tabs.Trigger>
+              <Tabs.Content key={k.value} value={k.value} className={styles.panel}>
+                {tab === k.value && content}
+              </Tabs.Content>
             ))}
-          </Tabs.List>
-          <div className={styles.search}>
-            <Search aria-hidden="true" />
-            <label htmlFor={searchId} className="visually-hidden">
-              Rechercher dans la mémoire
-            </label>
-            <input
-              id={searchId}
-              type="search"
-              className={styles.searchInput}
-              placeholder="Rechercher…"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-              }}
-            />
-          </div>
-        </div>
-        {KINDS.map((k) => (
-          <Tabs.Content key={k.value} value={k.value} className={styles.panel}>
-            {tab === k.value && content}
-          </Tabs.Content>
-        ))}
+          </Tabs.Root>
+        </Tabs.Content>
       </Tabs.Root>
     </div>
   );

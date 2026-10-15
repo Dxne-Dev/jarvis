@@ -10,3 +10,4 @@ Une page par évolution : ce qui a été construit, pourquoi, et comment c'est v
 | 03 | [03-jarvis-agit.md](./03-jarvis-agit.md) | Outils, niveaux de permission, plans, journal des actions, navigateur |
 | 04 | [04-jarvis-s-organise.md](./04-jarvis-s-organise.md) | Automatisations, workflows, Telegram, intégrations MCP, briefing |
 | 05 | [05-controle-du-pc.md](./05-controle-du-pc.md) | Applications, écran (portail, vision), fichiers, contrôle désactivé par défaut |
+| 06 | [06-jarvis-s-etend.md](./06-jarvis-s-etend.md) | Skills, registre MCP, agents, mémoire graphe, apprentissage et anticipation |
