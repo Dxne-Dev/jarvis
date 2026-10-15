@@ -38,6 +38,38 @@ flowchart LR
 
 Fermer la fenêtre (ou `Ctrl+Q`, ou « Quitter » dans la barre système) ferme l'entrée standard du moteur. Le moteur voit la fin de flux et s'arrête proprement. Si la coque plante, le système ferme ce même flux : le moteur s'arrête aussi. Après 7 s sans arrêt, la coque le tue.
 
+## Une question, du texte à la réponse
+
+```mermaid
+flowchart LR
+  Q["Question<br/>(texte ou voix)"] --> C["Moteur de contexte<br/>profil, souvenirs, historique<br/>dans un budget de jetons"]
+  C --> R["Routeur de modèles<br/>DeepSeek → Anthropic → OpenAI<br/>→ OpenRouter → Ollama"]
+  R --> A["Réponse en flux"]
+  A --> M["Mémoire<br/>faits extraits après coup"]
+  C -. "sélection visible" .-> T["Trace"]
+  R -. "modèle, jetons, coût, latence" .-> T
+```
+
+Le routeur prend le premier fournisseur disponible pour la tâche (voix, chat, réflexion…). S'il ne répond pas assez vite (5 s pour la voix), il passe au suivant et l'interface le signale.
+
+## La voix
+
+```mermaid
+flowchart LR
+  Mic["Micro<br/>(annulation d'écho PipeWire)"] -- "trames de 80 ms" --> W["Mot de réveil<br/>openWakeWord"]
+  W -- "score hésitant" --> V["Vérification<br/>Whisper local"]
+  W -- "Hey Jarvis" --> D["Fin de phrase<br/>Silero VAD"]
+  V -- "« Jarvis » trouvé" --> D
+  D --> S["Transcription<br/>Whisper base"]
+  S --> L["Modèle de langage<br/>(routeur)"]
+  L -- "phrase par phrase" --> T["Synthèse<br/>Cartesia, Piper en repli"]
+  T --> HP["Haut-parleur"]
+  T -. "sous-titres" .-> UI["Interface"]
+  Mic -. "parole pendant la réponse" .-> X["Interruption"]
+```
+
+Réveil, détection de parole et transcription tournent sur la machine : aucun son ne la quitte. Seul le texte part vers le modèle et vers la synthèse. Le micro reste écouté pendant que Jarvis parle, ce qui permet de l'interrompre.
+
 ## Qui protège quoi
 
 | Menace | Protection |
@@ -52,7 +84,8 @@ Fermer la fenêtre (ou `Ctrl+Q`, ou « Quitter » dans la barre système) ferme 
 
 | Quoi | Où |
 |---|---|
-| Base SQLite | `~/.local/share/o-jarvis/ojarvis.db` |
+| Base SQLite (conversations, mémoire, vecteurs, traces) | `~/.local/share/o-jarvis/ojarvis.db` |
+| Modèles locaux (embeddings, réveil, Whisper, Piper) | `~/.cache/o-jarvis/models/` |
 | Logs du moteur | `~/.local/state/o-jarvis/logs/engine.log` |
 | Mesures de fluidité | `~/.local/state/o-jarvis/perf/` |
 | Clés | trousseau GNOME, service `o-jarvis` |
@@ -63,6 +96,7 @@ Fermer la fenêtre (ou `Ctrl+Q`, ou « Quitter » dans la barre système) ferme 
 |---|---|
 | `app/src` | Interface React : écrans, sphère, client du moteur |
 | `app/src-tauri` | Coque Rust : fenêtre, barre système, lancement du moteur |
-| `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base |
+| `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base, modèles, mémoire, contexte, chat, voix |
+| `engine/tools` | Corpus vocal de test et banc d'essai de latence |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |
