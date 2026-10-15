@@ -4,6 +4,7 @@ import {
   History,
   ListChecks,
   Orbit,
+  Puzzle,
   ScrollText,
   Settings2,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const NAV: NavItem[] = [
   { to: "/memoire", label: "Mémoire", icon: BrainCircuit },
   { to: "/actions", label: "Actions à valider", icon: ListChecks },
   { to: "/automatisations", label: "Automatisations", icon: CalendarClock },
+  { to: "/skills", label: "Skills et plugins", icon: Puzzle },
   { to: "/journal", label: "Journal et traces", icon: ScrollText },
   { to: "/reglages", label: "Réglages", icon: Settings2 },
 ];

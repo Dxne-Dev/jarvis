@@ -10,20 +10,22 @@ import type {
   BrowserGrant,
   BrowserState,
   CartesiaVoice,
-  Integration,
-  TelegramStatus,
   CheckResult,
   Conversation,
   ConversationDetail,
   EngineStatus,
+  Integration,
   MemoryItem,
   MemoryKind,
   ModelInfo,
-  ProviderStatus,
   PerfReport,
   Plan,
   Preferences,
+  ProviderStatus,
   SecretStatus,
+  Skill,
+  SkillDetail,
+  TelegramStatus,
   ToolInfo,
   TraceDetail,
   TraceSummary,
@@ -563,4 +565,58 @@ export function useStartBriefing() {
     mutationFn: (force: boolean) =>
       requireClient(client).post<{ briefing: string | null }>("/v1/session", { force }),
   });
+}
+
+// ---------------------------------------------------------------- skills
+
+export function useSkills() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["skills"],
+    queryFn: () => requireClient(client).get<Skill[]>("/v1/skills"),
+    enabled: client !== null,
+  });
+}
+
+export function useSkill(id: string, enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["skills", id],
+    queryFn: () => requireClient(client).get<SkillDetail>(`/v1/skills/${encodeURIComponent(id)}`),
+    enabled: client !== null && enabled,
+  });
+}
+
+function useSkillAction(action: (client: EngineClient, id: string) => Promise<unknown>) {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => action(requireClient(client), id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["skills"] }),
+  });
+}
+
+export function useTestSkill() {
+  return useSkillAction((client, id) =>
+    client.post<Skill>(`/v1/skills/${encodeURIComponent(id)}/test`),
+  );
+}
+
+/** Activer : l'écran a déjà demandé la seconde confirmation (niveau 3). */
+export function useActivateSkill() {
+  return useSkillAction((client, id) =>
+    client.post<Skill>(`/v1/skills/${encodeURIComponent(id)}/activate`, { double_confirm: true }),
+  );
+}
+
+export function useDisableSkill() {
+  return useSkillAction((client, id) =>
+    client.post<Skill>(`/v1/skills/${encodeURIComponent(id)}/disable`),
+  );
+}
+
+export function useDeleteSkill() {
+  return useSkillAction((client, id) =>
+    client.delete<undefined>(`/v1/skills/${encodeURIComponent(id)}?double_confirm=true`),
+  );
 }

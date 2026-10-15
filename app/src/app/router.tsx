@@ -7,6 +7,7 @@ import { HomeScreen } from "../features/home/HomeScreen";
 import { JournalScreen } from "../features/journal/JournalScreen";
 import { MemoryScreen } from "../features/memory/MemoryScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
+import { SkillsScreen } from "../features/skills/SkillsScreen";
 import { Shell } from "./Shell";
 
 // Routeur à hachage : l'app de bureau n'a pas de serveur pour réécrire les URL.
@@ -20,6 +21,7 @@ export const router = createHashRouter([
       { path: "memoire", element: <MemoryScreen /> },
       { path: "actions", element: <ActionsScreen /> },
       { path: "automatisations", element: <AutomationsScreen /> },
+      { path: "skills", element: <SkillsScreen /> },
       { path: "journal", element: <JournalScreen /> },
       { path: "reglages", element: <SettingsScreen /> },
     ],

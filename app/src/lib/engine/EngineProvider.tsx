@@ -31,6 +31,8 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["integration.", "integrations"],
   ["telegram.", "telegram"],
   ["briefing.", "conversations"],
+  ["skill.", "skills"],
+  ["skill.", "tools"],
 ];
 
 /** Une seule annonce de session par lancement de l'app (le briefing du jour en dépend). */

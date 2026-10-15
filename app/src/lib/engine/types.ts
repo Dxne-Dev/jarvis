@@ -431,3 +431,44 @@ export interface TelegramStatus {
   handled: number;
   rejected: number;
 }
+
+export type SkillStatus = "brouillon" | "pret" | "echec" | "actif" | "desactive" | "remplace";
+
+export interface SkillReport {
+  ok: boolean;
+  cases: { name: string; ok: boolean; detail: string }[];
+  error: string | null;
+  backend: string | null;
+  duration_ms: number;
+  summary: string;
+}
+
+export interface SkillToolInfo {
+  name: string;
+  tool: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  instructions: string;
+  status: SkillStatus;
+  tools: SkillToolInfo[];
+  permissions: string;
+  report: SkillReport | null;
+  created_by: string;
+  conversation_id: string | null;
+  created_at: string;
+  tested_at: string | null;
+  activated_at: string | null;
+  digest: string;
+}
+
+export interface SkillDetail extends Skill {
+  code: string;
+  tests: string;
+}
