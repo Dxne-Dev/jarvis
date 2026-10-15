@@ -53,6 +53,17 @@ SERVERS: dict[str, ServerSpec] = {
 }
 
 
+@dataclass(frozen=True)
+class CustomServer:
+    """Un serveur installé depuis le registre MCP (lancé isolé, version fixe)."""
+
+    name: str
+    label: str
+    about: str
+    target: Callable[[], Any]
+    detail: str | None = None
+
+
 def _base_env() -> dict[str, str]:
     return {k: os.environ[k] for k in ("PATH", "HOME", "LANG") if k in os.environ}
 
@@ -142,6 +153,50 @@ class IntegrationManager:
         #: Cibles imposées (tests, serveur Google) : nom → fonction qui rend la cible.
         self._targets = dict(targets or {})
         self._details: dict[str, str] = {}
+        #: Serveurs installés depuis le registre, en plus de GitHub, Notion et l'agenda.
+        self._custom: dict[str, CustomServer] = {}
+
+    # ------------------------------------------------------------------ serveurs du registre
+
+    async def add_custom(self, server: CustomServer) -> None:
+        if server.name in SERVERS:
+            raise ValueError(f"nom réservé : {server.name}")
+        await self.reset(server.name)
+        self._custom[server.name] = server
+
+    async def remove_custom(self, name: str) -> None:
+        await self.reset(name)
+        self._custom.pop(name, None)
+
+    def known(self, name: str) -> bool:
+        return name in SERVERS or name in self._custom
+
+    def names(self) -> list[str]:
+        return [*SERVERS, *self._custom]
+
+    def label(self, name: str) -> str:
+        if name in self._custom:
+            return self._custom[name].label
+        return SERVERS[name].label if name in SERVERS else name
+
+    def about(self, name: str) -> str:
+        if name in self._custom:
+            return self._custom[name].about
+        return SERVERS[name].about if name in SERVERS else ""
+
+    def custom_status(self, name: str) -> dict[str, Any]:
+        connection = self._connections.get(name)
+        state = connection.state if connection else None
+        return {
+            "status": state.status if state else "arrêté",
+            "error": state.error if state else None,
+            "tools": sorted(
+                ({"name": t.name, "level": int(t.level)} for t in state.tools.values()),
+                key=lambda t: str(t["name"]),
+            )
+            if state
+            else [],
+        }
 
     def set_target(self, name: str, target: Callable[[], Any] | None, *, detail: str = "") -> None:
         """Change la façon de joindre un serveur (ex. Google : officiel ou celui de Jarvis)."""
@@ -155,7 +210,7 @@ class IntegrationManager:
             asyncio.get_running_loop().create_task(connection.close())
 
     def configured(self, name: str) -> bool:
-        if name in self._targets:
+        if name in self._targets or name in self._custom:
             return True
         spec = SERVERS[name]
         return name != "agenda" and bool(self._secret(spec.secret))
@@ -168,6 +223,8 @@ class IntegrationManager:
     async def _target(self, name: str) -> Callable[[], Any]:
         if name in self._targets:
             return self._targets[name]
+        if name in self._custom:
+            return self._custom[name].target
         spec = SERVERS[name]
         token = self._secret(spec.secret) or ""
         docker = await self._docker_path()
@@ -180,16 +237,15 @@ class IntegrationManager:
         raise McpCallError(f"{spec.label} n'est pas encore connecté (Réglages → Intégrations).")
 
     async def connection(self, name: str) -> McpConnection:
-        if name not in SERVERS:
+        if not self.known(name):
             raise McpCallError(f"Intégration inconnue : {name}.")
         if not self.configured(name):
-            label = SERVERS[name].label
+            label = self.label(name)
             raise McpCallError(f"{label} n'est pas configuré (Réglages → Intégrations).")
         connection = self._connections.get(name)
         if connection is None:
-            connection = McpConnection(
-                name, await self._target(name), detail=self._details.get(name)
-            )
+            detail = self._custom[name].detail if name in self._custom else self._details.get(name)
+            connection = McpConnection(name, await self._target(name), detail=detail)
             self._connections[name] = connection
         return connection
 
@@ -198,7 +254,7 @@ class IntegrationManager:
         if connection.state.status != "prêt":
             await connection.start()
         if connection.state.status != "prêt":
-            raise McpCallError(f"{SERVERS[name].label} indisponible : {connection.state.error}")
+            raise McpCallError(f"{self.label(name)} indisponible : {connection.state.error}")
         return connection.state.tools
 
     def known_tool(self, name: str, tool: str) -> McpTool | None:
@@ -208,13 +264,13 @@ class IntegrationManager:
     async def call(self, name: str, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         tools = await self.ensure(name)
         if tool not in tools:
-            raise McpCallError(f"{SERVERS[name].label} n'a pas d'outil « {tool} ».")
+            raise McpCallError(f"{self.label(name)} n'a pas d'outil « {tool} ».")
         connection = await self.connection(name)
         return await connection.call(tool, arguments)
 
     async def start_configured(self) -> None:
         """Au démarrage, sans bloquer : connexion des intégrations configurées."""
-        for name in SERVERS:
+        for name in self.names():
             if not self.configured(name):
                 continue
             try:

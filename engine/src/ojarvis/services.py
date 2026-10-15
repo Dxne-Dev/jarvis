@@ -40,6 +40,7 @@ from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.integrations.google import GoogleAccount, attach_agenda
 from ojarvis.integrations.manager import IntegrationManager
+from ojarvis.integrations.mcp_registry import McpRegistryService
 from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.fake import FakeProvider, e2e_script
@@ -68,6 +69,7 @@ from ojarvis.tools.catalog import build_registry
 from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.integrations import integration_tools
+from ojarvis.tools.mcp import mcp_tools
 from ojarvis.tools.skills import skill_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
@@ -244,6 +246,33 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     )
 
 
+async def _assemble_mcp(
+    acts: _Actions,
+    *,
+    http: httpx.AsyncClient,
+    db: Database,
+    backend: SecretBackend,
+    config: EngineConfig,
+    bus: EventBus,
+) -> McpRegistryService:
+    """Jarvis s'étend aussi par les serveurs MCP du registre officiel (installés isolés)."""
+    mcp = McpRegistryService(
+        http=http,
+        db=db,
+        manager=acts.integrations,
+        backend=backend,
+        data_dir=config.paths.data_dir,
+        bus=bus,
+    )
+    for tool in mcp_tools(mcp):
+        acts.tools.register(tool)
+    capabilities = acts.tools.get("lister_capacites")
+    if isinstance(capabilities, ListCapabilities):
+        capabilities.add_section("Serveurs MCP installés", mcp.capabilities)
+    await mcp.start()
+    return mcp
+
+
 async def _assemble_remote(  # noqa: PLR0917 - un assemblage, pas une logique
     acts: _Actions,
     http: httpx.AsyncClient,
@@ -313,6 +342,7 @@ class Services:
     integrations: IntegrationManager
     google: GoogleAccount
     skills: SkillService
+    mcp: McpRegistryService
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -383,6 +413,7 @@ class Services:
             agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
         )
         google, telegram = await _assemble_remote(acts, http, secrets, backend, bus, chat)
+        mcp = await _assemble_mcp(acts, http=http, db=db, backend=backend, config=config, bus=bus)
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
         # Tests de bout en bout : audio simulé (pas de micro, de haut-parleur ni de modèle).
@@ -443,6 +474,7 @@ class Services:
             integrations=acts.integrations,
             google=google,
             skills=acts.skills,
+            mcp=mcp,
         )
         services._holder = holder
         await executor.recover()

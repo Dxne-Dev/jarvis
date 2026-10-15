@@ -282,3 +282,8 @@ async def docker_available() -> bool:
         return await asyncio.wait_for(process.wait(), 10) == 0
     except (OSError, TimeoutError):
         return False
+
+
+async def bubblewrap_available() -> bool:
+    """bubblewrap peut créer ses espaces de noms ici (pour les serveurs MCP isolés)."""
+    return await SandboxRunner._bubblewrap_ready()

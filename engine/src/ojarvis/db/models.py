@@ -303,3 +303,28 @@ class Skill(Base):
     created_at: Mapped[datetime]
     tested_at: Mapped[datetime | None]
     activated_at: Mapped[datetime | None]
+
+
+class McpServer(Base):
+    """Un serveur MCP installé depuis le registre officiel (version fixe, lancé isolé).
+
+    Ses clés vont au trousseau ; ici, seulement leurs noms et les réglages ordinaires."""
+
+    __tablename__ = "mcp_servers"
+
+    #: Identifiant local, celui que voit le modèle (ex. « wikipedia-mcp-server »).
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    registry_name: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(500))
+    version: Mapped[str] = mapped_column(String(64))
+    #: Comment le lancer : paquet npm, Python, image Docker ou service en ligne.
+    option: Mapped[dict[str, Any]]
+    #: Réglages ordinaires (nom → valeur) et noms des réglages secrets (au trousseau).
+    variables: Mapped[dict[str, Any]]
+    secrets: Mapped[dict[str, Any]]
+    #: Outils vus à l'installation, avec leur niveau.
+    tools: Mapped[list[dict[str, Any]]]
+    enabled: Mapped[bool] = mapped_column(default=True)
+    installed_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
