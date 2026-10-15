@@ -250,6 +250,27 @@ async def test_images_require_vision() -> None:
     assert result.provider == "ollama"
 
 
+async def test_a_local_only_request_checks_ollama_again_first() -> None:
+    # Ollama a pu démarrer après le moteur : une demande privée le revérifie avant de router.
+    ollama = FakeProvider("ollama", local=True, configured=False)
+    calls: list[str] = []
+
+    async def refresh() -> None:
+        calls.append("refresh")
+        ollama._configured = True
+
+    router = ModelRouter(
+        {"deepseek": FakeProvider("deepseek"), "ollama": ollama},
+        Catalog(),
+        policy=POLICY,
+        refresh_local=refresh,
+    )
+    await router.complete("chat", request())
+    assert calls == []  # une demande ordinaire ne coûte rien de plus
+    result = await router.complete("chat", request(), Constraints(sensitive=True))
+    assert (result.provider, calls) == ("ollama", ["refresh"])
+
+
 # ------------------------------------------------------------------ sorties structurées
 
 

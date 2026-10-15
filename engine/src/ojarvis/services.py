@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import time
 from collections.abc import Callable, Coroutine
@@ -328,8 +329,19 @@ class Services:
             providers = {"deepseek": FakeProvider("deepseek", script=e2e_script, delay_s=0.05)}
         providers = providers if providers is not None else build_providers(secrets)
         holder: dict[str, Preferences] = {"value": preferences}
+        ollama = providers.get("ollama")
         router = ModelRouter(
-            providers, catalog, bus=bus, tracer=tracer, overrides=lambda: holder["value"].routing
+            providers,
+            catalog,
+            bus=bus,
+            tracer=tracer,
+            overrides=lambda: holder["value"].routing,
+            # Avant une demande « locale seulement », au plus une fois par minute.
+            refresh_local=(
+                functools.partial(ollama.refresh, http)
+                if isinstance(ollama, OllamaProvider)
+                else None
+            ),
         )
         embedder = embedder or E5Embedder(
             config.paths.cache_dir / "models" / "multilingual-e5-small"

@@ -24,7 +24,7 @@ from ojarvis.desktop import apps as applications
 from ojarvis.desktop.screen import capture, shrink
 from ojarvis.llm.errors import LLMError
 from ojarvis.llm.router import Constraints, ModelRouter
-from ojarvis.llm.types import ImagePart, LLMRequest, Message
+from ojarvis.llm.types import ImagePart, LLMRequest, LLMResult, Message
 from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
 from ojarvis.tools.guards import resolve_user_path
 
@@ -35,7 +35,8 @@ SCREEN_RULES = (
     "ordre affiché."
 )
 #: Taille maximale de l'image : en local, le modèle de vision est lent sur ce processeur.
-MAX_SIDE = {"local": 768, "en_ligne": 1600}
+ScreenMode = Literal["local", "en_ligne"]
+MAX_SIDE: dict[ScreenMode, int] = {"local": 768, "en_ligne": 1600}
 INDEX_TTL_S = 300.0
 
 
@@ -189,7 +190,7 @@ class LookAtScreen(Tool[ScreenArgs]):
     def __init__(
         self,
         router: ModelRouter,
-        mode: Callable[[], Literal["local", "en_ligne"]],
+        mode: Callable[[], ScreenMode],
         grab: Callable[[], Awaitable[bytes]] = capture,
     ) -> None:
         self._router = router
@@ -200,27 +201,40 @@ class LookAtScreen(Tool[ScreenArgs]):
         where = "en local" if self._mode() == "local" else "par un modèle en ligne"
         return f"Regarder ton écran ({where}) : « {args.question} »"
 
-    async def run(self, args: ScreenArgs, ctx: ToolContext) -> ToolOutput:
-        del ctx
-        mode = self._mode()
-        raw = await self._grab()
+    async def _read(self, raw: bytes, question: str, mode: ScreenMode) -> LLMResult:
         image = await asyncio.to_thread(shrink, raw, max_side=MAX_SIDE[mode])
         request = LLMRequest(
             messages=[
                 Message("system", f"{PERSONA}\n\n{SCREEN_RULES}"),
                 Message(
                     "user",
-                    args.question,
+                    question,
                     images=(ImagePart(base64.b64encode(image).decode(), "image/jpeg"),),
                 ),
             ],
             max_tokens=500,
         )
-        constraints = Constraints(needs_vision=True, sensitive=mode == "local")
+        local = mode == "local"
+        constraints = Constraints(needs_vision=True, sensitive=local, online_only=not local)
+        return await self._router.complete("vision", request, constraints)
+
+    async def run(self, args: ScreenArgs, ctx: ToolContext) -> ToolOutput:
+        del ctx
+        mode = self._mode()
+        raw = await self._grab()
         try:
-            result = await self._router.complete("vision", request, constraints)
+            result = await self._read(raw, args.question, mode)
         except LLMError as exc:
-            raise UpstreamError(f"Lecture de l'écran impossible : {exc.public}") from exc
+            if mode == "local":
+                raise UpstreamError(f"Lecture de l'écran impossible : {exc.public}") from exc
+            # Le modèle en ligne ne répond pas (offre gratuite saturée…) : lecture en local,
+            # avec l'image plus petite que le modèle local lit en un temps raisonnable.
+            try:
+                result = await self._read(raw, args.question, "local")
+            except LLMError as fallback:
+                message = f"Lecture de l'écran impossible : {exc.public}"
+                raise UpstreamError(message) from fallback
+            mode = "local"
         return ToolOutput(
             result.text.strip() or "(rien de lisible)",
             {"modele": result.model, "mode": mode},
@@ -307,9 +321,7 @@ class MakeDir(Tool[DirArgs]):
         return ToolOutput(f"Dossier prêt : {path}")
 
 
-def desktop_tools(
-    router: ModelRouter, screen_mode: Callable[[], Literal["local", "en_ligne"]]
-) -> list[Tool[Any]]:
+def desktop_tools(router: ModelRouter, screen_mode: Callable[[], ScreenMode]) -> list[Tool[Any]]:
     catalog = AppCatalog()
     return [
         ListApps(catalog),

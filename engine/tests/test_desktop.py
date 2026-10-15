@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import shutil
 import struct
@@ -20,6 +21,7 @@ from PIL import Image
 from ojarvis.core.errors import InvalidInputError, NotFoundError
 from ojarvis.desktop import apps as applications
 from ojarvis.desktop.screen import capture, shrink
+from ojarvis.llm.errors import RateLimitedError
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
 from ojarvis.llm.structured import TOOL_NAME
 from ojarvis.llm.types import LLMRequest, ToolCall
@@ -276,6 +278,29 @@ def test_reading_the_screen_stays_local_by_default(
     text, data = client.portal.call(_look, services, "en_ligne")
     assert data["mode"] == "en_ligne"
     assert llm["openrouter"].requests  # en ligne : seulement si tu l'as choisi
+
+
+def test_a_saturated_online_model_falls_back_to_a_local_reading(
+    client: TestClient, services: Services, llm: dict[str, FakeProvider]
+) -> None:
+    # Offre gratuite saturée : l'écran est lu en local, avec l'image réduite pour lui.
+    llm["ollama"]._configured = True
+    llm["ollama"]._script = vision_script
+    llm["openrouter"]._configured = True
+    llm["openrouter"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
+    assert client.portal is not None
+    text, data = client.portal.call(_look, services, "en_ligne")
+    assert "1 045 €" in text
+    assert data["mode"] == "local"
+    online, _ = llm["openrouter"].requests[-1]
+    local, _ = llm["ollama"].requests[-1]
+    assert len(llm["ollama"].requests) == 1  # le modèle local n'a vu que l'image réduite
+    sizes = []
+    for sent in (online, local):
+        jpeg = base64.b64decode(sent.messages[1].images[0].data_base64)
+        with Image.open(io.BytesIO(jpeg)) as image:
+            sizes.append(max(image.size))
+    assert sizes == [1280, 768]
 
 
 # ---------------------------------------------------------------------- porte et chat
