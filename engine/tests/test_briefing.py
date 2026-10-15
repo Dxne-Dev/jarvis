@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from anyio.from_thread import BlockingPortal
@@ -58,6 +59,9 @@ def test_the_first_session_of_the_day_plays_the_briefing_once(
     reminder = {"type": "rappel", "texte": "Boire un verre d'eau."}
     soon = {"type": "horaire", "quand": {"type": "intervalle", "minutes": 5}}
     client.post("/v1/automations", json={"name": "Eau", "trigger": soon, "action": reminder})
+    # Le briefing a lieu juste avant l'échéance : même jour, même près de minuit.
+    due = datetime.fromisoformat(client.get("/v1/automations").json()[0]["next_run_at"])
+    services.briefing._clock = lambda: due - timedelta(minutes=1)
 
     first = client.post("/v1/session", json={}).json()
     assert first["briefing"] is not None
