@@ -140,7 +140,13 @@ async def shop(services: Services, home: Path, port: int) -> Outcome:
     names = [t["name"] for t in tools]
     if not plans:
         ok = "4,50" in text
-        return Outcome("boutique (plan navigateur)", ok, f"sans plan : {text[:160]}", time.perf_counter() - start, names)
+        return Outcome(
+            "boutique (plan navigateur)",
+            ok,
+            f"sans plan : {text[:160]}",
+            time.perf_counter() - start,
+            names,
+        )
     plan = await services.plans.get(plans[-1])
     steps = [s.tool for s in plan.steps]
     result = await run_plan(services, plan.id)
@@ -177,7 +183,13 @@ async def write_file(services: Services, home: Path, port: int) -> Outcome:
     names = [t["name"] for t in tools]
     target = home / "notes" / "courses.md"
     if not plans:
-        return Outcome("écrire un fichier", False, f"aucun plan : {text[:160]}", time.perf_counter() - start, names)
+        return Outcome(
+            "écrire un fichier",
+            False,
+            f"aucun plan : {text[:160]}",
+            time.perf_counter() - start,
+            names,
+        )
     before = target.exists()
     result = await run_plan(services, plans[-1])
     content = target.read_text(encoding="utf-8") if target.exists() else ""
@@ -207,7 +219,9 @@ async def code(services: Services, home: Path, port: int) -> Outcome:
     ok = "executer_code" in names and "333 833 500" in text.replace(" ", " ").replace(
         "333833500", "333 833 500"
     )
-    return Outcome("code en bac à sable", ok and not plans, text[:160], time.perf_counter() - start, names)
+    return Outcome(
+        "code en bac à sable", ok and not plans, text[:160], time.perf_counter() - start, names
+    )
 
 
 async def _automation(services: Services, text: str) -> tuple[Any, list[str], str]:

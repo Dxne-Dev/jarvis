@@ -91,7 +91,8 @@ def resample(audio: npt.NDArray[np.int16], rate: int) -> Pcm:
         return audio
     factor = gcd(RATE, rate)
     out = resample_poly(audio.astype(np.float32), RATE // factor, rate // factor)
-    return np.clip(out, -32768, 32767).astype(np.int16)
+    result: Pcm = np.clip(out, -32768, 32767).astype(np.int16)
+    return result
 
 
 def frame(speech: Pcm, *, lead_s: float = 0.8, tail_s: float = 1.6) -> tuple[Pcm, float]:
