@@ -35,6 +35,7 @@ from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBacken
 from ojarvis.settings_store import Preferences, SettingsStore
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
+from ojarvis.voice.simulated import simulated_voice
 
 log = get_logger(__name__)
 
@@ -161,7 +162,9 @@ class Services:
         )
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
-        audio = (
+        # Tests de bout en bout : audio simulé (pas de micro, de haut-parleur ni de modèle).
+        simulated = config.dev_mode and os.environ.get("OJARVIS_FAKE_AUDIO") == "1"
+        audio = simulated or (
             discover
             and os.environ.get("OJARVIS_SKIP_WARMUP") != "1"
             and os.environ.get("OJARVIS_NO_AUDIO") != "1"
@@ -175,6 +178,7 @@ class Services:
             secrets=secrets,
             preferences=lambda: holder["value"],
             audio=audio,
+            **(simulated_voice() if simulated else {}),
         )
 
         services = cls(

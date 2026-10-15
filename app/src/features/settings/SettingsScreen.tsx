@@ -12,7 +12,11 @@ import styles from "./SettingsScreen.module.css";
 
 const GROUPS: { id: SecretGroup; title: string; description: string }[] = [
   { id: "llm", title: "Modèles de langage", description: "Le cerveau de Jarvis." },
-  { id: "voice", title: "Voix", description: "Synthèse vocale en ligne." },
+  {
+    id: "voice",
+    title: "Synthèse vocale",
+    description: "La voix naturelle de Jarvis (Cartesia).",
+  },
   { id: "search", title: "Recherche", description: "Recherche sur le web." },
   { id: "integrations", title: "Intégrations", description: "GitHub, Notion, Google Agenda." },
   { id: "phone", title: "Téléphone", description: "Parler à Jarvis depuis Telegram." },

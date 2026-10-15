@@ -196,7 +196,9 @@ class VoiceService:
         sink_factory: Callable[[str | None], AudioSink] = SpeakerSink,
         echo: EchoCancel | None = None,
         clock: Callable[[], float] = time.monotonic,
+        on_listen: Callable[[], None] | None = None,
     ) -> None:
+        self._on_listen = on_listen
         self._source_factory = source_factory
         self._sink_factory = sink_factory
         self._clock = clock
@@ -253,7 +255,9 @@ class VoiceService:
     async def _start_locked(self) -> None:
         prefs = self._preferences()
         self.status.enabled = prefs.voice_enabled
-        self.status.models = self._model_status()
+        self.status.models = (
+            dict.fromkeys(MODEL_SETS, "simulé") if self._preloaded else self._model_status()
+        )
         if not prefs.voice_enabled or not self._audio:
             self.status.state = VoiceState.OFF.value
             self.status.error = None if self._audio else "Audio désactivé pour ce lancement."
@@ -451,6 +455,8 @@ class VoiceService:
         if self._pipeline is None:
             return False
         self._pipeline.listen_now()
+        if self._on_listen is not None:
+            self._on_listen()
         return True
 
     async def interrupt(self) -> bool:

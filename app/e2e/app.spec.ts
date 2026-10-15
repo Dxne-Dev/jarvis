@@ -30,7 +30,7 @@ test.beforeEach(async ({ page }) => {
 
 test("l'accueil montre la sphère et l'état du moteur", async ({ page }) => {
   await expect(page.getByRole("img", { name: /Sphère de Jarvis/ })).toBeVisible();
-  await expect(page.getByText("Jarvis est prêt.")).toBeVisible();
+  await expect(page.getByText("Dis « Hey Jarvis », ou écris-moi.")).toBeVisible();
   await expectNoSeriousA11yIssues(page);
   await capture(page, "accueil");
 });
