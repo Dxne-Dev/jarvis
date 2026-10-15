@@ -35,6 +35,7 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["skill.", "tools"],
   ["mcp.", "mcp"],
   ["agent.", "agents"],
+  ["suggestion.", "suggestions"],
 ];
 
 /** Une seule annonce de session par lancement de l'app (le briefing du jour en dépend). */
@@ -56,6 +57,9 @@ function notifyFor(event: EngineEvent): void {
       "Voix indisponible",
       "Le pipeline vocal s'est arrêté. Nouvel essai en cours.",
     );
+  } else if (event.type === "suggestion.created") {
+    const title = typeof event.payload.title === "string" ? event.payload.title : "";
+    void notifyDesktop("Une idée de Jarvis", title);
   } else if (event.type === "plan.proposed") {
     const title = typeof event.payload.title === "string" ? event.payload.title : "";
     void notifyDesktop("Action à valider", title || "Jarvis attend ta décision.");

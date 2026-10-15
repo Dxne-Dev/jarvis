@@ -35,6 +35,7 @@ import type {
   SecretStatus,
   Skill,
   SkillDetail,
+  SuggestionInfo,
   TelegramStatus,
   ToolInfo,
   TraceDetail,
@@ -783,4 +784,40 @@ export function useDeleteRelation() {
   return useGraphMutation((client, id: number) =>
     client.delete<undefined>(`/v1/memory/graph/relations/${id}`),
   );
+}
+
+// ---------------------------------------------------------------- suggestions
+
+export function useSuggestions() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["suggestions"],
+    queryFn: () => requireClient(client).get<SuggestionInfo[]>("/v1/suggestions"),
+    enabled: client !== null,
+  });
+}
+
+export function useAcceptSuggestion() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, option }: { id: string; option: string }) =>
+      requireClient(client).post<SuggestionInfo>(
+        `/v1/suggestions/${encodeURIComponent(id)}/accept`,
+        { option },
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["suggestions"] }),
+  });
+}
+
+export function useDismissSuggestion() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).post<SuggestionInfo>(
+        `/v1/suggestions/${encodeURIComponent(id)}/dismiss`,
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["suggestions"] }),
+  });
 }

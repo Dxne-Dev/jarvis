@@ -41,6 +41,7 @@ const VOICE: VoiceStatus = {
 /** Réponses communes du faux moteur (modèles, voix), à combiner avec celles d'un test. */
 function common(path: string): [number, unknown] | null {
   if (path.startsWith("/v1/plans")) return [200, []];
+  if (path === "/v1/suggestions") return [200, []];
   if (path === "/v1/browser") return [200, { sources: [], grants: [], login_domain: null }];
   if (path === "/v1/tools") return [200, []];
   if (path === "/v1/integrations") return [200, []];
@@ -345,7 +346,9 @@ describe("Accueil", () => {
     const { client } = fakeEngine((_, path) =>
       path === "/v1/status"
         ? [200, STATUS]
-        : [200, { reduced_motion: "system", sphere_quality: "auto" }],
+        : path === "/v1/suggestions"
+          ? [200, []]
+          : [200, { reduced_motion: "system", sphere_quality: "auto" }],
     );
     renderScreen(<HomeScreen />, { client });
     expect(

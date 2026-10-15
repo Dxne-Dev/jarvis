@@ -595,3 +595,15 @@ export interface MemoryGraph {
   entities: GraphEntity[];
   relations: GraphRelation[];
 }
+
+export interface SuggestionInfo {
+  id: string;
+  kind: "repetition" | "inactivite";
+  title: string;
+  detail: string | null;
+  options: { id: string; label: string }[];
+  confidence: number;
+  status: "nouvelle" | "acceptee" | "ecartee";
+  conversation_id: string | null;
+  created_at: string;
+}

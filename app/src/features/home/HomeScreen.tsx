@@ -25,6 +25,7 @@ import { Sphere } from "../sphere/Sphere";
 import { SPHERE_STATES, STATE_LABELS, type SphereState } from "../sphere/states";
 import { usePerfProbe } from "../sphere/usePerfProbe";
 import home from "./HomeScreen.module.css";
+import { Suggestions } from "./Suggestions";
 
 function greeting(date: Date): string {
   const hour = date.getHours();
@@ -173,6 +174,14 @@ export function HomeScreen() {
           </Button>
         )}
       </section>
+
+      {!conversing && !probe.running && (
+        <Suggestions
+          onOpen={(id) => {
+            setParams({ c: id });
+          }}
+        />
+      )}
 
       {probe.running && (
         <p className={home.probe} role="status">
