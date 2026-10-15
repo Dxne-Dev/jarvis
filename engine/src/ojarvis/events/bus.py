@@ -154,6 +154,11 @@ class EventBus:
         self.stats.subscribers = len(self._subscribers)
 
     async def drain(self) -> None:
-        """Attend la fin des gestionnaires en cours (arrêt propre, tests)."""
-        while self._tasks:
-            await asyncio.gather(*list(self._tasks), return_exceptions=True)
+        """Attend la fin des gestionnaires en cours (arrêt propre, tests).
+
+        On n'attend que les tâches encore en cours : une tâche finie reste dans l'ensemble
+        jusqu'à ce que la boucle exécute son rappel de fin, et `gather` sur des tâches
+        finies rend la main sans passer par la boucle (on tournerait sans fin).
+        """
+        while pending := [task for task in self._tasks if not task.done()]:
+            await asyncio.gather(*pending, return_exceptions=True)

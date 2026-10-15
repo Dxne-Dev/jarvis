@@ -117,3 +117,18 @@ async def test_persist_failure_still_dispatches() -> None:
         event = await bus.publish("x.y")
         assert event.id is None
         assert (await asyncio.wait_for(queue.get(), 1)).type == "x.y"
+
+
+async def test_drain_returns_when_a_handler_just_finished() -> None:
+    """Régression : une tâche finie dont le rappel de fin n'a pas encore tourné."""
+    bus = EventBus()
+    seen: list[str] = []
+
+    async def handler(event: Event) -> None:
+        seen.append(event.type)
+
+    bus.subscribe("*", handler)
+    await bus.publish("test.fini", {}, persist=False)
+    await asyncio.sleep(0)  # la tâche du gestionnaire s'exécute ; son rappel attend encore
+    await asyncio.wait_for(bus.drain(), timeout=1)
+    assert seen == ["test.fini"]
