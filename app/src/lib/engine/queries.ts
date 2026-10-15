@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineClient } from "./client";
 import { useEngineStore } from "./store";
 import type {
+  AgentInfo,
+  AgentRun,
   AuditPage,
   Automation,
   AutomationDraft,
@@ -692,5 +694,37 @@ export function useUninstallMcp() {
         `/v1/mcp/servers/${encodeURIComponent(id)}?double_confirm=true`,
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["mcp"] }),
+  });
+}
+
+// ---------------------------------------------------------------- agents
+
+export function useAgents() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["agents"],
+    queryFn: () => requireClient(client).get<AgentInfo[]>("/v1/agents"),
+    enabled: client !== null,
+  });
+}
+
+export function useAgentRuns() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["agents", "runs"],
+    queryFn: () => requireClient(client).get<AgentRun[]>("/v1/agents/runs?limit=20"),
+    enabled: client !== null,
+  });
+}
+
+export function useStartMission() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agent, task }: { agent: string; task: string }) =>
+      requireClient(client).post<AgentRun>(`/v1/agents/${encodeURIComponent(agent)}/runs`, {
+        task,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
 }

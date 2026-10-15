@@ -536,3 +536,34 @@ export interface McpInstallRequest {
   variables: Record<string, string>;
   secrets: Record<string, string>;
 }
+
+export interface AgentInfo {
+  name: string;
+  label: string;
+  goal: string;
+  tools: string[];
+  busy: boolean;
+  run: string | null;
+}
+
+export interface AgentStep {
+  tool: string;
+  description: string;
+  status: "done" | "failed" | "proposed" | "running";
+  error?: string;
+}
+
+export interface AgentRun {
+  id: string;
+  agent: string;
+  task: string;
+  status: "en_cours" | "fini" | "echec" | "interrompu";
+  origin: "chat" | "interface";
+  result: string | null;
+  error: string | null;
+  steps: AgentStep[];
+  plans: string[];
+  trace_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+}

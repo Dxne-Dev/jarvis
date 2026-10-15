@@ -1,6 +1,7 @@
 import { createHashRouter } from "react-router";
 
 import { ActionsScreen } from "../features/actions/ActionsScreen";
+import { AgentsScreen } from "../features/agents/AgentsScreen";
 import { AutomationsScreen } from "../features/automations/AutomationsScreen";
 import { HistoryScreen } from "../features/history/HistoryScreen";
 import { HomeScreen } from "../features/home/HomeScreen";
@@ -21,6 +22,7 @@ export const router = createHashRouter([
       { path: "memoire", element: <MemoryScreen /> },
       { path: "actions", element: <ActionsScreen /> },
       { path: "automatisations", element: <AutomationsScreen /> },
+      { path: "agents", element: <AgentsScreen /> },
       { path: "skills", element: <SkillsScreen /> },
       { path: "journal", element: <JournalScreen /> },
       { path: "reglages", element: <SettingsScreen /> },
