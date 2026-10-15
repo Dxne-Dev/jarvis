@@ -40,8 +40,9 @@ AGENT_RULES = (
     "outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou l'agenda : "
     "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
     "integration_appeler. Si une capacité te manque et qu'elle se calcule (sans Internet ni "
-    "fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) ; si les tests "
-    "réussissent, propose activer_skill ; une fois actif, utilise ses outils.\n\n" + DATA_RULE
+    "fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) : si ses tests "
+    "réussissent, son activation est proposée à l'utilisateur ; une fois actif, utilise ses "
+    "outils.\n\n" + DATA_RULE
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "
@@ -200,10 +201,24 @@ class Agent:
                 ],
             )
             return await self._propose(call, plan_in, turn, conversation_id, request)
-        return await self._read(call, tool.describe(args), int(level), turn)
+        return await self._read(
+            call,
+            tool.describe(args),
+            int(level),
+            turn,
+            conversation_id=conversation_id,
+            request=request,
+        )
 
     async def _read(
-        self, call: ToolCall, description: str, level: int, turn: AgentTurn
+        self,
+        call: ToolCall,
+        description: str,
+        level: int,
+        turn: AgentTurn,
+        *,
+        conversation_id: str | None,
+        request: str,
     ) -> CallOutcome:
         """Outil de niveau 1 : exécuté tout de suite, par la porte des permissions."""
         try:
@@ -225,8 +240,18 @@ class Agent:
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:
             turn.tainted = True
-            return CallOutcome(as_data(output.text, origin=output.source), event)
-        return CallOutcome(output.text, event)
+        content = as_data(output.text, origin=output.source) if output.external else output.text
+        if output.follow_up is None:
+            return CallOutcome(content, event)
+        # L'outil propose sa suite (ex. activer un skill dont les tests ont réussi) : un plan,
+        # au niveau de cette suite, qui attend ta décision.
+        follow = output.follow_up
+        plan_in = PlanIn(
+            titre=follow.why[:120],
+            etapes=[StepIn(outil=follow.tool, arguments=follow.arguments, pourquoi=follow.why)],
+        )
+        proposed = await self._propose(call, plan_in, turn, conversation_id, request)
+        return CallOutcome(f"{content}\n\n{proposed.content}", event, plan=proposed.plan)
 
     async def _propose(
         self,

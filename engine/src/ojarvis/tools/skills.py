@@ -23,6 +23,7 @@ from ojarvis.skills.runner import SkillCallError
 from ojarvis.skills.service import SANDBOX_RULES
 from ojarvis.tools.base import (
     LEVEL_LABELS,
+    FollowUp,
     InvalidToolArgumentsError,
     Level,
     Tool,
@@ -43,8 +44,8 @@ class CreateSkill(Tool[SkillDefinition]):
     description: ClassVar[str] = (
         "Crée un skill : une capacité durable faite de fonctions Python pures (bibliothèque "
         "standard, sans Internet ni fichiers) avec leurs tests, lancés dans le bac à sable. "
-        "Il reste en brouillon : propose ensuite activer_skill, que l'utilisateur confirme "
-        "deux fois."
+        "Si les tests réussissent, son activation est proposée à l'utilisateur, qui la "
+        "confirme deux fois."
     )
     Args: ClassVar[type[ToolArgs]] = SkillDefinition
     level: ClassVar[Level] = Level.LIRE
@@ -66,10 +67,16 @@ class CreateSkill(Tool[SkillDefinition]):
         lines = [f"Skill {record.label} enregistré en brouillon. Tests : {summary}."]
         failures = [c for c in report.cases if not c.ok] if report else []
         lines += [f"- {c.name} : {c.detail}" for c in failures]
+        follow_up = None
         if record.tested_ok:
             lines.append(
-                "Pour qu'il serve, propose activer_skill : l'utilisateur verra son code, ses "
-                "outils et ses tests, et confirmera deux fois."
+                "Son activation est proposée à l'utilisateur (double confirmation) : n'appelle "
+                "pas activer_skill toi-même ; dis-lui qu'il peut regarder le code et confirmer."
+            )
+            follow_up = FollowUp(
+                ActivateSkill.name,
+                {"nom": record.name, "version": record.version},
+                f"Activer le skill « {record.name} » (tests réussis)",
             )
         else:
             lines.append(
@@ -82,6 +89,7 @@ class CreateSkill(Tool[SkillDefinition]):
             # Les messages d'échec viennent du code testé : une donnée, pas une consigne.
             external=bool(failures or (report and report.error)),
             source="tests du skill",
+            follow_up=follow_up,
         )
 
 

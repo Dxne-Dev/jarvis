@@ -217,10 +217,7 @@ def test_jarvis_creates_a_skill_asks_then_uses_it(
         if "Crée-toi" in last_user:
             if done == 0:
                 return FakeReply(tool_calls=[ToolCall("c", "creer_skill", days_skill())])
-            if done == 1:
-                version = {"nom": "jours-entre-dates", "version": "1.0.0"}
-                return FakeReply(tool_calls=[ToolCall("a", "activer_skill", version)])
-            return FakeReply(text="Je l'active dès que tu confirmes.")
+            return FakeReply(text="Ses tests réussissent : je l'active dès que tu confirmes.")
         if done == 0:
             dates = {"debut": "2026-01-01", "fin": "2026-10-15"}
             return FakeReply(tool_calls=[ToolCall("j", TOOL, dates)])
