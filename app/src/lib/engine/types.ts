@@ -49,6 +49,7 @@ export interface Preferences {
   voice_output_device: string | null;
   voice_name: string;
   voice_engine: "auto" | "piper";
+  voice_stt: "auto" | "local";
   wake_sensitivity: "basse" | "normale" | "haute";
   voice_follow_up: boolean;
   voice_barge_in: boolean;
@@ -66,6 +67,8 @@ export interface VoiceStatus {
   echo_cancel: boolean;
   tts_engine: string | null;
   tts_fallback: string | null;
+  stt_engine: string | null;
+  stt_fallback: boolean;
   last_latency_ms: number | null;
   last_turn_at: number | null;
 }

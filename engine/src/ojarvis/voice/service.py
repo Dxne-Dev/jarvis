@@ -36,7 +36,12 @@ from ojarvis.voice.audio import (
     SpeakerSink,
 )
 from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline, VoiceState
-from ojarvis.voice.stt import WHISPER_FILES, WhisperTranscriber
+from ojarvis.voice.stt import (
+    WHISPER_FILES,
+    CartesiaSTT,
+    StreamingTranscriber,
+    WhisperTranscriber,
+)
 from ojarvis.voice.tts import (
     CARTESIA_VERSION,
     PIPER_FILES,
@@ -76,6 +81,9 @@ class VoiceStatus:
     echo_cancel: bool = False
     tts_engine: str | None = None
     tts_fallback: str | None = None
+    stt_engine: str | None = None
+    #: La transcription en ligne était voulue mais Whisper local a pris le relais.
+    stt_fallback: bool = False
     last_latency_ms: float | None = None
     last_turn_at: float | None = None
 
@@ -323,7 +331,14 @@ class VoiceService:
             on_fallback=self._on_tts_fallback,
             prefer_secondary=lambda: self._preferences().voice_engine == "piper",
         )
-        self._parts = {"wake": wake, "vad": vad, "stt": stt, "tts": tts}
+        cloud_stt = CartesiaSTT(lambda: self._secrets.get("CARTESIA_API_KEY"))
+        self._parts = {
+            "wake": wake,
+            "vad": vad,
+            "stt": stt,
+            "tts": tts,
+            "streaming_stt": cloud_stt,
+        }
 
     def _on_tts_fallback(self, reason: str) -> None:
         self.status.tts_fallback = reason
@@ -366,6 +381,7 @@ class VoiceService:
                 config=self._config(current, echo_cancel=echo),
                 on_turn=self._on_turn,
                 clock=self._clock,
+                streaming_stt=self._streaming_for(current),
             )
 
         self._pipeline = make_pipeline()
@@ -406,10 +422,20 @@ class VoiceService:
         finally:
             await sink.close()
 
+    def _streaming_for(self, prefs: Preferences) -> StreamingTranscriber | None:
+        """Transcription en ligne si elle est voulue ; Whisper local reste le secours."""
+        if prefs.voice_stt != "auto":
+            return None
+        engine: StreamingTranscriber | None = self._parts.get("streaming_stt")
+        return engine
+
     def _on_turn(self, report: TurnReport) -> None:
         self.status.last_latency_ms = report.latency_ms
         self.status.last_turn_at = time.time()
         self.status.tts_engine = report.tts_engine
+        self.status.stt_engine = report.stt_engine
+        wanted = self._pipeline is not None and self._pipeline.streaming_stt is not None
+        self.status.stt_fallback = wanted and report.stt_engine != "cartesia"
         if report.tts_engine == "cartesia":
             self.status.tts_fallback = None
 
@@ -449,6 +475,7 @@ class VoiceService:
                 return
             if running and _device_prefs(prefs) == self._applied and self._pipeline is not None:
                 self._pipeline.config = self._config(prefs, echo_cancel=self.status.echo_cancel)
+                self._pipeline.streaming_stt = self._streaming_for(prefs)
                 await self._publish()
                 return
             if running:

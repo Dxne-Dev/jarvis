@@ -40,6 +40,8 @@ class Preferences(BaseModel):
     #: Voix Cartesia (identifiant) ; Piper, local, sert de repli hors ligne.
     voice_name: str = Field(default=DEFAULT_CARTESIA_VOICE, pattern=r"^[0-9a-fA-F-]{8,64}$")
     voice_engine: Literal["auto", "piper"] = "auto"
+    #: Transcription : Cartesia en ligne (après « Hey Jarvis »), ou Whisper local seulement.
+    voice_stt: Literal["auto", "local"] = "auto"
     wake_sensitivity: Literal["basse", "normale", "haute"] = "normale"
     #: Après une réponse, écouter encore quelques secondes sans mot de réveil.
     voice_follow_up: bool = True

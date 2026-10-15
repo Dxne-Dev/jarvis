@@ -27,9 +27,9 @@ from ojarvis.core.clock import utc_now
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.tracing.tracer import Tracer
-from ojarvis.voice.audio import FRAME_S, AudioSink, AudioSource, Frame, Pcm, level
+from ojarvis.voice.audio import FRAME_S, FRAME_SAMPLES, AudioSink, AudioSource, Frame, Pcm, level
 from ojarvis.voice.sentences import SentenceSplitter
-from ojarvis.voice.stt import Transcriber, Transcript
+from ojarvis.voice.stt import StreamingTranscriber, SttStream, Transcriber, Transcript
 from ojarvis.voice.tts import Synthesizer, TTSError
 from ojarvis.voice.vad import Endpoint, EndpointConfig, Endpointer, SpeechDetector
 from ojarvis.voice.wake import WakeDetector, mentions_jarvis, strip_wake_words
@@ -84,6 +84,10 @@ class _Listening:
     follow_up: bool = False
     #: Déjà relancé une fois après une transcription vide (« Hey Jarvis » … silence).
     retried: bool = False
+    #: Transcription en ligne : l'audio y part pendant la phrase.
+    stream: SttStream | None = None
+    #: Trames retenues pendant une courte pause (envoyées si la parole reprend).
+    held: list[Frame] = field(default_factory=list)
 
 
 @dataclass
@@ -98,6 +102,7 @@ class TurnReport:
     conversation_id: str | None
     trace_id: str | None
     interrupted: bool = False
+    stt_engine: str = "whisper"
 
 
 class VoicePipeline:
@@ -116,8 +121,11 @@ class VoicePipeline:
         config: VoiceConfig | None = None,
         on_turn: Callable[[TurnReport], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        streaming_stt: StreamingTranscriber | None = None,
     ) -> None:
         self._clock = clock
+        #: Transcription en ligne (Cartesia) ; `None` : Whisper local seulement. Modifiable à chaud.
+        self.streaming_stt = streaming_stt
         self._source = source
         self._sink = sink
         self._wake = wake
@@ -298,7 +306,9 @@ class VoicePipeline:
         listening.frames.append(frame)
         prob = self._vad.process(frame.pcm)
         event = self._endpointer.update(prob, frame.at, FRAME_S)
-        if event == Endpoint.PAUSE:
+        self._stream_step(listening, frame, event)
+        if event == Endpoint.PAUSE and listening.stream is None:
+            # Transcription locale anticipée (sans transcription en ligne).
             audio = self._utterance_audio(listening)
             listening.speculative = asyncio.create_task(self._stt.transcribe(audio))
             listening.speculative_frames = len(listening.frames)
@@ -310,10 +320,47 @@ class VoicePipeline:
         elif event == Endpoint.TIMEOUT:
             if listening.speculative is not None:
                 listening.speculative.cancel()
+            if listening.stream is not None:
+                self._spawn(listening.stream.cancel())
             self._listening = None
             if not listening.follow_up:
                 self._spawn(self._bus.publish("voice.timeout", {}, persist=False))
             self._go_idle()
+
+    def _stream_step(self, listening: _Listening, frame: Frame, event: Endpoint) -> None:
+        """Envoie la phrase à la transcription en ligne, au fil de la parole.
+
+        Rien ne part avant que l'on parle vraiment (après « Hey Jarvis » ou le bouton micro).
+        Dès une courte pause, on demande le texte ; si la parole reprend, on continue.
+        """
+        engine = self.streaming_stt
+        if engine is None or not self._endpointer.speaking:
+            return
+        stream = listening.stream
+        if stream is None:
+            if not engine.available:
+                return
+            try:
+                stream = listening.stream = engine.open()
+            except Exception:
+                log.exception("stt_stream_open_failed")
+                return
+            audio = self._utterance_audio(listening)  # préroll compris
+            for start in range(0, len(audio), FRAME_SAMPLES):
+                stream.send(audio[start : start + FRAME_SAMPLES])
+            return
+        if event == Endpoint.PAUSE:
+            stream.flush()
+            listening.held = [frame]
+        elif event == Endpoint.RESUME:
+            for held in listening.held:
+                stream.send(held.pcm)
+            listening.held = []
+            stream.send(frame.pcm)
+        elif self._endpointer.paused or event == Endpoint.END:
+            listening.held.append(frame)  # silence : gardé au cas où la parole reprenne
+        else:
+            stream.send(frame.pcm)
 
     def _utterance_audio(self, listening: _Listening, upto: int | None = None) -> Pcm:
         start = self._endpointer.speech_start_at or listening.opened_at
@@ -329,12 +376,17 @@ class VoicePipeline:
     def _finish_listening(self, listening: _Listening) -> None:
         speech_end = self._endpointer.last_voice_at or listening.frames[-1].at
         audio = self._utterance_audio(listening)
-        speculative = listening.speculative
         self._listening = None
         self._turn_audio = list(listening.frames)
         self._set_state(VoiceState.THINKING)
         self._turn = asyncio.create_task(
-            self._run_turn(audio, speculative, speech_end, retried=listening.retried)
+            self._run_turn(
+                audio,
+                listening.speculative,
+                speech_end,
+                retried=listening.retried,
+                stream=listening.stream,
+            )
         )
 
     # ------------------------------------------------------------------ pendant la réponse
@@ -404,9 +456,10 @@ class VoicePipeline:
         speech_end: float,
         *,
         retried: bool,
+        stream: SttStream | None = None,
     ) -> None:
         try:
-            await self._turn_steps(audio, speculative, speech_end, retried=retried)
+            await self._turn_steps(audio, speculative, speech_end, retried=retried, stream=stream)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -416,6 +469,26 @@ class VoicePipeline:
             await self._bus.publish("voice.error", {"message": f"{type(exc).__name__}"})
             self._go_idle()
 
+    async def _transcribe(
+        self,
+        audio: Pcm,
+        speculative: asyncio.Task[Transcript] | None,
+        stream: SttStream | None,
+    ) -> tuple[Transcript, bool, str]:
+        """Texte de la phrase : en ligne si possible, sinon Whisper local (anticipé ou non)."""
+        if stream is not None:
+            try:
+                return await stream.finish(timeout_s=2.5), True, "cartesia"
+            except Exception as exc:
+                log.warning("stt_fallback", error=str(exc))
+                self._spawn(self._bus.publish("voice.stt_fallback", {"reason": str(exc)[:200]}))
+            finally:
+                self._spawn(stream.cancel())  # sans attendre la fermeture de la connexion
+        if speculative is not None and not speculative.cancelled():
+            with contextlib.suppress(Exception):
+                return await speculative, True, "whisper"
+        return await self._stt.transcribe(audio), False, "whisper"
+
     async def _turn_steps(
         self,
         audio: Pcm,
@@ -423,16 +496,12 @@ class VoicePipeline:
         speech_end: float,
         *,
         retried: bool,
+        stream: SttStream | None = None,
     ) -> None:
         stt_started = utc_now()
-        used_speculative = False
-        transcript: Transcript | None = None
-        if speculative is not None and not speculative.cancelled():
-            with contextlib.suppress(Exception):
-                transcript = await speculative
-                used_speculative = True
-        if transcript is None:
-            transcript = await self._stt.transcribe(audio)
+        transcript, used_speculative, stt_engine = await self._transcribe(
+            audio, speculative, stream
+        )
         text = strip_wake_words(transcript.text)
         if not _meaningful(text, transcript):
             self._turn = None
@@ -444,7 +513,14 @@ class VoicePipeline:
             else:
                 self._go_idle()
             return
-        report = await self._answer(text, transcript, stt_started, used_speculative, speech_end)
+        report = await self._answer(
+            text,
+            transcript,
+            stt_started=stt_started,
+            speculative=used_speculative,
+            speech_end=speech_end,
+            stt_engine=stt_engine,
+        )
         self.last_report = report
         if self._on_turn is not None:
             self._on_turn(report)
@@ -460,9 +536,11 @@ class VoicePipeline:
         self,
         text: str,
         transcript: Transcript,
+        *,
         stt_started: Any,
         speculative: bool,
         speech_end: float,
+        stt_engine: str = "whisper",
     ) -> TurnReport:
         await self._bus.publish("voice.transcript", {"text": text}, persist=False)
         reply: list[str] = []
@@ -477,7 +555,7 @@ class VoicePipeline:
                 duration_ms=stt_ms,
                 audio_s=transcript.audio_s,
                 anticipee=speculative,
-                modele="whisper-base",
+                modele="cartesia-ink-2" if stt_engine == "cartesia" else "whisper-base",
             )
             producer = asyncio.create_task(
                 self._produce(text, queue, reply, done, learn=transcript.reliable)
@@ -525,6 +603,7 @@ class VoicePipeline:
                 tts_engine=engine,
                 conversation_id=done.get("conversation_id"),
                 trace_id=trace.id,
+                stt_engine=stt_engine,
             )
         await self._bus.publish(
             "voice.turn",
@@ -534,6 +613,7 @@ class VoicePipeline:
                 "speculative": report.speculative,
                 "first_token_ms": report.first_token_ms,
                 "tts_engine": report.tts_engine,
+                "stt_engine": report.stt_engine,
                 "conversation_id": report.conversation_id,
                 "trace_id": report.trace_id,
             },

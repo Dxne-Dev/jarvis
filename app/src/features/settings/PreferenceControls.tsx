@@ -6,7 +6,8 @@ import { usePreferences, useUpdatePreferences } from "../../lib/engine/queries";
 import type { Preferences } from "../../lib/engine/types";
 import styles from "./SettingsScreen.module.css";
 
-type ChoiceKey = "reduced_motion" | "sphere_quality" | "wake_sensitivity" | "voice_engine";
+type ChoiceKey =
+  "reduced_motion" | "sphere_quality" | "wake_sensitivity" | "voice_engine" | "voice_stt";
 type SwitchKey =
   | "learn_from_conversations"
   | "voice_enabled"

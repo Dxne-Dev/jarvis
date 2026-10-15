@@ -17,7 +17,7 @@ import numpy as np
 
 from ojarvis.chat.service import ChatEvent
 from ojarvis.voice.audio import FRAME_SAMPLES, RATE, Pcm
-from ojarvis.voice.stt import Transcript
+from ojarvis.voice.stt import SttError, Transcript
 from ojarvis.voice.tts import AudioChunk
 
 WAKE_VALUE = 3000
@@ -178,3 +178,45 @@ async def wait_until(condition: Callable[[], bool], limit: float = 5.0) -> None:
     async with asyncio.timeout(limit):
         while not condition():  # noqa: ASYNC110 — l'état vient d'autres tâches
             await asyncio.sleep(0.005)
+
+
+@dataclass
+class FakeSttStream:
+    owner: FakeStreamingSTT
+    samples: int = 0
+    flushes: int = 0
+    cancelled: bool = False
+
+    def send(self, pcm: Pcm) -> None:
+        self.samples += len(pcm)
+
+    def flush(self) -> None:
+        self.flushes += 1
+
+    async def finish(self, timeout_s: float = 3.0) -> Transcript:
+        del timeout_s
+        await asyncio.sleep(0)
+        if self.owner.fail:
+            raise SttError("panne du service")
+        return Transcript(text=self.owner.text, audio_s=self.samples / RATE, duration_ms=5.0)
+
+    async def cancel(self) -> None:
+        self.cancelled = True
+
+
+@dataclass
+class FakeStreamingSTT:
+    """Transcription en ligne simulée : compte ce qui lui est envoyé."""
+
+    text: str = "Hey Jarvis, quelle heure est-il ?"
+    fail: bool = False
+    name: str = "cartesia"
+    streams: list[FakeSttStream] = field(default_factory=list)
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    def open(self) -> FakeSttStream:
+        self.streams.append(FakeSttStream(self))
+        return self.streams[-1]

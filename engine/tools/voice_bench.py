@@ -29,14 +29,46 @@ from ojarvis.config import EngineConfig, repo_root, resolve_paths
 from ojarvis.events.bus import Event
 from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
-from ojarvis.voice.audio import FileSource, MemorySink
+from ojarvis.voice.audio import FileSource, MemorySink, read_wav
 from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline
-from ojarvis.voice.stt import WhisperTranscriber
+from ojarvis.voice.stt import CartesiaSTT, WhisperTranscriber
 from ojarvis.voice.tts import CartesiaTTS, FallbackTTS, PiperTTS
 from ojarvis.voice.vad import SileroVad
 from ojarvis.voice.wake import OpenWakeWord
 
 MODELS = Path.home() / ".cache/o-jarvis/models"
+
+
+def _words(text: str) -> list[str]:
+    import re  # noqa: PLC0415
+    import unicodedata  # noqa: PLC0415
+
+    folded = unicodedata.normalize("NFKD", text.lower())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.findall(r"[a-z0-9]+", folded)
+
+
+def word_error_rate(reference: str, hypothesis: str) -> float:
+    """Taux d'erreur par mot (distance d'édition sur les mots / mots de la référence)."""
+    ref, hyp = _words(reference), _words(hypothesis)
+    row = list(range(len(hyp) + 1))
+    for i, ref_word in enumerate(ref, 1):
+        previous, row[0] = row[0], i
+        for j, hyp_word in enumerate(hyp, 1):
+            previous, row[j] = (
+                row[j],
+                min(row[j] + 1, row[j - 1] + 1, previous + (ref_word != hyp_word)),
+            )
+    return row[len(hyp)] / max(1, len(ref))
+
+
+def degrade(audio: Any) -> Any:
+    """Micro faible et bruité, comme un micro intégré réglé trop bas (-30 dB + souffle)."""
+    import numpy as np  # noqa: PLC0415
+
+    rng = np.random.default_rng(5)
+    quiet = audio.astype(np.float32) * 10 ** (-30 / 20) + rng.normal(0, 60, len(audio))
+    return np.clip(quiet, -32768, 32767).astype(np.int16)
 
 
 @dataclass
@@ -49,12 +81,19 @@ class Result:
     verified: bool
     report: TurnReport | None
     true_latency_ms: float | None
+    wer: float | None = None
 
 
 async def run_sample(
-    services: Services, parts: dict[str, Any], sample: dict[str, Any], corpus: Path
+    services: Services,
+    parts: dict[str, Any],
+    sample: dict[str, Any],
+    corpus: Path,
+    *,
+    degraded: bool = False,
 ) -> Result:
-    source = FileSource.from_wav(corpus / sample["file"], realtime=True)
+    audio = read_wav(corpus / sample["file"])
+    source = FileSource(degrade(audio) if degraded else audio, realtime=True)
     sink = MemorySink(realtime=True)
     finished = asyncio.Event()
     wake: dict[str, Any] = {}
@@ -75,6 +114,7 @@ async def run_sample(
         tracer=services.tracer,
         config=VoiceConfig(follow_up_s=0, barge_in=False),
         on_turn=lambda _report: finished.set(),
+        streaming_stt=parts.get("streaming_stt"),
     )
     parts["wake"].reset()
     started = time.monotonic()
@@ -90,6 +130,7 @@ async def run_sample(
     true_latency = None
     if report is not None and sink.first_audio_at is not None:
         true_latency = round((sink.first_audio_at - (started + sample["speech_end_s"])) * 1000)
+    error = word_error_rate(sample["question"], report.text) if report else None
     return Result(
         sample["file"],
         sample["engine"],
@@ -99,6 +140,7 @@ async def run_sample(
         bool(wake.get("verified")),
         report,
         true_latency,
+        error,
     )
 
 
@@ -110,6 +152,8 @@ async def main() -> None:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--tts", default="auto", choices=["auto", "piper"])
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--stt", default="cartesia", choices=["cartesia", "local"])
+    parser.add_argument("--degrade", action="store_true", help="micro faible et bruité")
     parser.add_argument("--events", action="store_true", help="affiche les événements voice.*")
     args = parser.parse_args()
 
@@ -146,6 +190,8 @@ async def main() -> None:
         "stt": stt,
         "tts": tts,
     }
+    if args.stt == "cartesia":
+        parts["streaming_stt"] = CartesiaSTT(lambda: services.secrets.get("CARTESIA_API_KEY"))
     results: list[Result] = []
     if args.events:
         origin = time.monotonic()
@@ -159,7 +205,7 @@ async def main() -> None:
     try:
         for _ in range(args.repeat):
             for sample in samples:
-                result = await run_sample(services, parts, sample, corpus)
+                result = await run_sample(services, parts, sample, corpus, degraded=args.degrade)
                 results.append(result)
                 r = result.report
                 print(
@@ -168,7 +214,8 @@ async def main() -> None:
                     f"{' (vérifié)' if result.verified else ''} "
                     + (
                         f"latence={r.latency_ms} ms vraie={result.true_latency_ms} ms "
-                        f"stt={r.stt_ms} ms{'*' if r.speculative else ''} "
+                        f"stt={r.stt_engine} {r.stt_ms} ms{'*' if r.speculative else ''} "
+                        f"erreurs={result.wer:.0%} "
                         f"jeton={r.first_token_ms} voix={r.tts_engine} | {r.text!r} → "
                         f"{r.reply[:70]!r}"
                         if r
@@ -186,10 +233,12 @@ async def main() -> None:
     if answered:
         latencies = [r.true_latency_ms for r in answered if r.true_latency_ms is not None]
         stt_ms = [r.report.stt_ms for r in answered if r.report]
+        errors = [r.wer for r in answered if r.wer is not None]
         print(
             f"latence vraie : médiane {statistics.median(latencies):.0f} ms, "
             f"min {min(latencies):.0f}, max {max(latencies):.0f} ; "
-            f"transcription médiane {statistics.median(stt_ms):.0f} ms"
+            f"transcription médiane {statistics.median(stt_ms):.0f} ms ; "
+            f"erreurs de mots moyennes {statistics.mean(errors):.0%}"
         )
 
 

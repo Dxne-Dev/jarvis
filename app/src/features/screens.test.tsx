@@ -32,6 +32,8 @@ const VOICE: VoiceStatus = {
   echo_cancel: true,
   tts_engine: "cartesia",
   tts_fallback: null,
+  stt_engine: "cartesia",
+  stt_fallback: false,
   last_latency_ms: 1840,
   last_turn_at: null,
 };

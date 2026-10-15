@@ -16,6 +16,7 @@ from ojarvis.voice.pipeline import SPOKEN_LLM_ERROR, VoiceConfig, VoicePipeline,
 from ojarvis.voice.vad import EndpointConfig
 from tests.voice.fakes import (
     FakeChat,
+    FakeStreamingSTT,
     FakeSTT,
     FakeTracer,
     FakeTTS,
@@ -64,6 +65,7 @@ async def rig(
     chat: FakeChat | None = None,
     tts: FakeTTS | None = None,
     wake: FakeWake | None = None,
+    streaming: FakeStreamingSTT | None = None,
     **changes: Any,
 ) -> AsyncIterator[Rig]:
     clock = VirtualClock()
@@ -97,6 +99,7 @@ async def rig(
         tracer=parts.tracer,  # type: ignore[arg-type]
         config=config(**changes),
         clock=clock,
+        streaming_stt=streaming,
     )
     task = asyncio.create_task(parts.pipeline.run())
     try:
@@ -270,6 +273,41 @@ async def test_a_clear_transcript_can_be_learned() -> None:
     async with rig(audio) as r:
         await wait_until(lambda: r.pipeline.last_report is not None)
         assert r.chat.calls[0]["learn"] is True
+
+
+async def test_online_transcription_receives_the_sentence_while_it_is_spoken() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
+    streaming = FakeStreamingSTT()
+    async with rig(audio, streaming=streaming) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "cartesia"
+        assert report.text == "quelle heure est-il ?"
+        assert r.stt.calls == []  # Whisper local n'a pas servi
+        stream = streaming.streams[0]
+        assert stream.samples / 16_000 > 1.2  # toute la phrase, préroll compris
+        assert stream.flushes >= 1  # texte demandé dès la courte pause
+        assert stream.cancelled  # connexion refermée après la phrase
+
+
+async def test_nothing_is_sent_online_when_nobody_speaks() -> None:
+    streaming = FakeStreamingSTT()
+    async with rig(build_audio(("silence", 4.0)), streaming=streaming) as r:
+        r.pipeline.listen_now()
+        await wait_until(lambda: "voice.timeout" in r.types(), limit=10)
+        assert streaming.streams == []
+
+
+async def test_a_failing_online_transcription_falls_back_to_whisper() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio, streaming=FakeStreamingSTT(fail=True)) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.stt_engine == "whisper"
+        assert len(r.stt.calls) == 1
+        await wait_until(lambda: "voice.stt_fallback" in r.types())
 
 
 async def test_the_start_of_a_sentence_said_right_after_the_wake_word_is_kept() -> None:

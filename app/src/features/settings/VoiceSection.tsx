@@ -59,6 +59,11 @@ function VoiceState() {
         {data.tts_fallback && (
           <p className={styles.radioHint}>Voix locale utilisée : Cartesia ne répondait pas.</p>
         )}
+        {data.stt_fallback && (
+          <p className={styles.radioHint}>
+            Transcription locale utilisée : Cartesia ne répondait pas.
+          </p>
+        )}
         <ShortcutLine />
       </div>
     </div>
@@ -147,6 +152,22 @@ export function VoiceSection() {
                 hint: "Un doute est vérifié par transcription locale.",
               },
               { value: "haute", label: "Haute", hint: "Pour une voix lointaine ou un accent." },
+            ]}
+          />
+          <Choice
+            name="voice_stt"
+            label="Transcription"
+            options={[
+              {
+                value: "auto",
+                label: "Cartesia (en ligne)",
+                hint: "Très précise. Ta phrase part en ligne, jamais avant « Hey Jarvis ».",
+              },
+              {
+                value: "local",
+                label: "Locale (Whisper)",
+                hint: "Tout reste sur la machine, mais elle comprend moins bien.",
+              },
             ]}
           />
           <Choice
