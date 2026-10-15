@@ -28,6 +28,11 @@ jobs:
       - run: uv sync --frozen
       - name: Navigateur de Jarvis (Chromium de Playwright)
         run: uv run playwright install --with-deps chromium
+      - name: Bac à sable (image Docker et bubblewrap)
+        run: |
+          docker pull --quiet python:3.12-alpine
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
       - name: Lint et format
         run: |
           uv run ruff check src tests tools

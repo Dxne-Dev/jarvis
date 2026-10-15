@@ -64,7 +64,7 @@ class SandboxRunner:
             if name == "docker" and await self._docker_ready():
                 self._backend = "docker"
                 break
-            if name == "bubblewrap" and shutil.which("bwrap") and shutil.which("prlimit"):
+            if name == "bubblewrap" and await self._bubblewrap_ready():
                 self._backend = "bubblewrap"
                 break
         log.info("sandbox_backend", backend=self._backend)
@@ -72,6 +72,7 @@ class SandboxRunner:
 
     @staticmethod
     async def _docker_ready() -> bool:
+        """Docker répond et l'image du bac à sable est là (jamais de téléchargement surprise)."""
         docker = shutil.which("docker")
         if docker is None:
             return False
@@ -83,6 +84,42 @@ class SandboxRunner:
                 IMAGE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+            )
+            return await asyncio.wait_for(process.wait(), 10) == 0
+        except (OSError, TimeoutError):
+            return False
+
+    @staticmethod
+    async def _bubblewrap_ready() -> bool:
+        """Installé ne suffit pas : certains systèmes interdisent les espaces de noms."""
+        bwrap = shutil.which("bwrap")
+        if bwrap is None or shutil.which("prlimit") is None:
+            return False
+        probe = [
+            bwrap,
+            "--unshare-all",
+            "--die-with-parent",
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "--symlink",
+            "usr/lib",
+            "/lib",
+            "--symlink",
+            "usr/lib64",
+            "/lib64",
+            "--symlink",
+            "usr/bin",
+            "/bin",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "/usr/bin/true",
+        ]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *probe, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
             )
             return await asyncio.wait_for(process.wait(), 10) == 0
         except (OSError, TimeoutError):
@@ -226,3 +263,22 @@ class SandboxRunner:
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await asyncio.wait_for(process.wait(), 15)
+
+
+async def docker_available() -> bool:
+    """Le démon Docker répond (pour les serveurs MCP, qui ont leurs propres images)."""
+    docker = shutil.which("docker")
+    if docker is None:
+        return False
+    try:
+        process = await asyncio.create_subprocess_exec(
+            docker,
+            "version",
+            "--format",
+            "{{.Server.Version}}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        return await asyncio.wait_for(process.wait(), 10) == 0
+    except (OSError, TimeoutError):
+        return False

@@ -22,7 +22,7 @@ from typing import Any
 
 from ojarvis.core.logs import get_logger
 from ojarvis.integrations.connection import McpCallError, McpConnection, McpTool
-from ojarvis.sandbox.runner import SandboxRunner
+from ojarvis.sandbox.runner import docker_available
 
 log = get_logger(__name__)
 
@@ -162,7 +162,7 @@ class IntegrationManager:
 
     async def _docker_path(self) -> str | None:
         if self._docker is None:
-            self._docker = await SandboxRunner._docker_ready()
+            self._docker = await docker_available()
         return shutil.which("docker") if self._docker else None
 
     async def _target(self, name: str) -> Callable[[], Any]:
