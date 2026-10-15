@@ -1,6 +1,7 @@
 //! Coque de bureau d'O-jarvis : fenêtre, icône dans la barre système, moteur Python.
 
 mod engine;
+mod shortcut;
 
 use std::sync::Arc;
 
@@ -88,6 +89,7 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
@@ -95,14 +97,17 @@ pub fn run() {
                 .build(),
         )
         .manage(Arc::clone(&manager))
+        .manage(shortcut::ShortcutState::default())
         .invoke_handler(tauri::generate_handler![
             engine_info,
             engine_restart,
             ui_log,
-            app_quit
+            app_quit,
+            shortcut::shortcut_status
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
+            shortcut::spawn(app.handle().clone());
             let handle = app.handle().clone();
             let manager = Arc::clone(&manager);
             tauri::async_runtime::spawn(async move {

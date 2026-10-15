@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+import { useShortcutStore } from "../../lib/desktop";
 import { describeError } from "../../lib/engine/client";
 import {
   useCartesiaVoices,
@@ -58,9 +59,23 @@ function VoiceState() {
         {data.tts_fallback && (
           <p className={styles.radioHint}>Voix locale utilisée : Cartesia ne répondait pas.</p>
         )}
+        <ShortcutLine />
       </div>
     </div>
   );
+}
+
+function ShortcutLine() {
+  const status = useShortcutStore((s) => s.status);
+  const text =
+    status.state === "pret"
+      ? `Raccourci global : ${status.trigger ?? "à choisir dans les réglages d'Ubuntu"}.`
+      : status.state === "demande"
+        ? "Raccourci global : en attente de ta confirmation (fenêtre d'Ubuntu)."
+        : status.state === "indisponible"
+          ? "Raccourci global indisponible ; le bouton micro de l'accueil fonctionne."
+          : null;
+  return text ? <p className={styles.radioHint}>{text}</p> : null;
 }
 
 function DeviceSelect({

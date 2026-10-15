@@ -12,9 +12,15 @@ if [[ "${1:-}" != "--sans-compilation" ]]; then
 fi
 [[ -x "$BIN" ]] || { echo "Binaire introuvable : $BIN"; exit 1; }
 
+# Le nom du fichier .desktop est l'identifiant de l'app : le portail du bureau s'en sert
+# pour reconnaître O-jarvis (raccourci clavier global, notifications).
+APP_ID="io.github.octavebahoun.ojarvis"
+
 mkdir -p "$APPS" "$ICONS"
 cp "$ROOT/app/src-tauri/icons/128x128.png" "$ICONS/o-jarvis.png"
-cat > "$APPS/o-jarvis.desktop" <<DESKTOP
+# Ancien nom du lanceur (avant le raccourci global) : remplacé par le nouveau.
+rm -f "$APPS/o-jarvis.desktop"
+cat > "$APPS/$APP_ID.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=O-jarvis

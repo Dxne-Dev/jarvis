@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { EngineClient } from "./client";
 import { onEngineStatus, resolveEngine, type EngineBootInfo } from "./connection";
 import { EventStream } from "./events";
+import { notifyDesktop, watchShortcut } from "../desktop";
 import { uiLog } from "../log";
 import { setVoiceLevel, useVoiceStore } from "../voice";
 import { useEngineStore } from "./store";
@@ -22,6 +23,25 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["voice.status", "voice"],
   ["voice.turn", "conversations"],
 ];
+
+/** Événements qui méritent une notification quand la fenêtre est en arrière-plan. */
+function notifyFor(event: EngineEvent): void {
+  const reason = typeof event.payload.reason === "string" ? event.payload.reason : "";
+  if (event.type === "llm.provider_degraded") {
+    const provider = typeof event.payload.provider === "string" ? event.payload.provider : "";
+    void notifyDesktop("Fournisseur indisponible", `${provider} ne répond pas : Jarvis bascule.`);
+  } else if (event.type === "voice.tts_fallback") {
+    void notifyDesktop(
+      "Voix locale",
+      `Cartesia ne répond pas (${reason}) : Jarvis parle en local.`,
+    );
+  } else if (event.type === "voice.error") {
+    void notifyDesktop(
+      "Voix indisponible",
+      "Le pipeline vocal s'est arrêté. Nouvel essai en cours.",
+    );
+  }
+}
 
 function handleVoiceEvent(event: EngineEvent): void {
   const voice = useVoiceStore.getState();
@@ -80,6 +100,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
           return;
         }
         handleVoiceEvent(event);
+        notifyFor(event);
         pushEvent(event);
         for (const [prefix, key] of INVALIDATIONS) {
           if (event.type.startsWith(prefix))
@@ -108,6 +129,11 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     };
 
     void boot();
+    // Raccourci global : comme « Hey Jarvis », sans le dire.
+    const stopShortcut = watchShortcut(() => {
+      const client = useEngineStore.getState().client;
+      if (client) void client.post("/v1/voice/listen").catch(() => undefined);
+    });
     const unlisten = onEngineStatus((info) => {
       if (!cancelled) connect(info);
     });
@@ -115,6 +141,9 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       stream?.stop();
       void unlisten.then((stop) => {
+        stop();
+      });
+      void stopShortcut.then((stop) => {
         stop();
       });
     };
