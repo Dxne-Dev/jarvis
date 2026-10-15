@@ -53,7 +53,7 @@
 | 15/10 | Latence fin de phrase → premier son, vrai pipeline, DeepSeek + Cartesia | médiane 1,75 s, max 1,9 s (17 tours) |
 | 15/10 | Transcription Whisper base, fenêtre courte | 0,45 s (contre 1,7 s) ; `small` : 5 s, écarté |
 | 15/10 | Voix sur la machine réelle (micro, annulation d'écho) | prête en 6 s ; 50 trames en 4 s ; arrêt en 1,1 s, module retiré |
-| 15/10 | Moteur : ruff, mypy strict (code + tests), pytest | 0 erreur ; 344 tests ; couverture 91 % |
+| 15/10 | Moteur : ruff, mypy strict (code + tests), pytest | 0 erreur ; 346 tests ; couverture 91 % |
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 36 tests |
 | 15/10 | Coque : fmt, clippy `-D warnings`, cargo test | 0 erreur |
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 11/11, dont un tour vocal (audio simulé) ; aucune violation sérieuse |

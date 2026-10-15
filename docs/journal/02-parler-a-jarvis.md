@@ -43,7 +43,7 @@ Pendant tout ce temps, le micro reste écouté : on peut couper Jarvis en parlan
 - Corpus de 36 fichiers : « Hey Jarvis, … » dit par Piper, espeak-ng et Cartesia, plus des phrases sans mot de réveil. Réveil : 17 sur 21 (toutes les voix sauf espeak-ng à l'accent français), aucun faux réveil.
 - **Latence de la fin de la phrase au premier son : médiane 1,75 s** (maximum 1,9 s) sur 17 tours réels, avec DeepSeek et Cartesia. Objectif : moins de 3 s.
 - **Un fait donné dans une session est rappelé dans la suivante** (vrai DeepSeek) : « Thé à la menthe », « Tu habites à Cotonou ».
-- Moteur : 344 tests, couverture 91 %, ruff et mypy strict (code et tests) sans erreur, `pip-audit` sans faille.
+- Moteur : 346 tests, couverture 91 %, ruff et mypy strict (code et tests) sans erreur, `pip-audit` sans faille.
 - Interface : 36 tests ; bout en bout : 11 scénarios dont un tour vocal complet (audio simulé) ; audit axe sans violation sérieuse.
 - Machine réelle : voix prête en 6 s, annulation d'écho chargée puis retirée, arrêt complet en 1 s quand l'app se ferme.
 
