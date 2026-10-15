@@ -33,3 +33,15 @@ Ce que je ne peux pas vérifier seul. Coche au fur et à mesure.
 - [ ] Demander de supprimer ce fichier : la validation demande une seconde confirmation ; le fichier part à la corbeille.
 - [ ] Journal et traces → Actions : chaque décision et chaque action y est, « chaîne d'empreintes intacte ».
 - [ ] Fenêtre en arrière-plan, demander une action par la voix : une notification « Action à valider » apparaît.
+
+## Phase 4 — Jarvis s'organise
+
+- [ ] Depuis ton téléphone, écrire « Bonjour Jarvis » à @ojarvi_bot (app ouverte sur le PC) : il répond.
+- [ ] Envoyer un message vocal à @ojarvi_bot : il affiche ce qu'il a compris, puis répond.
+- [ ] Depuis Telegram, demander « Crée le fichier ~/notes/telegram.md avec : test » : deux boutons arrivent ; « Valider » crée le fichier.
+- [ ] Depuis un autre compte Telegram (celui d'un proche), écrire au bot : aucune réponse.
+- [ ] Réglages → Intégrations → Google Agenda → « Connecter » : accepter dans le navigateur, puis demander « Qu'est-ce que j'ai dans mon agenda aujourd'hui ? ».
+- [ ] (Facultatif) Activer « Google Calendar MCP API » dans ton projet Google Cloud, puis « Reconnecter » Google Agenda : l'état indique « serveur officiel de Google ».
+- [ ] Dire « Hey Jarvis, rappelle-moi dans dix minutes de m'étirer » : valider le plan ; le rappel arrive à l'heure (app et téléphone).
+- [ ] Le lendemain matin, ouvrir l'app : le briefing se dit à voix haute.
+- [ ] Laisser une automatisation « chaque jour à … » active, éteindre le PC à l'heure dite, le rallumer moins de 6 h après : elle est rattrapée.

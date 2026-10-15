@@ -107,6 +107,23 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Suppression = corbeille** (`gio trash`) — récupérable ; sans `gio`, rien n'est supprimé.
 - **Les outils sont proposés aussi à la voix** — ~2 000 jetons de plus par requête ; latence vocale mesurée : médiane 1,93 s (1,9 s avant).
 
+## Jarvis s'organise (phase 4, 15/10/2026)
+
+- **Horaires calculés en heure locale (zoneinfo), rangés en UTC** — « 8 h » reste 8 h après chaque changement d'heure ; testé sur les nuits du 29 mars et du 25 octobre 2026 (heure inexistante → une heure plus tard ; heure doublée → une seule exécution). Pas de cron : chaque jour / certains jours / une fois / intervalle / chaque mois suffisent et se décrivent simplement.
+- **Moteur de workflows maison, en base** — chaque étape enregistrée avec le contexte produit ; reprise à l'étape coupée ; trois essais espacés sur erreur. Pas de file externe (brief : pas de microservices).
+- **Échéance manquée** (PC éteint) : rattrapée si le retard est de moins de 6 h, sinon notée « manquée » ; une automatisation ponctuelle se désactive après son passage.
+- **Une automatisation n'agit jamais seule** — consigne exécutée comme un tour de conversation (canal « automation ») : lecture libre, action → plan qui t'attend, notification.
+- **Pas de réaction en chaîne** — les exécutions de workflows portent un identifiant de corrélation `wf…` ; leurs événements ne déclenchent aucune automatisation ; une automatisation au plus une fois par minute. Événements déclencheurs limités à une liste lisible (démarrage, plan terminé ou proposé, mémoire, Telegram, voix).
+- **Créer une automatisation depuis le chat = niveau 2** — elle agira plus tard en ton nom ; la supprimer = niveau 3. Depuis l'écran Automatisations, c'est toi qui agis : journalisé directement.
+- **Client MCP officiel (SDK Python 2.x)** — un serveur par tâche asyncio ; niveau de chaque outil tiré des annotations MCP (lecture seule → 1, destructeur → 3, sinon 2, prudence par défaut).
+- **Deux outils génériques pour le modèle** (`integrations_outils`, `integration_appeler`) plutôt que 70 outils dans chaque requête — coût et latence de la voix ; les arguments sont validés par le schéma de l'outil (jsonschema).
+- **GitHub : `ghcr.io/github/github-mcp-server:v1.12.2` en conteneur** (système en lecture seule, sans privilèges, 256 Mo) ; outils `context, repos, issues, pull_requests, notifications`. Version d'il y a un mois plutôt que la 2.0 sortie la semaine passée.
+- **Notion : `@notionhq/notion-mcp-server@2.5.2` dans `node:24.21.0-alpine3.24`** — cache npm dans un volume monté sur `/home/node` (monté sur `.npm`, il appartenait à root). Notion annote ses écritures comme destructrices : elles demandent donc une double confirmation.
+- **Google Agenda : OAuth « Desktop app » maison (PKCE, état, redirection 127.0.0.1)** — jeton durable au trousseau. Serveur MCP officiel de Google (préversion, à activer dans le projet) s'il répond, sinon serveur MCP de Jarvis (`calendar_server.py`, trois outils annotés).
+- **Telegram en « long polling »** (pas de webhook : rien à exposer sur Internet) ; seul un vrai lancement de l'app écoute (un banc d'essai ne répond pas à ta place) ; conversation continue tant qu'on se parle (2 h) ; message vocal transcrit par Groq (fichier OGG envoyé tel quel).
+- **Briefing à la première session du jour = première ouverture de l'app** (annoncée par l'interface) ; date notée tout de suite (deux fenêtres → un seul briefing) ; c'est un workflow (rassembler, rédiger, dire) ; la voix sait dire un texte d'elle-même, interruptible.
+- **Interface : relecture complète à chaque reconnexion du flux d'événements** — une coupure faisait manquer des événements (un test a échoué une fois en CI).
+
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.

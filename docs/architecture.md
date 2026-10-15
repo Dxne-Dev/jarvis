@@ -89,6 +89,26 @@ flowchart LR
 - **Le modèle n'agit jamais seul.** S'il appelle directement une action, elle devient un plan d'une étape. S'il a lu un contenu externe juste avant, le plan est signalé, et ouvrir une adresse qu'il a fabriquée demande aussi ta validation.
 - **Le navigateur de Jarvis** (`browser/`) : Chromium piloté par Playwright, avec deux contextes. L'anonyme lit sans aucun cookie. L'« identité » ne contient que les sessions des domaines autorisés (coffre chiffré) : y aller est une action de niveau 2. Tout le trafic passe par un proxy local qui n'atteint que des adresses publiques.
 
+## Jarvis s'organise
+
+```mermaid
+flowchart LR
+  H["Horloge<br/>(heure locale)"] --> S["Planificateur"]
+  B["Bus d'événements"] --> S
+  S --> W[("Workflows<br/>étapes enregistrées")]
+  W --> C["Consigne<br/>(outils de lecture)"]
+  C -- "action" --> P["Plan à valider"]
+  W --> N["Notification<br/>app, bureau, Telegram"]
+  T["Telegram"] --> CH["Chat"]
+  CH --> M["Intégrations MCP<br/>GitHub, Notion, Agenda"]
+```
+
+- **Workflows** (`workflows/`) : chaque étape enregistrée ; après un arrêt, reprise à l'étape coupée.
+- **Automatisations** (`automations/`) : horaire calculé en heure locale et rangé en UTC ; déclencheurs sur événement ; rattrapage sous 6 h.
+- **Intégrations** (`integrations/`) : client MCP officiel ; GitHub et Notion en conteneurs ; Google Agenda par OAuth.
+- **Telegram** (`telegram/`) : écoute par « long polling », seul ton identifiant est servi.
+- **Briefing** (`briefing/`) : à la première session du jour, un workflow rassemble, rédige, puis dit.
+
 ## Qui protège quoi
 
 | Menace | Protection |
@@ -104,6 +124,10 @@ flowchart LR
 | Un outil lit tes clés SSH ou un `.env` | Dossiers et fichiers sensibles refusés, liens symboliques suivis |
 | Du code lancé par Jarvis | Bac à sable Docker sans réseau, en lecture seule, limité ; bubblewrap en repli |
 | Une action effacée après coup | Journal en ajout seul, déclencheurs SQLite, chaîne d'empreintes vérifiée au démarrage |
+| Une automatisation agit pendant ton absence | Outils de lecture seulement ; une action devient un plan qui t'attend |
+| Un inconnu écrit au bot Telegram | Ignoré et journalisé ; seul ton identifiant est servi |
+| Une destruction validée depuis le téléphone | Impossible : la double confirmation n'existe que dans l'app |
+| Un serveur MCP tiers | Conteneur sans privilèges, version épinglée, niveaux tirés de ses annotations |
 
 ## Où sont les données
 
@@ -116,6 +140,8 @@ flowchart LR
 | Clés | trousseau GNOME, service `o-jarvis` |
 | Sessions du navigateur de Jarvis (domaines autorisés) | `~/.local/share/o-jarvis/navigateur/coffre.bin`, chiffré |
 | Journal des actions, plans | dans la base SQLite (tables `audit_log`, `plans`) |
+| Automatisations, exécutions de workflows | dans la base SQLite (tables `automations`, `workflow_runs`) |
+| Accès à Google Agenda (jeton durable) | trousseau GNOME |
 
 ## Les dossiers du dépôt
 
@@ -125,6 +151,7 @@ flowchart LR
 | `app/src-tauri` | Coque Rust : fenêtre, barre système, lancement du moteur |
 | `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base, modèles, mémoire, contexte, chat, voix |
 | `engine/src/ojarvis/{tools,permissions,agent,audit,browser,sandbox}` | Outils, porte des permissions, plans et exécuteur, journal, navigateur, bac à sable |
+| `engine/src/ojarvis/{automations,workflows,integrations,telegram,briefing}` | Automatisations, workflows, intégrations MCP, Telegram, briefing |
 | `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit ») |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |

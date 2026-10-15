@@ -58,6 +58,20 @@ Seulement dans ton dossier personnel, et jamais dans : `.ssh`, `.gnupg`, trousse
 
 Le code lancé par Jarvis tourne dans Docker (`python:3.12-alpine`) : sans réseau, système en lecture seule, utilisateur sans droits, 1 processeur, 256 Mo, 64 processus, durée bornée, conteneur toujours supprimé. Sans Docker : bubblewrap, sans réseau, avec des limites posées par `prlimit`.
 
+## Les automatisations
+
+Une automatisation n'a que les outils de lecture. S'il faut agir, elle prépare un plan qui t'attend, et tu es prévenu (bureau, Telegram) : elle ne déclenche jamais seule une action de niveau 2 ou 3. La créer ou la modifier est une action (niveau 2), la supprimer une destruction (niveau 3) ; depuis l'écran Automatisations, ces changements sont aussi écrits au journal. Ce qu'une automatisation provoque ne déclenche pas d'autre automatisation, et une même automatisation ne part pas plus d'une fois par minute.
+
+## Telegram
+
+Seul l'identifiant `TELEGRAM_ALLOWED_USER_ID` est servi ; tout autre expéditeur est ignoré et journalisé (`telegram.rejected`). Un plan de niveau 2 se valide par un bouton, et la décision est journalisée avec son canal ; un plan de niveau 3 ne se valide jamais depuis Telegram, même par un clic forgé. Le jeton du bot fait partie de l'adresse de l'API : aucune erreur ni aucun log ne la reprend.
+
+## Les intégrations (MCP)
+
+GitHub et Notion tournent dans des conteneurs sans privilèges, sans accès à tes fichiers, avec des versions épinglées ; leur jeton passe par l'environnement du seul serveur. Le niveau de chaque outil vient de ses annotations MCP (lecture seule → 1, destructeur → 3, sinon 2) ; un outil inconnu est traité comme une action. Les arguments sont vérifiés par le schéma de l'outil avant l'appel ; les résultats sont des données, jamais des instructions.
+
+Google Agenda : connexion OAuth avec PKCE et état vérifié, par une redirection vers `127.0.0.1` ouverte 10 minutes au plus ; le jeton durable va au trousseau, jamais à l'interface ni au modèle ; « Déconnecter » le révoque.
+
 ## Le journal des actions
 
 Table en ajout seul : des déclencheurs SQLite refusent toute modification et toute suppression. Chaque entrée contient l'empreinte SHA-256 de la précédente : modifier une ligne, même directement dans la base, casse la chaîne. Elle est vérifiée à chaque démarrage et à la demande (Journal et traces → Actions). Aucune route ni aucun écran ne permet de l'effacer.

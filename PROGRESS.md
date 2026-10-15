@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**3 — Jarvis agit.** Terminée : les deux critères de sortie passent (un plan multi-étapes avec navigateur s'exécute après validation ; tests de niveaux et d'injection verts), la boucle de vérification aussi. PR `dev → main` ouverte. Prochaine : phase 4.
+**4 — Jarvis s'organise.** Terminée : une automatisation survit à un redémarrage ; le briefing se joue à la première session du jour ; un message Telegram est traité (API simulée ; le vrai bot répond, l'essai depuis ton téléphone est dans la checklist). PR `dev → main` ouverte. Prochaine : phase 5.
 
 ## Fait
 
@@ -36,9 +36,18 @@
 - Interface : Actions à valider, plan dans la conversation, outils utilisés, journal des actions, Réglages → Navigateur et Permissions, notifications.
 - Docs : `docs/journal/03-jarvis-agit.md`, `docs/securite.md`, architecture, checklist manuelle.
 
+### Phase 4 — Jarvis s'organise (15/10/2026)
+- Automatisations : horaire en heure locale (changements d'heure testés) ou événement ; rappel ou consigne ; création depuis le chat ou la voix (validée) ; CRUD complet dans l'écran Automatisations ; rattrapage après un arrêt ; ponctuelles désactivées après leur passage.
+- Moteur de workflows persistant : reprise à l'étape coupée après un plantage ou un redémarrage.
+- Notifications dans l'app, sur le bureau et sur Telegram.
+- Telegram : texte et vocal, seul ton identifiant servi, validation des plans de niveau 2 par boutons, jamais de niveau 3.
+- Intégrations MCP officielles : GitHub, Notion (conteneurs, versions épinglées) ; Google Agenda (OAuth, serveur officiel ou celui de Jarvis).
+- Briefing du matin à la première session du jour.
+- Docs : `docs/journal/04-jarvis-s-organise.md`, sécurité, architecture, checklist.
+
 ## Ensuite
 
-1. Phase 4 — Jarvis s'organise : moteur de workflows persistant, automatisations en langage naturel (CRUD), bus d'événements comme déclencheur, MCP (GitHub, Notion, Google Agenda), Telegram, briefing du matin.
+1. Phase 5 — Contrôle du PC : ouvrir et fermer des applications, gérer des fichiers, lire l'écran (X11 et Wayland, portails), « regarde mon écran » (vision), contrôle de l'OS désactivé par défaut.
 
 ## Problèmes ouverts
 
@@ -88,3 +97,14 @@
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 14/14 ; aucune violation sérieuse |
 | 15/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
 | 15/10 | Revue de sécurité (section 7) | redirection privée, fuite par adresse fabriquée, double résolution DNS de `lire_page`, `~` hors du dossier configuré : corrigés |
+| 15/10 | Automatisation après un redémarrage (échéance passée de 10 min) | rattrapée, horaire conservé ; workflow coupé repris à l'étape interrompue |
+| 15/10 | « 8 h » à travers les changements d'heure 2026 | 8 h locale les deux fois ; heure inexistante → +1 h ; heure doublée → une seule fois |
+| 15/10 | Briefing : première session du jour, le lendemain, désactivé | joué une fois ; rejoué le lendemain ; muet si désactivé (réécoutable) |
+| 15/10 | Telegram (API simulée) | inconnu ignoré et journalisé ; texte et vocal traités ; plan de niveau 2 validé par bouton ; niveau 3 refusé même forgé |
+| 15/10 | Vrai bot Telegram | @ojarvi_bot joignable, aucun webhook, identifiant autorisé présent |
+| 15/10 | Vrais serveurs MCP | GitHub : 48 outils (27 lecture, 18 action, 3 destruction), compte reconnu ; Notion : 24 outils |
+| 15/10 | Vrai DeepSeek : automatisations, GitHub, briefing | « tous les matins à 8 h » et « demain à 9 h » justes ; issues lues par MCP ; briefing avec données GitHub |
+| 15/10 | Moteur : ruff, mypy strict (code, tests, bancs), pytest | 0 erreur ; 512 tests ; couverture 91 % |
+| 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 48 tests |
+| 15/10 | Bout en bout Playwright + vrai moteur + axe | 16/16 ; aucune violation sérieuse |
+| 15/10 | `pip-audit` | aucune faille (mcp 2.3, jsonschema 4.26) |

@@ -9,6 +9,7 @@ Assistant personnel desktop pour Ubuntu. On lui parle à voix haute (« Hey Jarv
 - **Voix** : « Hey Jarvis » reconnu en local, transcription Groq (français imposé, Whisper local en secours), voix Cartesia ou Piper ; réponse parlée en moins de 2 s ; on peut l'interrompre en parlant. Raccourci global : `Ctrl+Alt+J`.
 - **Mémoire** : ce que Jarvis sait de toi est visible, modifiable et supprimable.
 - **Actions** : il cherche sur le web, lit pages et fichiers, lance du code en bac à sable et pilote son propre navigateur. Toute action (cliquer, écrire, utiliser ta session) passe par un plan que tu valides ; chaque action est écrite dans un journal impossible à effacer. Détails : [`docs/securite.md`](./docs/securite.md).
+- **Organisation** : rappels et tâches à l'heure dite ou sur un événement, qui survivent à un redémarrage ; briefing du matin ; GitHub, Notion et Google Agenda par leurs serveurs MCP officiels ; Telegram pour lui parler depuis ton téléphone.
 - **Données** : SQLite local ; les clés vivent dans le trousseau du système.
 
 Le projet est en construction, phase par phase. L'état du travail est dans [`PROGRESS.md`](./PROGRESS.md), les choix dans [`DECISIONS.md`](./DECISIONS.md), le journal dans [`docs/journal/`](./docs/journal/README.md), le schéma dans [`docs/architecture.md`](./docs/architecture.md).
