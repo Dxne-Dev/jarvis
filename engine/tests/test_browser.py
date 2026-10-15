@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+import sys
 import threading
 from collections.abc import AsyncIterator, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -522,3 +523,20 @@ async def test_the_login_window_keeps_the_last_state_when_you_close_it(
     assert not session.login_active
     with pytest.raises(NotFoundError):
         await session.login_finish()
+
+
+async def test_the_installed_app_downloads_chromium_with_the_playwright_driver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ojarvis.browser.session import install_chromium  # noqa: PLC0415
+
+    calls = tmp_path / "args"
+    cli = tmp_path / "cli.py"
+    cli.write_text(f"import sys\nopen({str(calls)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
+    monkeypatch.setattr(
+        "playwright._impl._driver.compute_driver_executable", lambda: (sys.executable, str(cli))
+    )
+    assert await install_chromium() is True
+    assert calls.read_text() == "install chromium"
+    cli.write_text("raise SystemExit(1)\n")
+    assert await install_chromium() is False

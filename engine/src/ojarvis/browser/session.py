@@ -109,6 +109,36 @@ class PageView:
         return "\n".join(lines)
 
 
+_install_lock = asyncio.Lock()
+
+
+async def install_chromium(timeout_s: float = 900.0) -> bool:
+    """Télécharge le Chromium de Playwright (dans ~/.cache/ms-playwright) avec son pilote."""
+    from playwright._impl._driver import (  # noqa: PLC0415
+        compute_driver_executable,
+        get_driver_env,
+    )
+
+    async with _install_lock:
+        node, cli = compute_driver_executable()
+        log.info("chromium_installing")
+        try:
+            process = await asyncio.create_subprocess_exec(
+                node,
+                cli,
+                "install",
+                "chromium",
+                env=get_driver_env(),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            ok = await asyncio.wait_for(process.wait(), timeout_s) == 0
+        except (OSError, TimeoutError):
+            ok = False
+        log.info("chromium_installed" if ok else "chromium_install_failed")
+        return ok
+
+
 class BrowserSession:
     def __init__(
         self,
@@ -174,10 +204,13 @@ class BrowserSession:
             try:
                 self._browser = await self._launch(headless=True)
             except Exception as exc:
-                raise UnavailableError(
-                    "Navigateur indisponible (Chromium de Playwright absent : "
-                    "« uv run playwright install chromium »)."
-                ) from exc
+                # App installée : Chromium se télécharge au premier usage (~170 Mo), une fois.
+                if "Executable doesn't exist" not in str(exc) or not await install_chromium():
+                    raise UnavailableError(
+                        "Navigateur indisponible (Chromium de Playwright absent ou "
+                        "impossible à télécharger)."
+                    ) from exc
+                self._browser = await self._launch(headless=True)
         state: State | None = None
         if identity:
             state = await anyio.to_thread.run_sync(self._vault.load)
