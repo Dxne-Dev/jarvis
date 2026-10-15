@@ -80,6 +80,17 @@ def test_a_skill_definition_is_checked() -> None:
         {"outils": [days_skill()["outils"][0], days_skill()["outils"][0]]},  # même nom
         {"outils": [{**days_skill()["outils"][0], "parametres": {"type": "string"}}]},
         {"outils": [{**days_skill()["outils"][0], "nom": "__init__"}]},
+        {
+            "outils": [
+                {
+                    **days_skill()["outils"][0],
+                    "parametres": {
+                        "type": "object",
+                        "properties": {f"p{i}": {"type": "string"} for i in range(400)},
+                    },
+                }
+            ]
+        },
     ]
     for bad in bad_values:
         with pytest.raises(ValidationError):

@@ -36,6 +36,8 @@ class SkillTool(ToolArgs):
     def _schema(cls, value: dict[str, Any]) -> dict[str, Any]:
         if value.get("type") != "object":
             raise ValueError("le schéma des arguments doit décrire un objet")
+        if len(json.dumps(value)) > 5_000:
+            raise ValueError("schéma des arguments trop long (5 000 caractères au plus)")
         try:
             jsonschema.Draft202012Validator.check_schema(value)
         except jsonschema.SchemaError as exc:
