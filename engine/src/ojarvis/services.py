@@ -34,6 +34,7 @@ from ojarvis.memory.store import MemoryStore
 from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBackend, SecretStore
 from ojarvis.settings_store import Preferences, SettingsStore
 from ojarvis.tracing.tracer import TraceQueries, Tracer
+from ojarvis.voice.service import VoiceService
 
 log = get_logger(__name__)
 
@@ -53,6 +54,34 @@ class UnavailableBackend:
 
     def delete(self, key: str) -> None:
         self.set(key, "")
+
+
+async def _open_secrets(
+    config: EngineConfig, db: Database, secret_backend: SecretBackend | None
+) -> tuple[SecretStore, SecretBackend, str | None, list[str]]:
+    """Trousseau du système (ou de test), clé locale, import des clés présentes dans .env."""
+    keyring_error: str | None = None
+    backend: SecretBackend
+    if secret_backend is not None:
+        backend = secret_backend
+    elif config.dev_mode and os.environ.get("OJARVIS_MEMORY_KEYRING") == "1":
+        # Tests de bout en bout : trousseau en mémoire, jamais le vrai, jamais sur disque.
+        backend = MemoryBackend()
+    else:
+        try:
+            backend = await anyio.to_thread.run_sync(KeyringBackend)
+        except UnavailableError as exc:
+            keyring_error = exc.message
+            backend = UnavailableBackend()
+            log.error("keyring_unavailable")
+    secrets = SecretStore(db, backend)
+    imported: list[str] = []
+    if keyring_error is None:
+        await anyio.to_thread.run_sync(secrets.ensure_local_key)
+        if config.dotenv_path is not None:
+            imported = await anyio.to_thread.run_sync(secrets.import_dotenv, config.dotenv_path)
+    await anyio.to_thread.run_sync(secrets.load_into_redactor)
+    return secrets, backend, keyring_error, imported
 
 
 @dataclass
@@ -78,6 +107,7 @@ class Services:
     conversations: ConversationStore
     context: ContextEngine
     chat: ChatService
+    voice: VoiceService
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -97,27 +127,7 @@ class Services:
         events = EventStore(db)
         bus = EventBus(events.persist)
 
-        keyring_error: str | None = None
-        backend: SecretBackend
-        if secret_backend is not None:
-            backend = secret_backend
-        elif config.dev_mode and os.environ.get("OJARVIS_MEMORY_KEYRING") == "1":
-            # Tests de bout en bout : trousseau en mémoire, jamais le vrai, jamais sur disque.
-            backend = MemoryBackend()
-        else:
-            try:
-                backend = await anyio.to_thread.run_sync(KeyringBackend)
-            except UnavailableError as exc:
-                keyring_error = exc.message
-                backend = UnavailableBackend()
-                log.error("keyring_unavailable")
-        secrets = SecretStore(db, backend)
-        imported: list[str] = []
-        if keyring_error is None:
-            await anyio.to_thread.run_sync(secrets.ensure_local_key)
-            if config.dotenv_path is not None:
-                imported = await anyio.to_thread.run_sync(secrets.import_dotenv, config.dotenv_path)
-        await anyio.to_thread.run_sync(secrets.load_into_redactor)
+        secrets, backend, keyring_error, imported = await _open_secrets(config, db, secret_backend)
 
         settings = SettingsStore(db)
         preferences = await settings.get()
@@ -150,6 +160,23 @@ class Services:
             learn=preferences.learn_from_conversations,
         )
 
+        # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
+        audio = (
+            discover
+            and os.environ.get("OJARVIS_SKIP_WARMUP") != "1"
+            and os.environ.get("OJARVIS_NO_AUDIO") != "1"
+        )
+        voice = VoiceService(
+            models_dir=config.paths.cache_dir / "models",
+            http=http,
+            bus=bus,
+            tracer=tracer,
+            chat=chat,
+            secrets=secrets,
+            preferences=lambda: holder["value"],
+            audio=audio,
+        )
+
         services = cls(
             config=config,
             db=db,
@@ -172,11 +199,13 @@ class Services:
             conversations=conversations,
             context=context,
             chat=chat,
+            voice=voice,
         )
         services._holder = holder
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
+        services.spawn(voice.start())
         await bus.publish(
             "engine.started",
             {
@@ -198,9 +227,13 @@ class Services:
         task.add_done_callback(self.background.discard)
 
     def set_preferences(self, preferences: Preferences) -> None:
+        previous = self.preferences
         self.preferences = preferences
         self._holder["value"] = preferences
         self.chat.learn = preferences.learn_from_conversations
+        voice_keys = [k for k in Preferences.model_fields if k.startswith(("voice_", "wake_"))]
+        if any(getattr(previous, k) != getattr(preferences, k) for k in voice_keys):
+            self.spawn(self.voice.apply(preferences))
 
     async def _warm_up(self) -> None:
         """Au démarrage, sans bloquer : modèle d'embeddings, modèles gratuits, Ollama."""
@@ -222,6 +255,7 @@ class Services:
 
     async def stop(self) -> None:
         await self.bus.publish("engine.stopping", {})
+        await self.voice.close()
         await self.chat.close()
         for task in list(self.background):
             task.cancel()

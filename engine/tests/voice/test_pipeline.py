@@ -1,0 +1,252 @@
+"""Pipeline vocal avec des composants simulés et une horloge virtuelle (aucune attente réelle)."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any
+
+import pytest
+
+from ojarvis.events.bus import Event, EventBus
+from ojarvis.voice.audio import FileSource, MemorySink, Pcm, VirtualClock
+from ojarvis.voice.pipeline import SPOKEN_LLM_ERROR, VoiceConfig, VoicePipeline, VoiceState
+from ojarvis.voice.vad import EndpointConfig
+from tests.voice.fakes import (
+    FakeChat,
+    FakeSTT,
+    FakeTracer,
+    FakeTTS,
+    FakeVad,
+    FakeWake,
+    build_audio,
+    wait_until,
+)
+
+
+def config(**changes: Any) -> VoiceConfig:
+    base: dict[str, Any] = {
+        "follow_up_s": 0.0,
+        "endpoint": EndpointConfig(
+            hangover_s=0.4, pause_s=0.16, min_speech_s=0.16, no_speech_timeout_s=2.0
+        ),
+    }
+    base.update(changes)
+    return VoiceConfig(**base)
+
+
+@dataclass
+class Rig:
+    pipeline: VoicePipeline
+    source: FileSource
+    sink: MemorySink
+    stt: FakeSTT
+    tts: FakeTTS
+    chat: FakeChat
+    wake: FakeWake
+    tracer: FakeTracer
+    events: list[Event] = field(default_factory=list)
+
+    def types(self) -> list[str]:
+        return [e.type for e in self.events if e.type != "voice.level"]
+
+    def states(self) -> list[str]:
+        return [e.payload["state"] for e in self.events if e.type == "voice.state"]
+
+
+@contextlib.asynccontextmanager
+async def rig(
+    audio: Pcm,
+    *,
+    stt: FakeSTT | None = None,
+    chat: FakeChat | None = None,
+    tts: FakeTTS | None = None,
+    wake: FakeWake | None = None,
+    **changes: Any,
+) -> AsyncIterator[Rig]:
+    clock = VirtualClock()
+    bus = EventBus()
+    source = FileSource(audio, clock=clock)
+    sink = MemorySink(clock=clock)
+    parts = Rig(
+        pipeline=None,  # type: ignore[arg-type]
+        source=source,
+        sink=sink,
+        stt=stt or FakeSTT(),
+        tts=tts or FakeTTS(),
+        chat=chat or FakeChat(),
+        wake=wake or FakeWake(),
+        tracer=FakeTracer(),
+    )
+
+    async def collect(event: Event) -> None:
+        parts.events.append(event)
+
+    bus.subscribe("voice.*", collect)
+    parts.pipeline = VoicePipeline(
+        source=source,
+        sink=sink,
+        wake=parts.wake,
+        vad=FakeVad(),
+        stt=parts.stt,
+        tts=parts.tts,
+        chat=parts.chat,  # type: ignore[arg-type]
+        bus=bus,
+        tracer=parts.tracer,  # type: ignore[arg-type]
+        config=config(**changes),
+        clock=clock,
+    )
+    task = asyncio.create_task(parts.pipeline.run())
+    try:
+        yield parts
+    finally:
+        await source.close()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        await bus.drain()
+
+
+async def test_hey_jarvis_then_a_question_gets_a_spoken_answer() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        await wait_until(lambda: r.pipeline.state == VoiceState.IDLE)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.text == "quelle heure est-il ?"
+        assert report.reply == "Il est dix heures. Autre chose ?"
+        assert r.tts.sentences == ["Il est dix heures.", "Autre chose ?"]
+        assert r.chat.calls[0]["channel"] == "voice"
+        # La latence compte le silence d'attente (0,4 s) après la dernière syllabe.
+        assert report.latency_ms is not None
+        assert report.latency_ms >= 400
+        assert r.sink.audio_s() == pytest.approx(2.0)
+        assert r.states() == ["listening", "thinking", "speaking", "idle"]
+        assert "voice.wake" in r.types()
+        assert "voice.turn" in r.types()
+        assert r.tracer.spans == ["transcription", "synthèse vocale"]
+        assert r.tts.warmups == 1  # connexion ouverte dès le mot de réveil
+
+
+async def test_a_short_pause_starts_the_transcription_early() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.speculative is True
+        assert len(r.stt.calls) == 1
+
+
+async def test_speech_that_resumes_after_a_pause_is_transcribed_whole() -> None:
+    audio = build_audio(
+        ("silence", 0.5), ("wake", 0.8), ("speech", 0.8), ("silence", 0.24), ("speech", 0.8)
+    )
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert len(r.stt.calls) == 2  # la transcription anticipée est jetée
+        assert r.stt.calls[-1] > r.stt.calls[0]
+        assert report.speculative is True
+
+
+async def test_speaking_over_jarvis_interrupts_him() -> None:
+    audio = build_audio(
+        ("silence", 0.5), ("wake", 0.8), ("speech", 1.0), ("silence", 1.6), ("speech", 0.8)
+    )
+    stt = FakeSTT(["Hey Jarvis, raconte une longue histoire", "attends, stop"])
+    async with rig(audio, stt=stt, tts=FakeTTS(seconds_per_sentence=6.0)) as r:
+        await wait_until(lambda: len(r.chat.calls) == 2)
+        assert r.sink.stopped >= 1
+        interrupted = [e.payload["by"] for e in r.events if e.type == "voice.interrupted"]
+        assert interrupted == ["voix"]
+        assert r.chat.calls[1]["text"] == "attends, stop"
+
+
+async def test_without_barge_in_only_hey_jarvis_interrupts() -> None:
+    audio = build_audio(
+        ("silence", 0.5), ("wake", 0.8), ("speech", 1.0), ("silence", 1.6), ("speech", 0.8)
+    )
+    async with rig(audio, tts=FakeTTS(seconds_per_sentence=6.0), barge_in=False) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None, limit=10)
+        assert r.sink.stopped == 0
+        assert len(r.chat.calls) == 1
+
+
+async def test_hey_jarvis_interrupts_a_slow_answer() -> None:
+    audio = build_audio(
+        ("silence", 0.5), ("wake", 0.8), ("speech", 1.0), ("silence", 1.5), ("wake", 0.8)
+    )
+    async with rig(audio, chat=FakeChat(hang=True)) as r:
+        await wait_until(lambda: "voice.interrupted" in r.types())
+        interrupted = [e.payload["by"] for e in r.events if e.type == "voice.interrupted"]
+        assert interrupted == ["mot de réveil"]
+        assert r.pipeline.state == VoiceState.LISTENING
+
+
+async def test_hey_jarvis_alone_waits_for_the_question_then_sleeps() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("silence", 6.0))
+    async with rig(audio, stt=FakeSTT(["Hey Jarvis."])) as r:
+        await wait_until(lambda: "voice.timeout" in r.types(), limit=10)
+        assert r.chat.calls == []
+        assert r.pipeline.state == VoiceState.IDLE
+
+
+async def test_an_unreachable_model_is_said_out_loud() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio, chat=FakeChat(error=True)) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        assert r.tts.sentences == [SPOKEN_LLM_ERROR]
+
+
+async def test_push_to_talk_needs_no_wake_word() -> None:
+    audio = build_audio(("silence", 0.5), ("speech", 1.0))
+    async with rig(audio, stt=FakeSTT(["Quelle heure est-il ?"])) as r:
+        r.pipeline.listen_now()
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.text == "Quelle heure est-il ?"
+        assert "voice.wake" not in r.types()
+
+
+async def test_a_hesitant_wake_word_is_checked_by_transcription() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("silence", 0.4), ("speech", 1.0))
+    stt = FakeSTT(["Et Jarvi,", "quelle heure est-il ?"])
+    async with rig(audio, stt=stt, wake=FakeWake(score=0.3)) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        wakes = [e.payload for e in r.events if e.type == "voice.wake"]
+        assert wakes == [{"score": 0.3, "verified": True}]
+
+
+async def test_a_hesitant_score_without_jarvis_is_ignored() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("silence", 2.0))
+    async with rig(audio, stt=FakeSTT(["Il va pleuvoir."]), wake=FakeWake(score=0.3)) as r:
+        await wait_until(lambda: len(r.stt.calls) >= 1)
+        await asyncio.sleep(0.05)
+        assert "voice.wake" not in r.types()
+        assert r.pipeline.state == VoiceState.IDLE
+
+
+async def test_follow_up_continues_the_same_conversation_without_wake_word() -> None:
+    audio = build_audio(
+        ("silence", 0.5), ("wake", 0.8), ("speech", 1.0), ("silence", 2.6), ("speech", 1.0)
+    )
+    stt = FakeSTT(["Hey Jarvis, quelle heure est-il ?", "Et demain ?"])
+    async with rig(audio, stt=stt, follow_up_s=3.0) as r:
+        await wait_until(lambda: len(r.chat.calls) == 2)
+        assert r.chat.calls[1]["text"] == "Et demain ?"
+        assert r.chat.calls[1]["conversation_id"] == "conv-1"
+
+
+async def test_interrupt_from_the_interface_goes_back_to_sleep() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0))
+    async with rig(audio, tts=FakeTTS(seconds_per_sentence=6.0)) as r:
+        await wait_until(lambda: r.pipeline.state == VoiceState.SPEAKING)
+        await r.pipeline.interrupt(by="ui")
+        assert r.pipeline.state == VoiceState.IDLE
+        assert r.sink.stopped >= 1
