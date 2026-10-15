@@ -6,7 +6,7 @@ import asyncio
 import base64
 import contextlib
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,7 +42,7 @@ class ScriptedSynth:
     async def close(self) -> None:
         return None
 
-    async def stream(self, items: AsyncIterator[str]) -> AsyncIterator[AudioChunk]:
+    async def stream(self, items: AsyncIterator[str]) -> AsyncGenerator[AudioChunk]:
         async for sentence in items:
             if self.fail_at is not None and len(self.received) == self.fail_at:
                 self.received.append(sentence)

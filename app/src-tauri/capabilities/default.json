@@ -2,9 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Fenêtre principale : écouter les événements du shell, ouvrir les liens web dans le navigateur et afficher des notifications, rien d'autre. Les commandes de l'app (moteur, journal, raccourci, quitter) sont déclarées dans le code.",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",

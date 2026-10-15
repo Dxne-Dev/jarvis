@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -101,7 +101,7 @@ class FakeTTS:
     async def close(self) -> None:
         return None
 
-    async def stream(self, sentences: AsyncIterator[str]) -> AsyncIterator[AudioChunk]:
+    async def stream(self, sentences: AsyncIterator[str]) -> AsyncGenerator[AudioChunk]:
         async for sentence in sentences:
             self.sentences.append(sentence)
             samples = int(24_000 * self.seconds_per_sentence)

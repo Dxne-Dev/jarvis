@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -125,9 +126,12 @@ class FakeEcho:
 
 
 class BrokenSource:
+    broken = True
+
     async def frames(self) -> AsyncIterator[Frame]:
-        raise RuntimeError("PortAudio : micro débranché")
-        yield  # pragma: no cover
+        if self.broken:
+            raise RuntimeError("PortAudio : micro débranché")
+        yield Frame(np.zeros(1280, dtype=np.int16), 0.0)  # pragma: no cover
 
     async def close(self) -> None:
         return None

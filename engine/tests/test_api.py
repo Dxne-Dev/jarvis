@@ -216,7 +216,7 @@ def test_unexpected_errors_are_normalized(config: EngineConfig) -> None:
 def test_memory_keyring_only_in_dev(config: EngineConfig, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OJARVIS_MEMORY_KEYRING", "1")
     # Pas de PYTHON_KEYRING_BACKEND : keyring garderait ce trousseau nul pour les tests suivants.
-    unusable = null.Keyring()
+    unusable = null.Keyring()  # type: ignore[no-untyped-call]
     monkeypatch.setattr(keyring, "get_keyring", lambda: unusable)
     app = create_app(config, token=TOKEN, discover=False)
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as dev:

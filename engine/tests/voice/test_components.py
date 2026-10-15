@@ -14,7 +14,7 @@ from ojarvis.voice.wake import find_wake, mentions_jarvis, strip_wake_words
 
 
 def drive(endpointer: Endpointer, probs: list[float], start: float = 0.0) -> list[Endpoint]:
-    events = []
+    events: list[Endpoint] = []
     for index, prob in enumerate(probs, start=1):
         event = endpointer.update(prob, start + index * FRAME_S, FRAME_S)
         if event != Endpoint.NONE:

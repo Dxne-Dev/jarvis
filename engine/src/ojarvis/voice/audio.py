@@ -13,7 +13,7 @@ import threading
 import time
 import wave
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from math import gcd
 from pathlib import Path
@@ -142,7 +142,7 @@ class FileSource:
     async def close(self) -> None:
         self._closed.set()
 
-    async def frames(self) -> AsyncIterator[Frame]:
+    async def frames(self) -> AsyncGenerator[Frame]:
         rng = np.random.default_rng(7)
         start = time.monotonic()
         index = 0
@@ -250,7 +250,7 @@ class MicrophoneSource:
         )
         self._stream.start()
 
-    async def frames(self) -> AsyncIterator[Frame]:
+    async def frames(self) -> AsyncGenerator[Frame]:
         self._open(asyncio.get_running_loop())
         try:
             while True:
