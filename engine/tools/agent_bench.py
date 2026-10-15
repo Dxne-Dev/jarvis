@@ -415,6 +415,40 @@ async def skill(services: Services, home: Path, port: int) -> Outcome:
     return Outcome("créer un skill", ok, detail, time.perf_counter() - start, names)
 
 
+async def mcp_registry(services: Services, home: Path, port: int) -> Outcome:
+    """Critère de la phase 6 : un serveur MCP installé depuis le registre fonctionne."""
+    del home, port
+    start = time.perf_counter()
+    said, tools, plans = await converse(
+        services,
+        "Installe depuis le registre MCP officiel le serveur Wikipédia de cyanheads "
+        "(io.github.cyanheads/wikipedia-mcp-server).",
+    )
+    names = [t["name"] for t in tools]
+    if not plans:
+        detail = f"aucun plan d'installation ; {said[:160]!r}"
+        return Outcome("serveur MCP du registre", False, detail, time.perf_counter() - start, names)
+    installed = await run_plan(services, plans[-1], double=True)
+    servers = [s.id for s in services.mcp.installed()]
+    answer, used, _ = await converse(
+        services, "Selon Wikipédia, qu'est-ce que Cotonou ? Réponds en une phrase."
+    )
+    calls = [(t["name"], t["status"]) for t in used if t["name"].startswith("integration")]
+    ok = (
+        installed["status"] == "done"
+        and bool(servers)
+        and ("integration_appeler", "done") in calls
+        and "Bénin" in answer
+    )
+    runtimes = services.mcp.last_runtimes
+    runner = runtimes.runner(services.mcp.installed()[0].option) if runtimes and servers else "?"
+    detail = (
+        f"installation {installed['status']} ({runner}) : {servers} ; appels {calls} ; "
+        f"réponse {answer[:120]!r}"
+    )
+    return Outcome("serveur MCP du registre", ok, detail, time.perf_counter() - start, names)
+
+
 SCENARIOS: dict[str, Any] = {
     "boutique": shop,
     "piege": trap,
@@ -428,6 +462,7 @@ SCENARIOS: dict[str, Any] = {
     "application": application,
     "ecran": screen,
     "skill": skill,
+    "mcp": mcp_registry,
 }
 
 
