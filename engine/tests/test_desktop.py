@@ -319,6 +319,18 @@ def test_os_control_is_off_by_default_and_gated(client: TestClient, services: Se
     assert catalog["ouvrir_application"]["os_control"] is True
 
 
+def test_changing_the_os_permission_is_written_to_the_journal(client: TestClient) -> None:
+    client.patch("/v1/settings", json={"os_control_enabled": True, "screen_vision": "en_ligne"})
+    client.patch("/v1/settings", json={"os_control_enabled": False})
+    client.patch("/v1/settings", json={"learn_from_conversations": False})  # pas une permission
+    items = client.get("/v1/audit").json()["items"]
+    assert [(i["summary"], i["level"], i["actor"]) for i in items] == [
+        ("Contrôle du PC désactivé", 3, "utilisateur"),
+        ("Lecture de l'écran par un modèle en ligne", 3, "utilisateur"),
+        ("Contrôle du PC activé", 3, "utilisateur"),
+    ]
+
+
 def test_an_app_opens_only_after_validation(
     client: TestClient,
     services: Services,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -58,10 +59,31 @@ async def get_settings(services: ServicesDep) -> Preferences:
     return await services.settings.get()
 
 
+#: Réglages qui changent ce que Jarvis a le droit de faire : écrits au journal des actions.
+PERMISSION_SETTINGS: dict[str, Callable[[Any], str]] = {
+    "os_control_enabled": lambda on: "Contrôle du PC activé" if on else "Contrôle du PC désactivé",
+    "screen_vision": lambda mode: (
+        "Lecture de l'écran par un modèle en ligne"
+        if mode == "en_ligne"
+        else "Lecture de l'écran sur ce PC"
+    ),
+}
+
+
 @router.patch("/settings")
 async def patch_settings(changes: dict[str, Any], services: ServicesDep) -> Preferences:
     updated, changed = await services.settings.update(changes)
     services.set_preferences(updated)
+    for key in changed:
+        if key in PERMISSION_SETTINGS:
+            value = getattr(updated, key)
+            await services.journal.append(
+                actor="utilisateur",
+                action=f"reglage.{key}",
+                level=3,
+                summary=PERMISSION_SETTINGS[key](value),
+                details={key: value},
+            )
     if changed:
         await services.bus.publish(
             "settings.changed",
