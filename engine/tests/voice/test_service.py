@@ -56,6 +56,10 @@ def test_voice_settings_are_validated(client: TestClient) -> None:
     assert ok.json()["wake_sensitivity"] == "haute"
     bad = client.patch("/v1/settings", json={"voice_name": "pas une voix ; rm -rf"})
     assert bad.status_code == 422
+    sneaky = {"voice_input_device": "alsa_input.pci aec_args=analog_gain_control=1"}
+    assert client.patch("/v1/settings", json=sneaky).status_code == 422
+    usb = {"voice_input_device": "alsa_input.usb-Logitech_USB_Headset-00.mono-fallback"}
+    assert client.patch("/v1/settings", json=usb).status_code == 200
     assert client.patch("/v1/settings", json={"wake_sensitivity": "extrême"}).status_code == 422
 
 
