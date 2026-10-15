@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**2 — Parler à Jarvis.** Construite et vérifiée sur la machine : les deux critères de sortie passent (réponse parlée en 1,75 s de médiane avec DeepSeek ; fait rappelé d'une session à l'autre). Reste : CI verte, démarrage à froid, PR `dev → main`.
+**2 — Parler à Jarvis.** Terminée : les deux critères de sortie passent (réponse parlée en 1,75 s de médiane avec DeepSeek ; fait rappelé d'une session à l'autre), la boucle de vérification aussi. PR `dev → main` ouverte. Prochaine : phase 3.
 
 ## Fait
 
@@ -29,8 +29,7 @@
 
 ## Ensuite
 
-1. CI verte, démarrage à froid sur un clone neuf, PR `dev → main` (phases 1 et 2).
-2. Phase 3 — Jarvis agit : outils à schémas stricts, niveaux de permission, journal immuable, planificateur, navigateur, sandbox.
+1. Phase 3 — Jarvis agit : outils à schémas stricts, niveaux de permission, journal immuable, planificateur et exécuteur, recherche web, fichiers, sandbox, navigateur autonome, découverte des capacités.
 
 ## Problèmes ouverts
 
@@ -59,3 +58,6 @@
 | 15/10 | Coque : fmt, clippy `-D warnings`, cargo test | 0 erreur |
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 11/11, dont un tour vocal (audio simulé) ; aucune violation sérieuse |
 | 15/10 | `pip-audit` / `pnpm audit --prod` / `cargo audit` | aucune faille ; 2 avertissements GTK acceptés (voir DECISIONS) |
+| 15/10 | Démarrage à froid (clone neuf de `dev`, `install-dev.sh`, dossier vierge) | moteur prêt en 7,8 s ; voix prête en 35 s avec téléchargement et vérification des modèles (350 Mo) ; arrêt en 1,1 s |
+| 15/10 | Revue de sécurité (section 7) | clé collée dans le chat envoyée au modèle et stockée en clair : corrigé (masquage central) ; noms de périphériques passés à `pactl` : validés |
+| 15/10 | CI GitHub : moteur, interface, bout en bout, coque | vertes |

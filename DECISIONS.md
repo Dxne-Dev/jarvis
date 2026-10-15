@@ -78,6 +78,8 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 ## Sécurité
 
 - **Clés dans le trousseau (Secret Service via `keyring`)**, jamais renvoyées à l'interface. Seuls les 12 noms du brief sont importés depuis `.env`.
+- **Masquage central avant tout appel à un modèle** — le routeur remplace chaque valeur du trousseau et chaque format de clé connu par `***` ; le chat et la mémoire font de même avant d'enregistrer. Une clé collée dans le chat ne part jamais au modèle et ne reste pas en clair dans la base (15/10/2026).
+- **Noms de périphériques audio à caractères sûrs** — ils sont passés à `pactl` : pas d'espace, donc pas d'option glissée en plus.
 - **Trois niveaux de permission appliqués par une seule couche** — lire, agir (validation), détruire ou s'étendre (sandbox puis double confirmation).
 - **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage.
 - **Sandbox : Docker sans réseau, limites CPU, mémoire, PID et durée, nettoyage garanti** ; bubblewrap en repli.
