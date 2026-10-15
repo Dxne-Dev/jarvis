@@ -3,13 +3,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EngineClient } from "./client";
 import { useEngineStore } from "./store";
 import type {
+  CartesiaVoice,
   CheckResult,
+  Conversation,
+  ConversationDetail,
   EngineStatus,
+  MemoryItem,
+  MemoryKind,
+  ModelInfo,
+  ProviderStatus,
   PerfReport,
   Preferences,
   SecretStatus,
   TraceDetail,
   TraceSummary,
+  VoiceDevices,
+  VoiceStatus,
 } from "./types";
 
 function requireClient(client: EngineClient | null): EngineClient {
@@ -113,4 +122,173 @@ export async function sendPerfReport(
   report: PerfReport,
 ): Promise<{ saved_as: string }> {
   return client.post<{ saved_as: string }>("/v1/diagnostics/perf", report);
+}
+
+// ---------------------------------------------------------------- conversations
+
+export function useConversations(query: string) {
+  const client = useEngineStore((s) => s.client);
+  const q = query.trim();
+  return useQuery({
+    queryKey: ["conversations", q],
+    queryFn: () =>
+      requireClient(client).get<Conversation[]>(
+        `/v1/conversations?limit=100${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+      ),
+    enabled: client !== null,
+  });
+}
+
+export function useConversation(id: string | null) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["conversations", "detail", id],
+    queryFn: () =>
+      requireClient(client).get<ConversationDetail>(
+        `/v1/conversations/${encodeURIComponent(id ?? "")}`,
+      ),
+    enabled: client !== null && id !== null,
+  });
+}
+
+export function useRenameConversation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      requireClient(client).patch<Conversation>(`/v1/conversations/${encodeURIComponent(id)}`, {
+        title,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useDeleteConversation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).delete<undefined>(`/v1/conversations/${encodeURIComponent(id)}`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+// ---------------------------------------------------------------- mémoire
+
+export function useMemory(kind: MemoryKind | null, query: string) {
+  const client = useEngineStore((s) => s.client);
+  const q = query.trim();
+  const params = new URLSearchParams();
+  if (kind) params.set("kind", kind);
+  if (q) params.set("q", q);
+  const suffix = params.toString();
+  return useQuery({
+    queryKey: ["memory", kind, q],
+    queryFn: () =>
+      requireClient(client).get<MemoryItem[]>(`/v1/memory${suffix ? `?${suffix}` : ""}`),
+    enabled: client !== null,
+  });
+}
+
+export function useAddMemory() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (item: { kind: MemoryKind; content: string }) =>
+      requireClient(client).post<MemoryItem>("/v1/memory", item),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memory"] }),
+  });
+}
+
+export function useUpdateMemory() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...changes
+    }: {
+      id: number;
+      kind?: MemoryKind;
+      content?: string;
+      pinned?: boolean;
+    }) => requireClient(client).patch<MemoryItem>(`/v1/memory/${id}`, changes),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memory"] }),
+  });
+}
+
+export function useDeleteMemory() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => requireClient(client).delete<undefined>(`/v1/memory/${id}`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memory"] }),
+  });
+}
+
+// ---------------------------------------------------------------- modèles
+
+export function useLlmStatus() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["llm", "status"],
+    queryFn: () => requireClient(client).get<ProviderStatus[]>("/v1/llm/status"),
+    enabled: client !== null,
+  });
+}
+
+export function useLlmModels() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["llm", "models"],
+    queryFn: () => requireClient(client).get<ModelInfo[]>("/v1/llm/models"),
+    enabled: client !== null,
+    staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------- voix
+
+export function useVoiceStatus() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "status"],
+    queryFn: () => requireClient(client).get<VoiceStatus>("/v1/voice/status"),
+    enabled: client !== null,
+  });
+}
+
+export function useVoiceDevices(enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "devices"],
+    queryFn: () => requireClient(client).get<VoiceDevices>("/v1/voice/devices"),
+    enabled: client !== null && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCartesiaVoices(enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["voice", "voices"],
+    queryFn: () => requireClient(client).get<CartesiaVoice[]>("/v1/voice/voices"),
+    enabled: client !== null && enabled,
+    staleTime: 600_000,
+  });
+}
+
+/** Parler sans dire « Hey Jarvis » (bouton micro, raccourci clavier). */
+export function useVoiceListen() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/voice/listen"),
+  });
+}
+
+export function useVoiceStop() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/voice/stop"),
+  });
 }

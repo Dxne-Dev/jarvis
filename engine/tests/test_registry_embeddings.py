@@ -7,6 +7,7 @@ import httpx
 import numpy as np
 import pytest
 
+from ojarvis.core.downloads import PinnedFile, sha256_of
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
 from ojarvis.llm.catalog import Catalog
@@ -17,7 +18,7 @@ from ojarvis.llm.providers.registry import (
     discover_openrouter_free,
 )
 from ojarvis.memory import embeddings
-from ojarvis.memory.embeddings import E5_FILES, E5Embedder, sha256_of
+from ojarvis.memory.embeddings import E5_FILES, E5Embedder
 from ojarvis.security.secrets import MemoryBackend, SecretStore
 
 MODEL_DIR = Path.home() / ".cache" / "o-jarvis" / "models" / "multilingual-e5-small"
@@ -103,8 +104,8 @@ async def test_e5_download_checks_the_fingerprint(
         embeddings,
         "E5_FILES",
         {
-            "model_quantized.onnx": ("https://exemple.invalid/m", good),
-            "tokenizer.json": ("https://exemple.invalid/t", "0" * 64),
+            "model_quantized.onnx": PinnedFile("https://exemple.invalid/m", good),
+            "tokenizer.json": PinnedFile("https://exemple.invalid/t", "0" * 64),
         },
     )
     embedder = E5Embedder(tmp_path / "modele")

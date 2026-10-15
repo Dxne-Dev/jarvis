@@ -26,6 +26,7 @@ from ojarvis.llm.router import ModelRouter, RoutedStream
 from ojarvis.llm.structured import generate_structured
 from ojarvis.llm.types import LLMRequest, Message, RouteInfo, StreamEnd, TaskType, TextDelta, Usage
 from ojarvis.memory.store import MemoryStore
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
@@ -59,8 +60,9 @@ EXTRACTION_PROMPT = (
     "une phrase autonome à la troisième personne ; désigne l'utilisateur par son prénom s'il "
     "est connu, sinon « L'utilisateur ». « profil » = identité stable (nom, ville, métier) ; "
     "« preference » = goût ou façon de faire ; « fait » = le reste. Si un fait corrige un "
-    "souvenir existant, mets son id dans « remplace ». S'il n'y a rien à retenir, renvoie une "
-    "liste vide."
+    "souvenir existant, mets son id dans « remplace ». Un prénom ne se retient que s'il est "
+    "dit clairement (« je m'appelle… ») ; une phrase confuse ou incomplète ne donne rien. "
+    "S'il n'y a rien à retenir, renvoie une liste vide."
 )
 TITLE_PROMPT = (
     "Donne un titre de trois à six mots, en français, sans guillemets ni point final, "
@@ -126,9 +128,17 @@ class ChatService:
         self._background: set[asyncio.Task[None]] = set()
 
     async def respond(
-        self, *, text: str, conversation_id: str | None = None, channel: Channel = "app"
+        self,
+        *,
+        text: str,
+        conversation_id: str | None = None,
+        channel: Channel = "app",
+        learn: bool = True,
     ) -> AsyncGenerator[ChatEvent]:
-        cleaned = text.strip()
+        """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
+        (par exemple une transcription vocale douteuse)."""
+        # Une clé collée par erreur n'est ni enregistrée en clair ni envoyée au modèle.
+        cleaned = REDACTOR.redact(text.strip())
         if not cleaned or len(cleaned) > MAX_INPUT_CHARS:
             raise InvalidInputError("Le message doit faire entre 1 et 8000 caractères.")
         if conversation_id:
@@ -157,6 +167,7 @@ class ChatService:
                 f"Tour {'vocal' if channel == 'voice' else 'de conversation'}",
                 kind="voice" if channel == "voice" else "chat",
                 meta={"conversation_id": conversation.id, "channel": channel},
+                reuse=True,
             ) as trace:
                 turn.trace_id = trace.id
                 async with self._tracer.span("contexte", kind="context") as span:
@@ -196,6 +207,7 @@ class ChatService:
                     conversation.title == DEFAULT_TITLE and not history,
                     user,
                     record,
+                    learn=learn,
                 )
         finally:
             if not turn.finished:
@@ -246,7 +258,7 @@ class ChatService:
         route = turn.route
         return await self._conversations.finish_message(
             turn.assistant.id,
-            content="".join(turn.parts).strip(),
+            content=REDACTOR.redact("".join(turn.parts).strip()),
             status=status,
             provider=route.provider if route else None,
             model=route.model if route else None,
@@ -260,19 +272,33 @@ class ChatService:
     # ------------------------------------------------------------------ après la réponse
 
     def _after(
-        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+        self,
+        conversation_id: str,
+        needs_title: bool,
+        user: MessageRecord,
+        reply: MessageRecord,
+        *,
+        learn: bool = True,
     ) -> None:
-        task = asyncio.create_task(self._learn_from(conversation_id, needs_title, user, reply))
+        task = asyncio.create_task(
+            self._learn_from(conversation_id, needs_title, user, reply, learn=learn)
+        )
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
     async def _learn_from(
-        self, conversation_id: str, needs_title: bool, user: MessageRecord, reply: MessageRecord
+        self,
+        conversation_id: str,
+        needs_title: bool,
+        user: MessageRecord,
+        reply: MessageRecord,
+        *,
+        learn: bool = True,
     ) -> None:
         await self._conversations.index_exchange(user, reply)
         if needs_title:
             await self._title(conversation_id, user, reply)
-        if self.learn:
+        if self.learn and learn:
             await self._extract(user, reply)
 
     async def _title(self, conversation_id: str, user: MessageRecord, reply: MessageRecord) -> None:

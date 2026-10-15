@@ -51,6 +51,9 @@ export default defineConfig({
         OJARVIS_HOME: home,
         OJARVIS_MEMORY_KEYRING: "1",
         OJARVIS_DOTENV: emptyEnv,
+        OJARVIS_FAKE_LLM: "1",
+        OJARVIS_FAKE_AUDIO: "1",
+        OJARVIS_SKIP_WARMUP: "1",
       },
     },
     {

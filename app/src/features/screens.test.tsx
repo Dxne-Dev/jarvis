@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import type { SecretStatus, TraceDetail, TraceSummary } from "../lib/engine/types";
+import type { SecretStatus, TraceDetail, TraceSummary, VoiceStatus } from "../lib/engine/types";
+import { useVoiceStore } from "../lib/voice";
 import { fakeEngine, renderScreen } from "../test/render";
 import { HomeScreen } from "./home/HomeScreen";
 import { JournalScreen } from "./journal/JournalScreen";
@@ -22,6 +23,32 @@ const STATUS = {
   stream_clients: 1,
   timezone: "Europe/Paris",
 };
+
+const VOICE: VoiceStatus = {
+  state: "idle",
+  enabled: true,
+  error: null,
+  models: { reveil: "prêt", transcription: "prêt", voix_locale: "prêt" },
+  echo_cancel: true,
+  tts_engine: "cartesia",
+  tts_fallback: null,
+  stt_engine: "cartesia",
+  stt_fallback: false,
+  last_latency_ms: 1840,
+  last_turn_at: null,
+};
+
+/** Réponses communes du faux moteur (modèles, voix), à combiner avec celles d'un test. */
+function common(path: string): [number, unknown] | null {
+  if (path === "/v1/llm/status") return [200, []];
+  if (path === "/v1/llm/models") return [200, []];
+  if (path === "/v1/voice/status") return [200, VOICE];
+  if (path === "/v1/voice/devices")
+    return [200, { inputs: [{ name: "alsa_input", label: "Micro interne" }], outputs: [] }];
+  if (path === "/v1/voice/voices")
+    return [200, [{ id: "abc-1", name: "Étienne", gender: null, description: "Posée." }]];
+  return null;
+}
 
 function secret(over: Partial<SecretStatus>): SecretStatus {
   return {
@@ -43,6 +70,8 @@ function secret(over: Partial<SecretStatus>): SecretStatus {
 describe("Réglages", () => {
   it("affiche les clés par groupe sans jamais montrer de valeur", async () => {
     const { client } = fakeEngine((_method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets")
         return [
           200,
@@ -76,6 +105,8 @@ describe("Réglages", () => {
     const user = userEvent.setup();
     let configured = false;
     const { client, calls } = fakeEngine((method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets")
         return [
           200,
@@ -112,6 +143,8 @@ describe("Réglages", () => {
   it("demande confirmation avant de supprimer une clé", async () => {
     const user = userEvent.setup();
     const { client, calls } = fakeEngine((method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/secrets") return [200, [secret({ configured: true, source: "ui" })]];
       if (method === "DELETE") return [204, null];
       if (path === "/v1/status") return [200, STATUS];
@@ -137,6 +170,8 @@ describe("Réglages", () => {
   it("change la préférence d'animations", async () => {
     const user = userEvent.setup();
     const { client, calls } = fakeEngine((method, path, body) => {
+      const shared = common(path);
+      if (shared) return shared;
       if (path === "/v1/settings" && method === "PATCH")
         return [200, { sphere_quality: "auto", ...(body as object) }];
       if (path === "/v1/settings")
@@ -148,6 +183,31 @@ describe("Réglages", () => {
     await user.click(await screen.findByRole("radio", { name: /Réduites/ }));
     await waitFor(() => {
       expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ reduced_motion: "reduce" });
+    });
+  });
+
+  it("montre l'état de la voix et coupe la voix sur demande", async () => {
+    const user = userEvent.setup();
+    const { client, calls } = fakeEngine((method, path, body) => {
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/settings" && method === "PATCH")
+        return [200, { voice_enabled: true, voice_engine: "auto", ...(body as object) }];
+      if (path === "/v1/settings")
+        return [200, { voice_enabled: true, voice_engine: "auto", voice_name: "abc-1" }];
+      if (path === "/v1/status") return [200, STATUS];
+      return [200, []];
+    });
+    renderScreen(<SettingsScreen />, { client });
+    const voice = await screen.findByRole("region", { name: "Voix" });
+    expect(await within(voice).findByText("À l'écoute de « Hey Jarvis »")).toBeInTheDocument();
+    expect(within(voice).getByText(/Dernière réponse parlée en 1,8 s/)).toBeInTheDocument();
+    expect(await within(voice).findByLabelText("Micro")).toHaveDisplayValue(
+      "Par défaut du système",
+    );
+    await user.click(within(voice).getByRole("switch", { name: /Parler à Jarvis/ }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ voice_enabled: false });
     });
   });
 
@@ -229,6 +289,10 @@ describe("Journal", () => {
 });
 
 describe("Accueil", () => {
+  afterEach(() => {
+    useVoiceStore.setState({ phase: "off", transcript: null, conversationId: null });
+  });
+
   it("prévisualise les états de la sphère et les annonce", async () => {
     const user = userEvent.setup();
     const { client } = fakeEngine((_, path) =>
@@ -249,6 +313,34 @@ describe("Accueil", () => {
       "true",
     );
     expect(screen.getByText("Jarvis est prêt.")).toBeInTheDocument();
+  });
+
+  it("invite à dire « Hey Jarvis » et pilote la voix", async () => {
+    const user = userEvent.setup();
+    const { client, calls } = fakeEngine((_method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/status") return [200, STATUS];
+      if (path === "/v1/voice/listen" || path === "/v1/voice/stop") return [204, undefined];
+      return [200, { reduced_motion: "system", sphere_quality: "auto" }];
+    });
+    renderScreen(<HomeScreen />, { client });
+    expect(await screen.findByText("Dis « Hey Jarvis », ou écris-moi.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Parler à Jarvis" }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === "POST" && c.path === "/v1/voice/listen")).toBe(true);
+    });
+
+    act(() => {
+      useVoiceStore.getState().setPhase("speaking");
+      useVoiceStore.getState().setTranscript("quelle heure est-il ?");
+    });
+    expect(screen.getByRole("img", { name: "Sphère de Jarvis : Je parle" })).toBeInTheDocument();
+    expect(screen.getByText("Tu as dit : « quelle heure est-il ? »")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Arrêter la voix" }));
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === "POST" && c.path === "/v1/voice/stop")).toBe(true);
+    });
   });
 
   it("passe la sphère en erreur quand le moteur est arrêté", () => {

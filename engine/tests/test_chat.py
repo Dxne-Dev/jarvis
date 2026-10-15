@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 
 from ojarvis.chat.service import clean_title
 from ojarvis.llm.errors import ProviderUnavailableError
-from ojarvis.llm.providers.fake import FakeProvider, FakeReply
+from ojarvis.llm.providers.fake import FakeProvider, FakeReply, e2e_script
 from ojarvis.llm.structured import TOOL_NAME
-from ojarvis.llm.types import LLMRequest, ToolCall
+from ojarvis.llm.types import LLMRequest, Message, ToolCall, ToolSpec
 from ojarvis.services import Services
 
 
@@ -203,3 +203,43 @@ def test_clean_title() -> None:
     assert clean_title("« Le café du matin ».") == "Le café du matin"
     assert clean_title('"Projet Rust"\nAutre ligne') == "Projet Rust"
     assert clean_title("   ") == ""
+
+
+def test_e2e_script_is_predictable() -> None:
+    chat = e2e_script(LLMRequest([Message("system", "x"), Message("user", "Salut")]))
+    assert chat.text.startswith("Bien reçu : **Salut**")
+    tool = e2e_script(LLMRequest([Message("user", "x")], tools=[ToolSpec("repondre", "d", {})]))
+    assert tool.tool_calls[0].arguments == {"faits": []}
+    title = e2e_script(LLMRequest([Message("system", "Donne un titre"), Message("user", "x")]))
+    assert title.text == "Conversation de test"
+
+
+def test_a_turn_can_opt_out_of_learning(
+    client: TestClient, llm: dict[str, FakeProvider], services: Services
+) -> None:
+    llm["deepseek"]._script = smart_script
+
+    async def voice_turn() -> None:
+        events = services.chat.respond(
+            text="Je bois du café chaque matin.", channel="voice", learn=False
+        )
+        async for _ in events:
+            pass
+        await services.chat.drain()
+
+    client.portal.call(voice_turn)  # type: ignore[union-attr]
+    assert client.get("/v1/memory").json() == []
+
+
+def test_a_pasted_key_is_neither_stored_nor_sent(
+    client: TestClient, llm: dict[str, FakeProvider]
+) -> None:
+    key = "sk-" + "b" * 40
+    events = read_sse(client.post("/v1/chat", json={"text": f"Retiens ma clé {key}"}).text)
+    conversation = client.get(f"/v1/conversations/{events[0][1]['conversation_id']}").json()
+    assert key not in conversation["messages"][0]["content"]
+    assert "***" in conversation["messages"][0]["content"]
+    sent = llm["deepseek"].requests[-1][0].messages[-1].content
+    assert key not in sent
+    memory = client.post("/v1/memory", json={"kind": "fait", "content": f"Clé : {key}"}).json()
+    assert key not in memory["content"]

@@ -1,7 +1,9 @@
 import { createHashRouter } from "react-router";
 
+import { HistoryScreen } from "../features/history/HistoryScreen";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { JournalScreen } from "../features/journal/JournalScreen";
+import { MemoryScreen } from "../features/memory/MemoryScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { Shell } from "./Shell";
 
@@ -12,6 +14,8 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <HomeScreen /> },
+      { path: "historique", element: <HistoryScreen /> },
+      { path: "memoire", element: <MemoryScreen /> },
       { path: "journal", element: <JournalScreen /> },
       { path: "reglages", element: <SettingsScreen /> },
     ],

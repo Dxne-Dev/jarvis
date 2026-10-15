@@ -14,8 +14,10 @@ from ojarvis.core.errors import InvalidInputError
 from ojarvis.db.engine import Database
 from ojarvis.db.models import Setting
 from ojarvis.llm.types import TASK_TYPES
+from ojarvis.voice.tts import DEFAULT_CARTESIA_VOICE
 
 PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "ollama")
+DEVICE_NAME = r"^[A-Za-z0-9._:@-]+$"
 
 
 class Preferences(BaseModel):
@@ -29,6 +31,23 @@ class Preferences(BaseModel):
     routing: dict[str, str] = Field(default_factory=dict)
     #: Apprendre de la conversation (faits et préférences extraits automatiquement).
     learn_from_conversations: bool = True
+    #: Voix : « Hey Jarvis », écoute, réponse parlée. Désactivable sans toucher au chat.
+    voice_enabled: bool = True
+    #: Noms PipeWire (« alsa_input.pci-… ») : ils sont passés à pactl, d'où un jeu de
+    #: caractères strict (pas d'espace, donc pas d'option glissée en plus).
+    voice_input_device: str | None = Field(default=None, max_length=200, pattern=DEVICE_NAME)
+    voice_output_device: str | None = Field(default=None, max_length=200, pattern=DEVICE_NAME)
+    #: Voix Cartesia (identifiant) ; Piper, local, sert de repli hors ligne.
+    voice_name: str = Field(default=DEFAULT_CARTESIA_VOICE, pattern=r"^[0-9a-fA-F-]{8,64}$")
+    voice_engine: Literal["auto", "piper"] = "auto"
+    #: Transcription : Cartesia en ligne (après « Hey Jarvis »), ou Whisper local seulement.
+    voice_stt: Literal["auto", "local"] = "auto"
+    wake_sensitivity: Literal["basse", "normale", "haute"] = "normale"
+    #: Après une réponse, écouter encore quelques secondes sans mot de réveil.
+    voice_follow_up: bool = True
+    #: Couper Jarvis en parlant (avec l'annulation d'écho ou un casque).
+    voice_barge_in: bool = True
+    voice_headset: bool = False
 
     @field_validator("routing")
     @classmethod

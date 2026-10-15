@@ -89,6 +89,44 @@ export class EngineClient {
     return data as T;
   }
 
+  /** Requête POST dont la réponse est lue au fil de l'eau (flux SSE). */
+  async stream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(this.endpoint.baseUrl + path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.endpoint.token}`,
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+        signal: signal ?? null,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      throw new EngineUnreachableError();
+    }
+    if (!response.ok) {
+      const data: unknown = await response.json().catch(() => null);
+      if (isErrorBody(data)) {
+        throw new EngineApiError(
+          response.status,
+          data.error.code,
+          data.error.message,
+          data.error.correlation_id,
+        );
+      }
+      throw new EngineApiError(
+        response.status,
+        "http_error",
+        `Erreur HTTP ${response.status}.`,
+        null,
+      );
+    }
+    return response;
+  }
+
   get<T>(path: string): Promise<T> {
     return this.request<T>("GET", path);
   }

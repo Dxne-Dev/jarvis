@@ -86,3 +86,14 @@ class FakeProvider:
 
     async def list_models(self) -> list[str]:
         return ["fake-model"]
+
+
+def e2e_script(request: LLMRequest) -> FakeReply:
+    """Réponses prévisibles pour les tests de bout en bout (mode développement uniquement)."""
+    if request.tools and request.tools[0].name == "repondre":
+        return FakeReply(tool_calls=[ToolCall("e2e", "repondre", {"faits": []})])
+    system = request.messages[0].content if request.messages else ""
+    if "titre" in system:
+        return FakeReply(text="Conversation de test")
+    last = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
+    return FakeReply(text=f"Bien reçu : **{last}**. Je suis la réponse de test de Jarvis.")

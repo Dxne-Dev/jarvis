@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 import httpx
+import keyring
 import pytest
 from fastapi.testclient import TestClient
+from keyring.backends import null
 
 from ojarvis.app import create_app
 from ojarvis.config import EngineConfig
@@ -213,7 +215,9 @@ def test_unexpected_errors_are_normalized(config: EngineConfig) -> None:
 
 def test_memory_keyring_only_in_dev(config: EngineConfig, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OJARVIS_MEMORY_KEYRING", "1")
-    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.null.Keyring")
+    # Pas de PYTHON_KEYRING_BACKEND : keyring garderait ce trousseau nul pour les tests suivants.
+    unusable = null.Keyring()  # type: ignore[no-untyped-call]
+    monkeypatch.setattr(keyring, "get_keyring", lambda: unusable)
     app = create_app(config, token=TOKEN, discover=False)
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as dev:
         assert dev.get("/v1/status").json()["keyring"] == "memoire"

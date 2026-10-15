@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import InvalidInputError, NotFoundError
 from ojarvis.core.logs import get_logger
+from ojarvis.core.text import plain_text
 from ojarvis.db.engine import Database
 from ojarvis.db.models import ChatMessage, Conversation
 from ojarvis.memory.embeddings import Embedder
@@ -160,7 +161,7 @@ class ConversationStore:
                         c.created_at,
                         c.updated_at,
                         int(count or 0),
-                        (last or "")[:160],
+                        plain_text(last or "")[:160],
                     )
                 )
             return result

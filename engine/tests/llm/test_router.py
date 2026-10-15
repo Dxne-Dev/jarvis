@@ -307,3 +307,33 @@ async def test_structured_fails_cleanly_after_two_attempts() -> None:
             make_router(deepseek=deepseek), "chat", [Message("user", "x")], Fait
         )
     assert len(deepseek.requests) == 2
+
+
+async def test_slow_first_token_falls_back_quickly() -> None:
+    slow = FakeProvider("deepseek", delay_s=2.0)
+    router = ModelRouter(
+        {"deepseek": slow, "openrouter": FakeProvider("openrouter")},
+        Catalog(),
+        policy=POLICY,
+        first_event_timeout={"chat": 0.05},
+    )
+    events = [e async for e in router.stream("chat", request())]
+    info = events[0]
+    assert isinstance(info, RouteInfo)
+    assert info.provider == "openrouter"
+    assert router.health["deepseek"].last_error == "FirstTokenTimeoutError"
+
+
+async def test_secrets_never_reach_a_model() -> None:
+    from ojarvis.security.redaction import REDACTOR  # noqa: PLC0415
+
+    REDACTOR.add_value("valeur-du-trousseau-xyz")
+    deepseek = FakeProvider("deepseek")
+    router = make_router(deepseek=deepseek)
+    key = "ghp_" + "a" * 36
+    text = f"Ma clé est {key} et l'autre valeur-du-trousseau-xyz, garde-les."
+    [e async for e in router.stream("chat", request(text))]
+    sent = deepseek.requests[0][0].messages[-1].content
+    assert key not in sent
+    assert "valeur-du-trousseau-xyz" not in sent
+    assert sent.count("***") == 2

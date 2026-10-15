@@ -30,7 +30,7 @@ test.beforeEach(async ({ page }) => {
 
 test("l'accueil montre la sphère et l'état du moteur", async ({ page }) => {
   await expect(page.getByRole("img", { name: /Sphère de Jarvis/ })).toBeVisible();
-  await expect(page.getByText("Jarvis est prêt.")).toBeVisible();
+  await expect(page.getByText("Dis « Hey Jarvis », ou écris-moi.")).toBeVisible();
   await expectNoSeriousA11yIssues(page);
   await capture(page, "accueil");
 });
@@ -89,11 +89,10 @@ test("une clé s'ajoute, se vérifie, laisse une trace, puis se supprime", async
 test("la navigation se fait entièrement au clavier", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Aller au contenu" })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Accueil" })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Réglages" })).toBeFocused();
+  for (const name of ["Accueil", "Historique", "Mémoire", "Journal et traces", "Réglages"]) {
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name })).toBeFocused();
+  }
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Réglages", level: 1 })).toBeVisible();
 });
