@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
@@ -20,6 +22,7 @@ from ojarvis.llm.catalog import Catalog, ModelSpec
 from ojarvis.llm.errors import (
     AuthenticationFailedError,
     ContentRefusedError,
+    FirstTokenTimeoutError,
     LLMError,
     NoRouteAvailableError,
     NotConfiguredError,
@@ -107,6 +110,20 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
 }
 
 
+#: Délai maximal avant le premier morceau de réponse, par tâche (fournisseurs en ligne).
+#: Au-delà, on bascule : à la voix, attendre 30 s un premier mot n'a pas de sens.
+FIRST_EVENT_TIMEOUT_S: Mapping[TaskType, float] = {
+    "voice": 5.0,
+    "chat": 20.0,
+    "reasoning": 60.0,
+    "extract": 30.0,
+    "title": 20.0,
+    "vision": 45.0,
+}
+#: Un modèle local peut devoir se charger en mémoire (jusqu'à ~50 s sur cette machine).
+LOCAL_FIRST_EVENT_TIMEOUT_S = 120.0
+
+
 @dataclass
 class ProviderHealth:
     failures: int = 0
@@ -148,8 +165,12 @@ class ModelRouter:
         overrides: Overrides | None = None,
         policy: Mapping[TaskType, tuple[Route, ...]] = DEFAULT_POLICY,
         clock: Callable[[], float] = time.monotonic,
+        first_event_timeout: Mapping[TaskType, float] = FIRST_EVENT_TIMEOUT_S,
+        local_first_event_timeout: float = LOCAL_FIRST_EVENT_TIMEOUT_S,
     ) -> None:
         self.providers = dict(providers)
+        self._first_event_timeout = first_event_timeout
+        self._local_first_event_timeout = local_first_event_timeout
         self.catalog = catalog
         self.policy = policy
         self._bus = bus
@@ -307,8 +328,15 @@ class ModelRouter:
             )
             provider = self.providers[route.provider]
             started = False
+            timeout = (
+                self._local_first_event_timeout
+                if provider.local
+                else self._first_event_timeout.get(task, 30.0)
+            )
             try:
-                async for event in provider.stream(routed, route.model):
+                async for event in _first_event_within(
+                    provider.stream(routed, route.model), timeout
+                ):
                     if not started:
                         started = True
                         yield RouteInfo(
@@ -455,3 +483,25 @@ class ModelRouter:
             ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
             provider_blocks=blocks,
         )
+
+
+async def _first_event_within(
+    events: AsyncIterator[StreamEvent], timeout_s: float
+) -> AsyncIterator[StreamEvent]:
+    """Relaie le flux d'un fournisseur ; échoue si le premier événement tarde trop."""
+    iterator = aiter(events)
+    try:
+        try:
+            first = await asyncio.wait_for(anext(iterator), timeout=timeout_s)
+        except StopAsyncIteration:
+            return
+        except TimeoutError as exc:
+            raise FirstTokenTimeoutError(f"aucune réponse en {timeout_s:.0f} s") from exc
+        yield first
+        async for event in iterator:
+            yield event
+    finally:
+        aclose = getattr(iterator, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()

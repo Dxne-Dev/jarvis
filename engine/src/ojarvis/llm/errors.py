@@ -20,6 +20,12 @@ class ProviderUnavailableError(LLMError):
     public = "Le fournisseur ne répond pas."
 
 
+class FirstTokenTimeoutError(ProviderUnavailableError):
+    """Rien reçu dans le délai prévu pour la tâche : on passe au fournisseur suivant."""
+
+    public = "Le fournisseur met trop de temps à répondre."
+
+
 class RateLimitedError(LLMError):
     retryable = True
     public = "Le fournisseur limite les requêtes pour le moment."

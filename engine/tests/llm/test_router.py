@@ -307,3 +307,18 @@ async def test_structured_fails_cleanly_after_two_attempts() -> None:
             make_router(deepseek=deepseek), "chat", [Message("user", "x")], Fait
         )
     assert len(deepseek.requests) == 2
+
+
+async def test_slow_first_token_falls_back_quickly() -> None:
+    slow = FakeProvider("deepseek", delay_s=2.0)
+    router = ModelRouter(
+        {"deepseek": slow, "openrouter": FakeProvider("openrouter")},
+        Catalog(),
+        policy=POLICY,
+        first_event_timeout={"chat": 0.05},
+    )
+    events = [e async for e in router.stream("chat", request())]
+    info = events[0]
+    assert isinstance(info, RouteInfo)
+    assert info.provider == "openrouter"
+    assert router.health["deepseek"].last_error == "FirstTokenTimeoutError"
