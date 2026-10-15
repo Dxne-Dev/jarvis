@@ -129,6 +129,8 @@ async def test_hey_jarvis_then_a_question_gets_a_spoken_answer() -> None:
         assert "voice.wake" in r.types()
         assert "voice.turn" in r.types()
         assert r.tracer.spans == ["transcription", "synthèse vocale"]
+        captions = [e.payload["text"] for e in r.events if e.type == "voice.sentence"]
+        assert captions == ["Il est dix heures.", "Autre chose ?"]
         assert r.tts.warmups == 1  # connexion ouverte dès le mot de réveil
 
 

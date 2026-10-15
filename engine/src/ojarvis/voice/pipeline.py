@@ -486,7 +486,9 @@ class VoicePipeline:
             engine = None
             try:
                 async with self._tracer.span("synthèse vocale", kind="tts") as span:
-                    async with contextlib.aclosing(self._tts.stream(_sentences(queue))) as chunks:
+                    async with contextlib.aclosing(
+                        self._tts.stream(_sentences(queue, self._bus))
+                    ) as chunks:
                         async for chunk in chunks:
                             if first_chunk is None:
                                 first_chunk = self._clock()
@@ -574,8 +576,10 @@ class VoicePipeline:
             await queue.put(None)
 
 
-async def _sentences(queue: asyncio.Queue[str | None]) -> AsyncIterator[str]:
+async def _sentences(queue: asyncio.Queue[str | None], bus: EventBus) -> AsyncIterator[str]:
+    """Phrases à dire ; chacune part aussi vers l'interface, en sous-titre."""
     while (sentence := await queue.get()) is not None:
+        await bus.publish("voice.sentence", {"text": sentence}, persist=False)
         yield sentence
 
 

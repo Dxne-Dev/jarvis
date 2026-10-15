@@ -52,6 +52,8 @@ function handleVoiceEvent(event: EngineEvent): void {
   } else if (event.type === "voice.transcript") {
     const text = event.payload.text;
     voice.setTranscript(typeof text === "string" ? text : null);
+  } else if (event.type === "voice.sentence" && typeof event.payload.text === "string") {
+    voice.addSentence(event.payload.text);
   } else if (event.type === "voice.turn" && typeof event.payload.conversation_id === "string") {
     voice.setConversation(event.payload.conversation_id);
   }

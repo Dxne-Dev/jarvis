@@ -90,6 +90,7 @@ export function HomeScreen() {
 
   const voicePhase = useVoiceStore((s) => s.phase);
   const heard = useVoiceStore((s) => s.transcript);
+  const saying = useVoiceStore((s) => s.reply);
   const voiceConversation = useVoiceStore((s) => s.conversationId);
   const setVoicePhase = useVoiceStore((s) => s.setPhase);
   const voiceStatus = useVoiceStatus();
@@ -220,9 +221,12 @@ export function HomeScreen() {
           </div>
         )}
         {voiceActive && heard && (
-          <p className={styles.heard} aria-live="polite">
-            Tu as dit : « {heard} »
-          </p>
+          <div className={styles.captions} role="group" aria-label="Sous-titres">
+            <p className={styles.heard} aria-live="polite">
+              Tu as dit : « {heard} »
+            </p>
+            {saying && <p className={styles.saying}>{saying}</p>}
+          </div>
         )}
         <Composer
           busy={chat.phase !== "idle"}

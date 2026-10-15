@@ -7,22 +7,29 @@ interface VoiceState {
   phase: VoicePhase;
   /** Dernière phrase entendue, affichée pendant que Jarvis répond. */
   transcript: string | null;
+  /** Ce que Jarvis est en train de dire (sous-titres), phrase après phrase. */
+  reply: string;
   /** Conversation du dernier tour vocal, pour l'ouvrir à l'accueil. */
   conversationId: string | null;
   setPhase: (phase: VoicePhase) => void;
   setTranscript: (text: string | null) => void;
+  addSentence: (text: string) => void;
   setConversation: (id: string | null) => void;
 }
 
 export const useVoiceStore = create<VoiceState>((set) => ({
   phase: "off",
   transcript: null,
+  reply: "",
   conversationId: null,
   setPhase: (phase) => {
-    set(phase === "idle" || phase === "off" ? { phase, transcript: null } : { phase });
+    set(phase === "idle" || phase === "off" ? { phase, transcript: null, reply: "" } : { phase });
   },
   setTranscript: (transcript) => {
-    set({ transcript });
+    set({ transcript, reply: "" });
+  },
+  addSentence: (text) => {
+    set((state) => ({ reply: state.reply ? `${state.reply} ${text}` : text }));
   },
   setConversation: (conversationId) => {
     set({ conversationId });

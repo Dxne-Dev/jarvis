@@ -273,10 +273,24 @@
   height: 1.1rem;
 }
 
-.heard {
+.captions {
+  display: grid;
+  gap: var(--space-1);
   width: min(100%, 46rem);
-  margin: 0 auto var(--space-2);
+  margin: 0 auto var(--space-3);
+  text-align: center;
+}
+
+.heard {
+  margin: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  text-align: center;
+}
+
+/* Sous-titres de Jarvis : ce qu'il dit, au rythme de sa voix. */
+.saying {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
 }

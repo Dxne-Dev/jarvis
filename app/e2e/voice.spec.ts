@@ -36,7 +36,9 @@ test("au bouton micro, Jarvis écoute, répond à voix haute puis montre la conv
 
   await page.getByRole("button", { name: "Parler à Jarvis" }).click();
   await expect(page.getByRole("img", { name: "Sphère de Jarvis : J'écoute" })).toBeVisible();
-  await expect(page.getByText("Tu as dit : « Quelle heure est-il ? »")).toBeVisible();
+  const captions = page.getByRole("group", { name: "Sous-titres" });
+  await expect(captions.getByText("Tu as dit : « Quelle heure est-il ? »")).toBeVisible();
+  await expect(captions.getByText(/Je suis la réponse de test de Jarvis/)).toBeVisible();
   await page.screenshot({ path: `${CAPTURES}/voix-tour.png` });
 
   const log = page.getByRole("log", { name: "Conversation" });
