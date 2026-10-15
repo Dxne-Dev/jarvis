@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**5 — Contrôle du PC.** Terminée : une application s'ouvre après validation (vrai modèle, vraie calculatrice) ; « regarde mon écran » décrit correctement une capture de test, en local et en ligne ; tests de sécurité OS verts. Les commits s'ajoutent à la PR #3 (`dev → main`). Prochaine : phase 6.
+**5 — Contrôle du PC.** Terminée : une application s'ouvre après validation (vrai modèle, vraie calculatrice) ; « regarde mon écran » décrit correctement une capture de test, en local et en ligne ; tests de sécurité OS verts. PR #4 (`dev → main`) ouverte : fin de la phase 4 et phase 5 (la PR #3 a été fusionnée au milieu de la phase 4). Prochaine : phase 6.
 
 ## Fait
 
