@@ -217,3 +217,57 @@ class CookieGrant(Base):
     imported_at: Mapped[datetime]
     count: Mapped[int]
     revoked_at: Mapped[datetime | None]
+
+
+class Automation(Base):
+    """Une automatisation : un déclencheur (horaire ou événement) et une action.
+
+    Elle ne déclenche jamais seule une action de niveau 2 ou 3 : elle la prépare (un plan)
+    et te prévient."""
+
+    __tablename__ = "automations"
+    __table_args__ = (Index("ix_automations_due", "enabled", "next_run_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    trigger: Mapped[dict[str, Any]]
+    action: Mapped[dict[str, Any]]
+    enabled: Mapped[bool] = mapped_column(default=True)
+    #: Ponctuelle : désactivée après son passage.
+    one_shot: Mapped[bool] = mapped_column(default=False)
+    created_by: Mapped[str] = mapped_column(String(16))  # utilisateur | jarvis
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    next_run_at: Mapped[datetime | None]
+    last_run_at: Mapped[datetime | None]
+    last_status: Mapped[str | None] = mapped_column(String(16))  # ok | failed | missed
+    run_count: Mapped[int] = mapped_column(default=0)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+
+
+class WorkflowRun(Base):
+    """Une chaîne de tâches persistée : elle reprend à la dernière étape faite après un
+    arrêt (plantage, redémarrage du PC)."""
+
+    __tablename__ = "workflow_runs"
+    __table_args__ = (Index("ix_workflow_runs_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))  # automation | briefing
+    automation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("automations.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16))  # pending | running | done | failed
+    steps: Mapped[list[dict[str, Any]]]
+    #: Index de la prochaine étape à faire.
+    position: Mapped[int] = mapped_column(default=0)
+    context: Mapped[dict[str, Any]]
+    attempts: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    started_at: Mapped[datetime | None]
+    ended_at: Mapped[datetime | None]

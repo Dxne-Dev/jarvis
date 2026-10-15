@@ -42,5 +42,6 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING)
     type_annotation_map: dict[Any, Any] = {  # noqa: RUF012
         dict[str, Any]: JSON,
+        list[dict[str, Any]]: JSON,
         datetime: UtcDateTime,
     }

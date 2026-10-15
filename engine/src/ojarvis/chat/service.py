@@ -51,7 +51,7 @@ from ojarvis.tracing.tracer import Tracer
 log = get_logger(__name__)
 
 MAX_INPUT_CHARS = 8000
-Channel = Literal["app", "voice", "telegram"]
+Channel = Literal["app", "voice", "telegram", "automation"]
 
 
 @dataclass(frozen=True, slots=True)
