@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**5 — Contrôle du PC.** Terminée : une application s'ouvre après validation (vrai modèle, vraie calculatrice) ; « regarde mon écran » décrit correctement une capture de test, en local et en ligne ; tests de sécurité OS verts. PR #4 (`dev → main`) ouverte : fin de la phase 4 et phase 5 (la PR #3 a été fusionnée au milieu de la phase 4). Prochaine : phase 6.
+**6 — Jarvis s'étend.** Terminée : sur demande, Jarvis crée un skill, le teste, demande ta confirmation, puis l'utilise ; un serveur MCP installé depuis le registre fonctionne (vrai modèle, vrai registre). Les commits s'ajoutent à la PR #4 (`dev → main`). Prochaine : phase 7 (release).
 
 ## Fait
 
@@ -52,9 +52,17 @@
 - Contrôle du PC désactivé par défaut ; activé après confirmation (Réglages → Contrôle du PC) ; chaque changement journalisé ; Jarvis sait dire où l'activer.
 - Docs : `docs/journal/05-controle-du-pc.md`, sécurité, architecture, checklist.
 
+### Phase 6 — Jarvis s'étend (15-16/10/2026)
+- Skills : versions, tests en bac à sable, activation par double confirmation, outils utilisés comme les autres ; Jarvis s'en écrit un sur demande et en propose lui-même l'activation.
+- Registre MCP officiel : chercher, essayer isolé (Docker, sinon bubblewrap), installer (double confirmation), désactiver, retirer ; clés au trousseau.
+- Agents dev, recherche et coach (`BaseAgent`), orchestrateur sans logique métier, état en direct, une trace par mission.
+- Mémoire graphe (personnes, projets, événements, lieux, sujets) remplie par l'extraction, vue graphe modifiable.
+- Apprentissage (demandes répétées → automatisation ou skill) et anticipation (projet délaissé), avec score de confiance ; jamais d'action seule.
+- Docs : `docs/journal/06-jarvis-s-etend.md`, `docs/creer-un-skill.md`, sécurité, architecture, checklist.
+
 ## Ensuite
 
-1. Phase 6 — Jarvis s'étend : registre MCP, registre de skills, auto-extension contrôlée (sandbox, double confirmation), agents (`BaseAgent`, orchestrateur, dev, recherche, coach), mémoire graphe et sa vue, apprentissage, anticipation.
+1. Phase 7 — Release : paquets `.deb` et AppImage (moteur empaqueté), démarrage automatique à l'ouverture de session (désactivable), audits, docs (ajout d'un fournisseur LLM), `CHANGELOG.md`, `RELEASE_NOTES.md`, installation sur une session propre.
 
 ## Problèmes ouverts
 
@@ -65,6 +73,9 @@
 - Lecture locale de l'écran lente sur cette machine (30 s à 2 min) : c'est le prix du « rien ne sort ».
 - Une application Flatpak ne se ferme pas (son lanceur `flatpak` est protégé) : aucune n'est installée ici ; `flatpak kill` serait la voie.
 - Bout en bout : 3 échecs au tout premier passage après des changements (sans doute la première compilation de Vite), puis 3 passages verts de suite ; à surveiller en CI.
+- Docker est arrêté sur la machine depuis le 15/10 au soir (`sudo systemctl start docker` pour le relancer) : le bac à sable passe par bubblewrap, les serveurs MCP du registre aussi ; GitHub (serveur en conteneur) attend Docker.
+- Serveurs MCP lancés par bubblewrap : ils gardent le réseau, réseau local compris (Docker les en isole mieux).
+- Repérage des demandes répétées : le modèle de sens (e5) rapproche fort des demandes « mêmes mots, autre sujet » ; garde-fou par les noms propres, à affiner avec l'usage.
 
 ## Vérifications
 
@@ -126,3 +137,12 @@
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 49 tests |
 | 15/10 | Bout en bout Playwright + vrai moteur + axe | 17/17 ; aucune violation sérieuse |
 | 15/10 | `pip-audit` / `pnpm audit --prod` | aucune faille (pillow, mss, jeepney compris) |
+| 15/10 | Banc « skill » avec le vrai DeepSeek | skill « jours-entre-dates » écrit, 10/10 tests dans le bac à sable, activation par double confirmation, puis « 287 jours » par son outil |
+| 15/10 | Banc « mcp » (vrai registre, vrai DeepSeek) | serveur Wikipédia trouvé, installé après double confirmation (bubblewrap), puis utilisé pour répondre sur Cotonou |
+| 15/10 | Banc « agents » avec le vrai DeepSeek | l'agent de recherche cherche et lit seul (14 appels), compte rendu rendu à Jarvis |
+| 15/10 | Similarité e5 des demandes (mesure) | paraphrases 0,97-0,98 ; sans rapport ≤ 0,88 ; « autre projet » 0,96-0,97 → seuil 0,95 + mêmes noms propres |
+| 16/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 558 tests |
+| 16/10 | Interface : tsc -b, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 63 tests |
+| 16/10 | Bout en bout Playwright + vrai moteur + axe | 20/20 ; aucune violation sérieuse |
+| 16/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
+| 16/10 | Revue de sécurité (section 7) | liste des outils d'un serveur MCP non encadrée, schéma d'un skill sans limite de taille : corrigés |

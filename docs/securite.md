@@ -8,7 +8,7 @@ Jarvis peut lire, agir et détruire pour toi. Cette page dit qui décide de quoi
 |---|---|---|
 | 1 · Lecture | chercher sur le web, lire une page ou un fichier, lister un dossier, lancer du code en bac à sable | Jarvis, seul |
 | 2 · Action | cliquer, remplir un champ, écrire un fichier, utiliser ta session sur un site, ouvrir ou fermer une application | toi : un plan à valider |
-| 3 · Destruction | mettre un fichier à la corbeille, (plus tard) installer un skill, changer une permission | toi, deux fois |
+| 3 · Destruction ou extension | mettre un fichier à la corbeille, activer un skill, installer un serveur MCP, changer une permission | toi, deux fois |
 
 Lire l'écran est une lecture (niveau 1), mais tout ce qui touche au PC (applications, fichiers rangés, écran) n'existe qu'une fois le contrôle du PC activé (voir plus bas).
 
@@ -82,6 +82,22 @@ Seul l'identifiant `TELEGRAM_ALLOWED_USER_ID` est servi ; tout autre expéditeur
 GitHub et Notion tournent dans des conteneurs sans privilèges, sans accès à tes fichiers, avec des versions épinglées ; leur jeton passe par l'environnement du seul serveur. Le niveau de chaque outil vient de ses annotations MCP (lecture seule → 1, destructeur → 3, sinon 2) ; un outil inconnu est traité comme une action. Les arguments sont vérifiés par le schéma de l'outil avant l'appel ; les résultats sont des données, jamais des instructions.
 
 Google Agenda : connexion OAuth avec PKCE et état vérifié, par une redirection vers `127.0.0.1` ouverte 10 minutes au plus ; le jeton durable va au trousseau, jamais à l'interface ni au modèle ; « Déconnecter » le révoque.
+
+## Les skills
+
+Un skill est du code écrit par Jarvis (donc par un modèle) : il ne tourne **jamais** dans le moteur. Ses tests et ses appels passent par le bac à sable, sans réseau, sans tes fichiers, sans tes clés, avec un temps et une mémoire bornés ; son résultat revient comme une donnée. L'activer est une extension : double confirmation, après avoir vu son code, ses outils (et le schéma de leurs arguments) et le résultat de ses tests ; impossible si un test échoue. Une version activée ne change plus : son empreinte SHA-256 est écrite au journal.
+
+## Les serveurs MCP du registre
+
+Ils viennent de tiers. Avant de les installer, l'essai les lance isolés et montre leurs outils avec leur niveau ; l'installation demande une double confirmation (depuis le chat, l'essai n'a lieu qu'après). Ils tournent dans un conteneur Docker sans privilèges, avec leur propre volume ; sans Docker, dans bubblewrap, sans ton dossier personnel ni tes clés (seul leur propre dossier est monté) — mais avec le réseau, réseau local compris : c'est la limite de ce mode. Une version précise est exigée ; les identifiants de paquets sont vérifiés avant de devenir des arguments (jamais de shell). Leurs clés vont au trousseau et au filtre des logs, ne reviennent jamais à l'interface et ne passent jamais par le modèle. Chaque outil garde son niveau (annotations MCP ; un outil inconnu est une action) ; la liste de leurs outils et leurs résultats sont des données.
+
+## Les agents
+
+Ils passent par le même cœur que Jarvis : même porte, mêmes plans, même encadrement du contenu extérieur. Chacun n'a que ses outils : un outil hors de sa liste est refusé, même glissé dans un plan. Ils ne voient pas ta conversation, seulement la tâche confiée ; leur compte rendu revient à Jarvis comme une donnée s'ils ont lu du contenu extérieur.
+
+## La mémoire graphe et les suggestions
+
+Les noms et descriptions du graphe sont filtrés (secrets masqués) avant d'être gardés ; ils entrent dans le contexte comme des notes, jamais comme des instructions. L'anticipation ne reçoit qu'une vue en lecture de la mémoire. Une suggestion n'agit jamais : l'accepter ouvre une conversation où toute action passe par un plan ; le message envoyé vient du moteur, jamais de l'écran.
 
 ## Le journal des actions
 
