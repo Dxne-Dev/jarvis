@@ -386,3 +386,28 @@ class GraphRelation(Base):
     mentions: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime]
     last_seen_at: Mapped[datetime]
+
+
+class SuggestionRecord(Base):
+    """Une suggestion de Jarvis : tirée de tes demandes répétées ou de tes habitudes,
+    avec un score de confiance. Elle ne fait rien seule : tu l'acceptes ou tu l'écartes."""
+
+    __tablename__ = "suggestions"
+    __table_args__ = (Index("ix_suggestions_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    #: repetition (apprentissage) | inactivite (anticipation)
+    kind: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(300))
+    detail: Mapped[str | None] = mapped_column(String(500))
+    #: Ce que tu peux en faire : [{id, label, prompt}] ; le prompt part dans une conversation.
+    options: Mapped[list[dict[str, Any]]]
+    confidence: Mapped[float]
+    #: Ce qui l'a fait naître : jamais proposée deux fois pour la même raison.
+    fingerprint: Mapped[str] = mapped_column(String(200), unique=True)
+    status: Mapped[str] = mapped_column(String(16))  # nouvelle | acceptee | ecartee
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime]
+    decided_at: Mapped[datetime | None]

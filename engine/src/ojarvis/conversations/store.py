@@ -87,9 +87,12 @@ class ConversationStore:
         self._db = db
         self._embedder = embedder
         self.index = VectorIndex(db, "message", embedder.model_id, embedder.dim)
+        #: Tes demandes seules (sans les réponses, qui varient) : pour repérer ce qui revient.
+        self.requests = VectorIndex(db, "requete", embedder.model_id, embedder.dim)
 
     async def start(self) -> None:
         await self.index.ensure()
+        await self.requests.ensure()
 
     async def create(self, channel: str = "app", title: str = DEFAULT_TITLE) -> ConversationRecord:
         now = utc_now()
@@ -200,6 +203,7 @@ class ConversationStore:
 
         message_ids = await self._db.run(remove)
         await self.index.delete(message_ids)
+        await self.requests.delete(message_ids)
 
     async def add_message(
         self,
@@ -286,6 +290,40 @@ class ConversationStore:
             log.warning("message_embedding_unavailable")
             return
         await self.index.upsert(user.id, vector)
+
+    async def index_request(self, message: MessageRecord) -> None:
+        try:
+            vector = (await self._embedder.embed([message.content[:1000]], "query"))[0]
+        except Exception:
+            log.warning("request_embedding_unavailable")
+            return
+        await self.requests.upsert(message.id, vector)
+
+    async def similar_requests(
+        self, message: MessageRecord, *, since: datetime, k: int = 20
+    ) -> list[tuple[MessageRecord, float]]:
+        """Tes demandes passées proches de celle-ci (elle-même exclue), les plus proches d'abord."""
+        try:
+            vector = (await self._embedder.embed([message.content[:1000]], "query"))[0]
+        except Exception:
+            return []
+        hits = dict(await self.requests.search(vector, k + 1))
+        hits.pop(message.id, None)
+        if not hits:
+            return []
+
+        def load(session: Session) -> list[tuple[MessageRecord, float]]:
+            rows = session.scalars(
+                select(ChatMessage).where(
+                    ChatMessage.id.in_(list(hits)),
+                    ChatMessage.role == "user",
+                    ChatMessage.created_at >= since,
+                )
+            )
+            found = [(MessageRecord.of(r), round(hits[r.id], 4)) for r in rows]
+            return sorted(found, key=lambda pair: -pair[1])
+
+        return await self._db.run(load)
 
     async def recall(
         self, query: str, *, exclude_conversation: str | None = None, k: int = 4

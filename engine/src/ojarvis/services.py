@@ -21,6 +21,10 @@ from ojarvis.agent.loop import Agent
 from ojarvis.agent.plans import PlanStore
 from ojarvis.agents.orchestrator import Orchestrator
 from ojarvis.agents.specialists import STARTERS
+from ojarvis.anticipation.predictor import Predictor
+from ojarvis.anticipation.repetition import RepetitionWatcher
+from ojarvis.anticipation.service import AnticipationService
+from ojarvis.anticipation.store import SuggestionStore
 from ojarvis.audit.journal import AuditJournal
 from ojarvis.automations.scheduler import AutomationScheduler
 from ojarvis.automations.steps import AutomationSteps
@@ -250,6 +254,29 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     )
 
 
+def _assemble_anticipation(
+    chat: ChatService,
+    conversations: ConversationStore,
+    graph: GraphStore,
+    *,
+    db: Database,
+    bus: EventBus,
+    embedder: Embedder,
+) -> AnticipationService:
+    """Apprendre de tes demandes répétées, anticiper d'après tes habitudes (lecture seule)."""
+    store = SuggestionStore(db, bus)
+    return AnticipationService(
+        store=store,
+        watcher=RepetitionWatcher(
+            conversations, store, embedder_id=embedder.model_id, timezone=local_timezone
+        ),
+        predictor=Predictor(graph, store),
+        chat=chat,
+        conversations=conversations,
+        bus=bus,
+    )
+
+
 async def _assemble_memory(
     db: Database, bus: EventBus, embedder: Embedder
 ) -> tuple[MemoryStore, ConversationStore, GraphStore, ContextEngine]:
@@ -407,6 +434,7 @@ class Services:
     mcp: McpRegistryService
     orchestrator: Orchestrator
     graph: GraphStore
+    anticipation: AnticipationService
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -465,6 +493,10 @@ class Services:
         )
         google, telegram = await _assemble_remote(acts, http, secrets, backend, bus, chat)
         mcp = await _assemble_mcp(acts, http=http, db=db, backend=backend, config=config, bus=bus)
+        anticipation = _assemble_anticipation(
+            chat, conversations, graph, db=db, bus=bus, embedder=embedder
+        )
+        anticipation.start(periodic=discover)
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
         # Tests de bout en bout : audio simulé (pas de micro, de haut-parleur ni de modèle).
@@ -528,6 +560,7 @@ class Services:
             mcp=mcp,
             orchestrator=orchestrator,
             graph=graph,
+            anticipation=anticipation,
         )
         services._holder = holder
         await acts.executor.recover()
@@ -640,6 +673,7 @@ class Services:
         await self.bus.publish("engine.stopping", {})
         await self.voice.close()
         await self.chat.close()
+        await self.anticipation.close()
         await self.orchestrator.close()
         await self.telegram.close()
         await self.integrations.close()
