@@ -12,6 +12,7 @@ import contextlib
 import json
 from typing import Any
 
+import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ojarvis import __version__
@@ -59,29 +60,31 @@ async def events_ws(websocket: WebSocket) -> None:
 
     async with services.bus.stream("*") as queue:
         await websocket.send_text(json.dumps({"type": "hello", "version": __version__}))
+        # Groupe de tâches anyio : quand l'une s'arrête (client parti, envoi impossible),
+        # elle annule l'autre ; l'annulation venue de l'extérieur reste reconnue comme telle.
+        async with anyio.create_task_group() as group:
 
-        async def pump() -> None:
-            while True:
-                event = await queue.get()
-                await websocket.send_text(_event_message(event))
+            async def pump() -> None:
+                try:
+                    while True:
+                        event = await queue.get()
+                        await websocket.send_text(_event_message(event))
+                except (WebSocketDisconnect, RuntimeError) as exc:
+                    if isinstance(exc, RuntimeError):
+                        log.warning("event_stream_closed", error_type=type(exc).__name__)
+                finally:
+                    group.cancel_scope.cancel()
 
-        async def listen() -> None:
-            while True:
-                message = await websocket.receive_json()
-                if isinstance(message, dict) and message.get("type") == "ping":
-                    await websocket.send_text('{"type":"pong"}')
+            async def listen() -> None:
+                try:
+                    while True:
+                        message = await websocket.receive_json()
+                        if isinstance(message, dict) and message.get("type") == "ping":
+                            await websocket.send_text('{"type":"pong"}')
+                except (WebSocketDisconnect, ValueError, RuntimeError):
+                    pass  # client parti, ou message illisible : on ferme le flux
+                finally:
+                    group.cancel_scope.cancel()
 
-        tasks = [asyncio.create_task(pump()), asyncio.create_task(listen())]
-        try:
-            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                # Lire l'exception d'une tâche annulée lèverait CancelledError.
-                if task.cancelled():
-                    continue
-                exc = task.exception()
-                if exc is not None and not isinstance(exc, WebSocketDisconnect):
-                    log.warning("event_stream_closed", error_type=type(exc).__name__)
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            group.start_soon(pump)
+            group.start_soon(listen)
