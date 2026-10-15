@@ -1,0 +1,134 @@
+"""Outils de fichiers, dans ton dossier personnel seulement, hors dossiers sensibles.
+
+Lire et lister : niveau 1. Écrire (créer ou modifier) : niveau 2, après ta validation.
+Supprimer : niveau 3, double confirmation ; le fichier part à la corbeille (récupérable).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import shutil
+from typing import ClassVar
+
+import anyio
+from pydantic import Field
+
+from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
+from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
+from ojarvis.tools.guards import resolve_user_path
+
+MAX_READ_BYTES = 200_000
+MAX_WRITE_CHARS = 1_000_000
+MAX_ENTRIES = 200
+
+
+class PathArgs(ToolArgs):
+    chemin: str = Field(min_length=1, max_length=1000, description="Chemin (~ = dossier perso).")
+
+
+class ReadFile(Tool[PathArgs]):
+    name: ClassVar[str] = "lire_fichier"
+    description: ClassVar[str] = "Lit un fichier texte de ton dossier personnel."
+    Args: ClassVar[type[ToolArgs]] = PathArgs
+    level: ClassVar[Level] = Level.LIRE
+
+    def describe(self, args: PathArgs) -> str:
+        return f"Lire le fichier {args.chemin}"
+
+    async def run(self, args: PathArgs, ctx: ToolContext) -> ToolOutput:
+        path = resolve_user_path(args.chemin, ctx.home)
+        apath = anyio.Path(path)
+        if not await apath.is_file():
+            raise NotFoundError(f"Fichier introuvable : {args.chemin}.")
+        raw = await apath.read_bytes()
+        if b"\x00" in raw[:8000]:
+            raise InvalidInputError("Ce fichier n'est pas un texte lisible.")
+        text = raw[:MAX_READ_BYTES].decode("utf-8", "replace")
+        if len(raw) > MAX_READ_BYTES:
+            text += "\n[…fichier tronqué]"
+        return ToolOutput(text, {"chemin": str(path)}, external=True, source=str(path))
+
+
+class ListArgs(PathArgs):
+    caches: bool = Field(default=False, description="Inclure les fichiers cachés.")
+
+
+class ListDirectory(Tool[ListArgs]):
+    name: ClassVar[str] = "lister_dossier"
+    description: ClassVar[str] = "Liste le contenu d'un dossier de ton dossier personnel."
+    Args: ClassVar[type[ToolArgs]] = ListArgs
+    level: ClassVar[Level] = Level.LIRE
+
+    def describe(self, args: ListArgs) -> str:
+        return f"Lister le dossier {args.chemin}"
+
+    async def run(self, args: ListArgs, ctx: ToolContext) -> ToolOutput:
+        path = resolve_user_path(args.chemin, ctx.home)
+        if not await anyio.Path(path).is_dir():
+            raise NotFoundError(f"Dossier introuvable : {args.chemin}.")
+
+        def scan() -> list[str]:
+            lines = []
+            for entry in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+                if entry.name.startswith(".") and not args.caches:
+                    continue
+                kind = "dossier" if entry.is_dir() else f"{entry.stat().st_size} octets"
+                lines.append(f"{entry.name} ({kind})")
+                if len(lines) >= MAX_ENTRIES:
+                    lines.append("[…liste tronquée]")
+                    break
+            return lines
+
+        lines = await anyio.to_thread.run_sync(scan)
+        return ToolOutput("\n".join(lines) or "Dossier vide.", {"chemin": str(path)}, external=True)
+
+
+class WriteArgs(PathArgs):
+    contenu: str = Field(max_length=MAX_WRITE_CHARS, description="Texte à écrire.")
+
+
+class WriteFile(Tool[WriteArgs]):
+    name: ClassVar[str] = "ecrire_fichier"
+    description: ClassVar[str] = "Crée ou remplace un fichier texte dans ton dossier personnel."
+    Args: ClassVar[type[ToolArgs]] = WriteArgs
+    level: ClassVar[Level] = Level.AGIR
+    dynamic_fields: ClassVar[tuple[str, ...]] = ("contenu",)
+
+    def describe(self, args: WriteArgs) -> str:
+        preview = " ".join(args.contenu.split())
+        preview = preview if len(preview) <= 80 else preview[:77] + "…"
+        return f"Écrire dans le fichier {args.chemin} (créé ou remplacé) : « {preview} »"
+
+    async def run(self, args: WriteArgs, ctx: ToolContext) -> ToolOutput:
+        path = resolve_user_path(args.chemin, ctx.home)
+        apath = anyio.Path(path)
+        existed = await apath.exists()
+        await apath.parent.mkdir(parents=True, exist_ok=True)
+        await apath.write_text(args.contenu, encoding="utf-8")
+        verb = "remplacé" if existed else "créé"
+        return ToolOutput(f"Fichier {verb} : {path}", {"chemin": str(path), "cree": not existed})
+
+
+class DeleteFile(Tool[PathArgs]):
+    name: ClassVar[str] = "supprimer_fichier"
+    description: ClassVar[str] = "Met un fichier de ton dossier personnel à la corbeille."
+    Args: ClassVar[type[ToolArgs]] = PathArgs
+    level: ClassVar[Level] = Level.DETRUIRE
+
+    def describe(self, args: PathArgs) -> str:
+        return f"Mettre à la corbeille le fichier {args.chemin}"
+
+    async def run(self, args: PathArgs, ctx: ToolContext) -> ToolOutput:
+        path = resolve_user_path(args.chemin, ctx.home)
+        if not await anyio.Path(path).exists():
+            raise NotFoundError(f"Introuvable : {args.chemin}.")
+        gio = shutil.which("gio")
+        if gio is None:
+            raise UpstreamError("Corbeille indisponible (gio absent) : rien n'a été supprimé.")
+        process = await asyncio.create_subprocess_exec(
+            gio, "trash", "--", str(path), stderr=asyncio.subprocess.PIPE
+        )
+        _, error = await process.communicate()
+        if process.returncode != 0:
+            raise UpstreamError(f"Mise à la corbeille impossible : {error.decode()[:200]}")
+        return ToolOutput(f"Mis à la corbeille : {path}", {"chemin": str(path)})

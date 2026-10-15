@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.20.0",
     "anthropic>=1.14.0",
+    "beautifulsoup4>=4.13",
     "fastapi>=0.143.1",
     "faster-whisper>=1.2.1",
     "httpx>=0.28.1",
@@ -16,6 +17,7 @@ dependencies = [
     "openai>=3.31.0",
     "openwakeword>=0.6.0",
     "piper-tts>=1.8.0",
+    "playwright>=1.64.0,<1.65",
     "pydantic-settings>=2.16.0",
     "sounddevice>=0.5.6",
     "sqlalchemy>=2.1.4",
@@ -71,6 +73,8 @@ ignore = ["PLR0913", "PLR2004", "RUF001", "RUF002", "RUF003"]
 "tests/**" = ["S101", "S105", "S106", "PLR2004", "S311"]
 # Outils de développement lancés à la main : ils affichent leurs mesures.
 "tools/**" = ["T201", "PLR0915", "S603", "S607"]
+# Chemins à l'intérieur du bac à sable (son propre /tmp en mémoire), pas des fichiers de l'hôte.
+"src/ojarvis/sandbox/runner.py" = ["S108"]
 # Migrations : SQL construit à partir de noms de tables constants, jamais d'entrée utilisateur.
 "src/ojarvis/db/migrations/**" = ["S608"]
 
