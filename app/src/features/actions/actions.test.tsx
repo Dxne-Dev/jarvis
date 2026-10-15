@@ -199,7 +199,7 @@ describe("Journal des actions", () => {
       integrity_ok: true,
       broken_at: null,
     };
-    const { client, calls } = fakeEngine((method, path) => {
+    const { client, calls } = fakeEngine((_method, path) => {
       if (path.startsWith("/v1/audit/verify"))
         return [200, { ok: true, count: 2, broken_at: null }];
       if (path.startsWith("/v1/audit")) return [200, page];
