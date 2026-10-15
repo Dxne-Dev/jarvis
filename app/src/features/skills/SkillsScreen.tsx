@@ -153,7 +153,7 @@ function SkillCard({ skill, online }: { skill: Skill; online: boolean }) {
                 Activer…
               </Button>
             }
-            title={`Activer « ${skill.name} » v${skill.version} ?`}
+            title={`Activer «\u00a0${skill.name}\u00a0» v${skill.version} ?`}
             description={`Jarvis pourra utiliser ${skill.tools.length > 1 ? "ses outils" : "son outil"} (${tools}) sans te demander : ${skill.permissions}. Tests : ${skill.report?.summary ?? "?"}. Tu peux le désactiver à tout moment.`}
             confirmLabel="Activer"
             onConfirm={() => {
@@ -180,7 +180,7 @@ function SkillCard({ skill, online }: { skill: Skill; online: boolean }) {
                 Supprimer
               </Button>
             }
-            title={`Supprimer « ${skill.name} » v${skill.version} ?`}
+            title={`Supprimer «\u00a0${skill.name}\u00a0» v${skill.version} ?`}
             description="Cette version, son code et ses tests seront effacés. Les autres versions restent."
             confirmLabel="Supprimer"
             cancelLabel="Garder"
@@ -227,8 +227,8 @@ export function SkillsSection() {
   if (skills.data.length === 0)
     return (
       <EmptyState title="Aucun skill pour l'instant">
-        Demande par exemple « Crée-toi un skill qui compte les jours entre deux dates » : Jarvis
-        l&apos;écrit, le teste dans le bac à sable, puis te demande de l&apos;activer.
+        Demande par exemple «&nbsp;Crée-toi un skill qui compte les jours entre deux dates&nbsp;» :
+        Jarvis l&apos;écrit, le teste dans le bac à sable, puis te demande de l&apos;activer.
       </EmptyState>
     );
   return (

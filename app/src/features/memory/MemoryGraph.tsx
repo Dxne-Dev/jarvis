@@ -114,7 +114,7 @@ function EntityDetails({
                 size="sm"
                 variant="ghost"
                 disabled={!online}
-                aria-label={`Retirer le lien « ${names.get(r.source_id)} ${r.label} ${names.get(r.target_id)} »`}
+                aria-label={`Retirer le lien «\u00a0${names.get(r.source_id)} ${r.label} ${names.get(r.target_id)}\u00a0»`}
                 onClick={() => {
                   unlink.mutate(r.id);
                 }}
@@ -182,7 +182,7 @@ function EntityDetails({
               Oublier {entity.name}
             </Button>
           }
-          title={`Oublier « ${entity.name} » ?`}
+          title={`Oublier «\u00a0${entity.name}\u00a0» ?`}
           description="Jarvis efface cette entité et tous ses liens. Les souvenirs en phrases restent dans la liste."
           confirmLabel="Oublier"
           cancelLabel="Garder"

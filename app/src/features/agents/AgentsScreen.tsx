@@ -130,7 +130,7 @@ function AgentCard({
       </ul>
       {agent.busy && current && (
         <div className={styles.live} aria-live="polite">
-          <p className={styles.liveTask}>« {current.task} »</p>
+          <p className={styles.liveTask}>«&nbsp;{current.task}&nbsp;»</p>
           <Steps run={current} />
         </div>
       )}
@@ -152,7 +152,7 @@ function RunCard({ run, label }: { run: AgentRun; label: string }) {
           {run.origin === "chat" ? " · confiée par Jarvis" : " · confiée par toi"}
         </span>
       </header>
-      <p className={styles.runTask}>« {run.task} »</p>
+      <p className={styles.runTask}>«&nbsp;{run.task}&nbsp;»</p>
       <Steps run={run} />
       {run.result && <RichText text={run.result} className={chat.markdown} />}
       {run.error && <p className={styles.error}>{run.error}</p>}
@@ -215,8 +215,8 @@ export function AgentsScreen() {
             <ErrorState message={describeError(runs.error)} />
           ) : runs.data.length === 0 ? (
             <EmptyState title="Aucune mission pour l'instant">
-              Confie une tâche à un agent ci-dessus, ou demande à Jarvis « fais faire une recherche
-              sur… » : il la déléguera.
+              Confie une tâche à un agent ci-dessus, ou demande à Jarvis «&nbsp;fais faire une
+              recherche sur…&nbsp;» : il la déléguera.
             </EmptyState>
           ) : (
             <ul className={styles.runs} aria-label="Missions récentes">

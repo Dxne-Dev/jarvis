@@ -26,7 +26,7 @@ const STATUS: Record<string, string> = {
   désactivé: "Désactivé",
 };
 
-/** « 6 outils : 5 en lecture, 1 en action » */
+/** « 6 outils : 5 en lecture, 1 en action » */
 function toolSummary(tools: McpTool[]): string {
   const counts = new Map<string, number>();
   for (const tool of tools) {
@@ -67,7 +67,7 @@ function ServerCard({ server, online }: { server: McpServerInfo; online: boolean
         {server.label}, {server.where}.
       </p>
       <p className={styles.meta}>
-        {toolSummary(server.tools)} · le modèle l&apos;appelle « {server.id} »
+        {toolSummary(server.tools)} · le modèle l&apos;appelle «&nbsp;{server.id}&nbsp;»
         {server.secret_names.length > 0 &&
           ` · clé au trousseau : ${server.secret_names.join(", ")}`}
       </p>
@@ -94,7 +94,7 @@ function ServerCard({ server, online }: { server: McpServerInfo; online: boolean
               Retirer
             </Button>
           }
-          title={`Retirer « ${server.title} » ?`}
+          title={`Retirer «\u00a0${server.title}\u00a0» ?`}
           description="Jarvis perd ses outils ; sa clé est effacée du trousseau et son cache supprimé."
           confirmLabel="Retirer"
           cancelLabel="Garder"
@@ -225,7 +225,7 @@ function ResultCard({ entry, online }: { entry: McpRegistryEntry; online: boolea
                   Installer…
                 </Button>
               }
-              title={`Installer « ${entry.title} » v${entry.version} ?`}
+              title={`Installer «\u00a0${entry.title}\u00a0» v${entry.version} ?`}
               description={`Jarvis pourra utiliser ses ${result.tools.length} outils : ${toolSummary(result.tools)}. Chaque action attendra ta validation. Il tourne ${entry.option.where}.`}
               confirmLabel="Installer"
               onConfirm={() => {
@@ -280,7 +280,7 @@ function RegistrySearch({ online }: { online: boolean }) {
             }}
           />
         ) : results.data.length === 0 ? (
-          <p className={styles.meta}>Aucun serveur ne correspond à « {query} ».</p>
+          <p className={styles.meta}>Aucun serveur ne correspond à «&nbsp;{query}&nbsp;».</p>
         ) : (
           <ul className={styles.list} aria-label="Résultats du registre">
             {results.data.map((entry) => (
@@ -312,8 +312,8 @@ export function McpSection() {
   else if (servers.data.length === 0)
     installed = (
       <EmptyState title="Aucun serveur installé">
-        Cherche un serveur ci-dessous, essaie-le, puis installe-le ; ou demande à Jarvis « installe
-        le serveur MCP Wikipédia ».
+        Cherche un serveur ci-dessous, essaie-le, puis installe-le ; ou demande à Jarvis
+        «&nbsp;installe le serveur MCP Wikipédia&nbsp;».
       </EmptyState>
     );
   else
