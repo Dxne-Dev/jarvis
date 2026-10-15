@@ -84,7 +84,8 @@ test("une conversation se déroule en direct puis rejoint l'historique", async (
     .getByRole("button", { name: /Supprimer/ })
     .click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Supprimer" }).click();
-  await expect(page.getByText("Pas encore de conversation")).toBeVisible();
+  // D'autres tests ont pu créer leurs conversations : seule celle-ci doit disparaître.
+  await expect(page.getByRole("listitem").filter({ hasText: "Salutations" })).toHaveCount(0);
 });
 
 test("la mémoire se consulte, s'enrichit, se corrige et oublie", async ({ page }) => {

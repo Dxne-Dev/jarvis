@@ -105,6 +105,16 @@ async def check_cartesia(client: httpx.AsyncClient, get: Getter) -> CheckResult:
     return CheckResult(True, f"{count} voix françaises disponibles.")
 
 
+async def check_groq(client: httpx.AsyncClient, get: Getter) -> CheckResult:
+    key = get("GROQ_API_KEY") or ""
+    response = await _bearer_get(client, "https://api.groq.com/openai/v1/models", key)
+    if response.status_code != 200:
+        return CheckResult(False, _status_detail(response))
+    models = [m.get("id") for m in _json(response).get("data", []) if isinstance(m, dict)]
+    whisper = sorted(str(m) for m in models if "whisper" in str(m))
+    return CheckResult(True, f"Transcription : {', '.join(whisper) or 'aucun modèle Whisper'}.")
+
+
 async def check_tavily(client: httpx.AsyncClient, get: Getter) -> CheckResult:
     key = get("TAVILY_API_KEY") or ""
     response = await _bearer_get(client, "https://api.tavily.com/usage", key)
@@ -192,6 +202,7 @@ CHECKS: dict[str, Check] = {
     "OPENAI_API_KEY": check_openai,
     "ANTHROPIC_API_KEY": check_anthropic,
     "CARTESIA_API_KEY": check_cartesia,
+    "GROQ_API_KEY": check_groq,
     "TAVILY_API_KEY": check_tavily,
     "GITHUB_TOKEN": check_github,
     "NOTION_TOKEN": check_notion,

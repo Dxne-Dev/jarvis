@@ -79,6 +79,15 @@ class Transcriber(Protocol):
     async def transcribe(self, audio: Pcm) -> Transcript: ...
 
 
+class CloudTranscriber(Transcriber, Protocol):
+    """Transcription en ligne, par phrase entière (Groq)."""
+
+    name: str
+
+    @property
+    def available(self) -> bool: ...
+
+
 class WhisperTranscriber:
     def __init__(self, folder: Path, *, threads: int = 4, language: str = "fr") -> None:
         self.folder = folder
@@ -378,3 +387,103 @@ class CartesiaSttStream:
         if ws is not None:
             with contextlib.suppress(Exception):
                 await ws.close()
+
+
+# --------------------------------------------------------------------------- Groq (Whisper)
+
+GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+GROQ_STT_MODEL = "whisper-large-v3"
+#: Oriente l'orthographe (« Jarvis ») et la langue, sans rien imposer d'autre.
+GROQ_PROMPT = "Conversation en français avec Jarvis."
+
+
+def _retry_after(value: str | None, *, default: float) -> float:
+    try:
+        return min(max(float(value or default), 1.0), 300.0)
+    except ValueError:
+        return default
+
+
+def wav_bytes(audio: Pcm) -> bytes:
+    """WAV 16 kHz mono 16 bits en mémoire (rien n'est écrit sur disque)."""
+    import io  # noqa: PLC0415
+    import wave  # noqa: PLC0415
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(RATE)
+        handle.writeframes(audio.astype(np.int16).tobytes())
+    return buffer.getvalue()
+
+
+class GroqTranscriber:
+    """Whisper large-v3 chez Groq, français imposé : la phrase entière, envoyée à la pause.
+
+    Choisi avec Octave le 15/10/2026 : Cartesia Ink-2 devine la langue seul et, avec son
+    accent, entendait parfois de l'anglais ; Whisper local (base) comprenait trop mal.
+    """
+
+    name = "groq"
+
+    def __init__(
+        self,
+        api_key: Callable[[], str | None],
+        http: Any,
+        *,
+        model: str = GROQ_STT_MODEL,
+        timeout_s: float = 4.0,
+    ) -> None:
+        self._api_key = api_key
+        self._http = http
+        self._model = model
+        self._timeout_s = timeout_s
+        #: Après un « 429 », Groq est laissé de côté le temps qu'il indique.
+        self._blocked_until = 0.0
+
+    @property
+    def available(self) -> bool:
+        return bool(self._api_key()) and time.monotonic() >= self._blocked_until
+
+    async def transcribe(self, audio: Pcm) -> Transcript:
+        import httpx  # noqa: PLC0415
+
+        key = self._api_key()
+        if not key:
+            raise SttError("clé Groq absente")
+        start = time.perf_counter()
+        try:
+            response = await self._http.post(
+                GROQ_STT_URL,
+                headers={"Authorization": f"Bearer {key}"},
+                data={
+                    "model": self._model,
+                    "language": "fr",
+                    "prompt": GROQ_PROMPT,
+                    "response_format": "verbose_json",
+                    "temperature": "0",
+                },
+                files={"file": ("phrase.wav", wav_bytes(audio), "audio/wav")},
+                timeout=self._timeout_s,
+            )
+        except httpx.HTTPError as exc:
+            raise SttError(f"Groq injoignable : {type(exc).__name__}") from exc
+        if response.status_code == 429:
+            # Offre gratuite : 20 phrases par minute. On attend ce que Groq demande.
+            wait = _retry_after(response.headers.get("retry-after"), default=20.0)
+            self._blocked_until = time.monotonic() + wait
+            raise SttError(f"Groq limite les requêtes (HTTP 429), pause de {wait:.0f} s")
+        if response.status_code != 200:
+            raise SttError(f"Groq a refusé la transcription (HTTP {response.status_code})")
+        body = response.json()
+        segments = [s for s in body.get("segments") or [] if isinstance(s, dict)]
+        logprob = min((float(s.get("avg_logprob", 0.0)) for s in segments), default=0.0)
+        no_speech = max((float(s.get("no_speech_prob", 0.0)) for s in segments), default=0.0)
+        return Transcript(
+            text=str(body.get("text", "")).strip(),
+            audio_s=round(len(audio) / RATE, 2),
+            duration_ms=round((time.perf_counter() - start) * 1000, 1),
+            no_speech_prob=round(no_speech, 3),
+            avg_logprob=round(logprob, 3),
+        )

@@ -63,6 +63,7 @@ class OpenWakeWord:
 _TARGETS = ("jarvis", "jarvi", "djarvis", "jervis")
 _INTERJECTIONS = {"hey", "he", "hei", "eh", "et", "e", "ok", "okay", "o", "ah", "hai", "hi"}
 _TOKEN = re.compile(r"[a-z]+")
+_ELISION = re.compile(r"^[bcdfghjklmnpqrstvwxz]{1,2}$")
 
 
 def _fold(text: str) -> str:
@@ -92,8 +93,9 @@ def find_wake(text: str, *, within: int = 4) -> tuple[int, int] | None:
             return start, end
         if i + 1 < len(tokens):
             nxt, _, nxt_end = tokens[i + 1]
-            # Plus exigeant : « j'avais » ne doit pas passer pour « Jarvis ».
-            if len(word) <= 3 and _looks_like_jarvis(word + nxt, threshold=0.85):
+            # Seulement une élision (« j' », « d' ») : « à Jarvis » reste « à » + « Jarvis ».
+            # Plus exigeant aussi : « j'avais » ne doit pas passer pour « Jarvis ».
+            if _ELISION.match(word) and _looks_like_jarvis(word + nxt, threshold=0.85):
                 return start, nxt_end
     return None
 
@@ -109,7 +111,9 @@ def strip_wake_words(text: str) -> str:
         return text.strip()
     _, end = found
     prefix = _tokens(text[: found[0]])
-    if any(word not in _INTERJECTIONS for word, _, _ in prefix):
+    # Un « Hey » mal entendu (« him », « pay ») : un seul mot court devant « Jarvis ».
+    misheard_hey = len(prefix) == 1 and len(prefix[0][0]) <= 4
+    if not misheard_hey and any(word not in _INTERJECTIONS for word, _, _ in prefix):
         return text.strip()
     # `_fold` garde la longueur des caractères latins : les positions valent pour `text`.
     rest = text[end:] if len(_fold(text)) == len(text) else text

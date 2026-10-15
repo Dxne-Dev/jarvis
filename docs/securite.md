@@ -1,0 +1,67 @@
+# Sécurité et permissions
+
+Jarvis peut lire, agir et détruire pour toi. Cette page dit qui décide de quoi, et comment c'est vérifié.
+
+## Les trois niveaux
+
+| Niveau | Exemples | Qui décide |
+|---|---|---|
+| 1 · Lecture | chercher sur le web, lire une page ou un fichier, lister un dossier, lancer du code en bac à sable | Jarvis, seul |
+| 2 · Action | cliquer, remplir un champ, écrire un fichier, utiliser ta session sur un site | toi : un plan à valider |
+| 3 · Destruction | mettre un fichier à la corbeille, (plus tard) installer un skill, changer une permission | toi, deux fois |
+
+Le niveau de chaque outil est fixé dans le code et visible dans Réglages → Permissions. Il peut dépendre des arguments : ouvrir une page est de niveau 1, sauf sur un domaine où Jarvis a ta session (niveau 2).
+
+## Une seule porte
+
+Aucun outil ne s'exécute ailleurs que dans `engine/src/ojarvis/permissions/gate.py` :
+
+1. l'outil existe, ses arguments respectent son schéma (aucun champ inconnu) ;
+2. son niveau est calculé avec les vrais arguments ;
+3. niveau 2 ou 3 : il faut une validation rattachée à une étape d'un plan, et le niveau ne peut pas dépasser celui que tu as vu ; niveau 3 : il faut la double confirmation ;
+4. l'action est écrite au journal avant (« Lancé : … ») et après (« Fait : … » ou « Échec : … »).
+
+## Les plans
+
+Le modèle propose un plan avec l'outil `proposer_un_plan`. S'il appelle directement une action, elle devient un plan d'une étape : rien n'est exécuté sur un simple appel. Avant d'être montré, le plan est vérifié : outils connus, arguments valides, et **la cible d'une action est connue** (une adresse ou un fichier ne peut pas venir du résultat d'une étape précédente ; seul un contenu, comme le texte à écrire, le peut).
+
+À l'écran : ce qui va se passer, sur quoi, à quel niveau ; « Refuser » et « Valider » côte à côte, de même taille. Un plan coupé par un arrêt du moteur n'est jamais relancé seul.
+
+La validation suit le niveau : un plan qui ne fait que lire (niveau 1) part sans attendre, comme un outil de lecture, sauf s'il est proposé après la lecture d'un contenu externe ; dans ce cas, il attend ta décision.
+
+## Le contenu externe est une donnée
+
+Ce qui vient d'une page, d'un fichier ou d'un résultat d'outil arrive au modèle encadré par `<donnees>…</donnees>`, avec la consigne de n'y suivre aucun ordre. Une fausse balise de fermeture dans la page est neutralisée.
+
+Si le contenu pousse quand même le modèle à agir :
+- l'action devient un plan, **signalé** (« proposé après la lecture d'un contenu externe ») ;
+- ouvrir une adresse absente de ta demande et des pages lues (une adresse fabriquée pour faire fuir des données) demande aussi ta validation.
+
+Testé avec des pages piégées, en simulation (`tests/test_agent_chat.py`) et avec le vrai modèle (`engine/tools/agent_bench.py`).
+
+## Le réseau
+
+Le navigateur de Jarvis et la lecture de pages passent par un proxy local (`browser/proxy.py`). Il résout le nom, vérifie que **toutes** les adresses sont publiques, puis se connecte lui-même à l'adresse vérifiée : pas de box, pas de `127.0.0.1`, pas de réseau local, même par une redirection ou une réponse DNS qui change.
+
+## Tes sessions et tes cookies
+
+- Le navigateur de Jarvis n'est jamais le tien. Pour lire, il n'a aucun cookie.
+- Un domaine n'est autorisé que par toi (Réglages → Navigateur) : en te connectant dans sa fenêtre, ou en important les cookies **de ce domaine** depuis Chrome, Chromium ou Brave, avec une case à cocher explicite. Révocable à tout moment.
+- Les sessions sont gardées dans un coffre chiffré, avec une clé dérivée de la clé locale du trousseau. Ni les cookies ni leur valeur ne vont à un modèle ou à l'interface.
+- Jarvis ne remplit jamais un mot de passe, un numéro de carte ou un code à usage unique.
+
+## Les fichiers
+
+Seulement dans ton dossier personnel, et jamais dans : `.ssh`, `.gnupg`, trousseaux, profils de navigateurs, `.aws`, `.kube`, `.docker`, la configuration de `gh`, les données d'O-jarvis ; ni les fichiers `.env`, `.netrc`, `*.pem`, `*.key`, `id_*`… Les liens symboliques sont suivis avant la vérification. Supprimer, c'est mettre à la corbeille.
+
+## Le code
+
+Le code lancé par Jarvis tourne dans Docker (`python:3.12-alpine`) : sans réseau, système en lecture seule, utilisateur sans droits, 1 processeur, 256 Mo, 64 processus, durée bornée, conteneur toujours supprimé. Sans Docker : bubblewrap, sans réseau, avec des limites posées par `prlimit`.
+
+## Le journal des actions
+
+Table en ajout seul : des déclencheurs SQLite refusent toute modification et toute suppression. Chaque entrée contient l'empreinte SHA-256 de la précédente : modifier une ligne, même directement dans la base, casse la chaîne. Elle est vérifiée à chaque démarrage et à la demande (Journal et traces → Actions). Aucune route ni aucun écran ne permet de l'effacer.
+
+## Les secrets
+
+Clés dans le trousseau du système, jamais renvoyées à l'interface. Avant tout appel à un modèle, chaque valeur du trousseau et chaque format de clé connu est remplacé par `***`, y compris dans les résultats d'outils. Les logs et le journal sont filtrés de la même façon.

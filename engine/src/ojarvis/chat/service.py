@@ -16,6 +16,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ojarvis.agent.loop import (
+    AGENT_RULES,
+    MAX_TOOL_ROUNDS,
+    Agent,
+    AgentTurn,
+    plan_summary,
+    urls_in,
+)
 from ojarvis.context.engine import BuiltContext, ContextEngine
 from ojarvis.conversations.store import DEFAULT_TITLE, ConversationStore, MessageRecord
 from ojarvis.core.errors import InvalidInputError
@@ -24,7 +32,18 @@ from ojarvis.events.bus import EventBus
 from ojarvis.llm.errors import LLMError
 from ojarvis.llm.router import ModelRouter, RoutedStream
 from ojarvis.llm.structured import generate_structured
-from ojarvis.llm.types import LLMRequest, Message, RouteInfo, StreamEnd, TaskType, TextDelta, Usage
+from ojarvis.llm.types import (
+    LLMRequest,
+    Message,
+    ReasoningDelta,
+    RouteInfo,
+    StreamEnd,
+    TaskType,
+    TextDelta,
+    ToolCall,
+    ToolCallReady,
+    Usage,
+)
 from ojarvis.memory.store import MemoryStore
 from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
@@ -32,12 +51,12 @@ from ojarvis.tracing.tracer import Tracer
 log = get_logger(__name__)
 
 MAX_INPUT_CHARS = 8000
-Channel = Literal["app", "voice", "telegram"]
+Channel = Literal["app", "voice", "telegram", "automation"]
 
 
 @dataclass(frozen=True, slots=True)
 class ChatEvent:
-    type: str  # start | context | route | delta | done | error
+    type: str  # start | context | route | delta | tool | plan | done | error
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -80,6 +99,15 @@ def clean_title(raw: str) -> str:
 
 
 @dataclass
+class _Round:
+    """Un appel au modèle dans un tour : ce qu'il a dit, pensé et demandé."""
+
+    said: list[str] = field(default_factory=list)
+    reasoning: list[str] = field(default_factory=list)
+    calls: list[ToolCall] = field(default_factory=list)
+
+
+@dataclass
 class _Turn:
     """État d'un tour en cours (réponse partielle, route, jetons, chronomètre)."""
 
@@ -92,6 +120,7 @@ class _Turn:
     first_token_ms: float | None = None
     trace_id: str = ""
     finished: bool = False
+    agent: AgentTurn = field(default_factory=AgentTurn)
 
 
 def _context_event(context: BuiltContext) -> dict[str, Any]:
@@ -117,6 +146,7 @@ class ChatService:
         tracer: Tracer,
         bus: EventBus,
         learn: bool = True,
+        agent: Agent | None = None,
     ) -> None:
         self._conversations = conversations
         self._memory = memory
@@ -125,6 +155,7 @@ class ChatService:
         self._tracer = tracer
         self._bus = bus
         self.learn = learn
+        self._agent = agent
         self._background: set[asyncio.Task[None]] = set()
 
     async def respond(
@@ -184,7 +215,9 @@ class ChatService:
                 )
                 task: TaskType = "voice" if channel == "voice" else "chat"
                 try:
-                    async for event in self._reply(task, request, turn):
+                    async for event in self._reply(
+                        task, request, turn, conversation_id=conversation.id, user_text=cleaned
+                    ):
                         yield event
                 except LLMError as error:
                     trace.fail(error.public)
@@ -216,8 +249,49 @@ class ChatService:
                     await self._finish(turn, "interrupted")
 
     async def _reply(
-        self, task: TaskType, request: LLMRequest, turn: _Turn
+        self,
+        task: TaskType,
+        request: LLMRequest,
+        turn: _Turn,
+        *,
+        conversation_id: str,
+        user_text: str,
     ) -> AsyncIterator[ChatEvent]:
+        """Réponse du modèle ; s'il appelle des outils, on les traite et il reprend."""
+        agent = self._agent
+        if agent is not None:
+            turn.agent.known_urls |= urls_in(user_text)
+            request.tools = agent.specs()
+            system = request.messages[0]
+            request.messages[0] = Message("system", f"{system.content}\n\n{AGENT_RULES}")
+        for rounds in range(MAX_TOOL_ROUNDS + 1):
+            step = _Round()
+            async for event in self._stream_round(task, request, turn, step):
+                yield event
+            if not step.calls or agent is None:
+                return
+            if rounds == MAX_TOOL_ROUNDS:
+                log.warning("tool_rounds_exhausted", rounds=rounds)
+                return
+            request.messages.append(
+                Message(
+                    "assistant",
+                    "".join(step.said),
+                    tool_calls=tuple(step.calls),
+                    reasoning="".join(step.reasoning) or None,
+                    provider=turn.route.provider if turn.route else None,
+                )
+            )
+            for call in step.calls:
+                async for event in self._run_tool(
+                    agent, call, request, turn, conversation_id=conversation_id, user_text=user_text
+                ):
+                    yield event
+
+    async def _stream_round(
+        self, task: TaskType, request: LLMRequest, turn: _Turn, step: _Round
+    ) -> AsyncIterator[ChatEvent]:
+        """Un appel au modèle : texte diffusé au fil de l'eau, appels d'outils mis de côté."""
         async for event in self._router.stream_traced(task, request, state=turn.state):
             if isinstance(event, RouteInfo):
                 turn.route = event
@@ -232,10 +306,54 @@ class ChatService:
             elif isinstance(event, TextDelta):
                 if turn.first_token_ms is None:
                     turn.first_token_ms = (time.perf_counter() - turn.start) * 1000
-                turn.parts.append(event.text)
-                yield ChatEvent("delta", {"text": event.text})
+                text = event.text
+                if not step.said and turn.parts and not turn.parts[-1].endswith(("\n", " ")):
+                    text = "\n\n" + text  # texte d'un nouveau tour, après des outils
+                step.said.append(text)
+                turn.parts.append(text)
+                yield ChatEvent("delta", {"text": text})
+            elif isinstance(event, ReasoningDelta):
+                step.reasoning.append(event.text)
+            elif isinstance(event, ToolCallReady):
+                step.calls.append(event.call)
             elif isinstance(event, StreamEnd):
-                turn.usage = event.usage
+                turn.usage = Usage(
+                    input_tokens=turn.usage.input_tokens + event.usage.input_tokens,
+                    output_tokens=turn.usage.output_tokens + event.usage.output_tokens,
+                    cached_input_tokens=turn.usage.cached_input_tokens
+                    + event.usage.cached_input_tokens,
+                )
+
+    async def _run_tool(
+        self,
+        agent: Agent,
+        call: ToolCall,
+        request: LLMRequest,
+        turn: _Turn,
+        *,
+        conversation_id: str,
+        user_text: str,
+    ) -> AsyncIterator[ChatEvent]:
+        yield ChatEvent(
+            "tool",
+            {
+                "id": call.id,
+                "name": call.name,
+                "description": agent.describe(call),
+                "status": "running",
+            },
+        )
+        async with self._tracer.span(f"outil {call.name}", kind="tool") as span:
+            outcome = await agent.handle(
+                call, turn.agent, conversation_id=conversation_id, request=user_text
+            )
+            span.set(status=outcome.event.get("status"), error=outcome.event.get("error"))
+        yield ChatEvent("tool", outcome.event)
+        if outcome.plan is not None:
+            yield ChatEvent("plan", plan_summary(outcome.plan))
+        request.messages.append(
+            Message("tool", outcome.content, tool_call_id=call.id, is_error=outcome.is_error)
+        )
 
     def _done_event(
         self, conversation_id: str, record: MessageRecord, turn: _Turn
@@ -251,6 +369,7 @@ class ChatService:
             "latency_ms": record.latency_ms,
             "first_token_ms": round(turn.first_token_ms, 1) if turn.first_token_ms else None,
             "trace_id": turn.trace_id,
+            "plans": list(turn.agent.plans),
         }
 
     async def _finish(self, turn: _Turn, status: str) -> MessageRecord:
@@ -267,7 +386,15 @@ class ChatService:
             cost_usd=self._router.cost(turn.state.route, turn.usage),
             latency_ms=round((time.perf_counter() - turn.start) * 1000, 1),
             trace_id=turn.trace_id or None,
+            meta=self._meta(turn),
         )
+
+    @staticmethod
+    def _meta(turn: _Turn) -> dict[str, Any] | None:
+        """Outils utilisés et plans proposés : l'interface les affiche sous la réponse."""
+        if not turn.agent.tools and not turn.agent.plans:
+            return None
+        return {"tools": turn.agent.tools, "plans": turn.agent.plans}
 
     # ------------------------------------------------------------------ après la réponse
 

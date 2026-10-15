@@ -60,7 +60,7 @@ flowchart LR
   W -- "score hésitant" --> V["Vérification<br/>Whisper local"]
   W -- "Hey Jarvis" --> D["Fin de phrase<br/>Silero VAD"]
   V -- "« Jarvis » trouvé" --> D
-  D --> S["Transcription<br/>Whisper base"]
+  D --> S["Transcription<br/>Groq Whisper large-v3 (fr)<br/>relais : Cartesia, Whisper local"]
   S --> L["Modèle de langage<br/>(routeur)"]
   L -- "phrase par phrase" --> T["Synthèse<br/>Cartesia, Piper en repli"]
   T --> HP["Haut-parleur"]
@@ -68,7 +68,26 @@ flowchart LR
   Mic -. "parole pendant la réponse" .-> X["Interruption"]
 ```
 
-Réveil, détection de parole et transcription tournent sur la machine : aucun son ne la quitte. Seul le texte part vers le modèle et vers la synthèse. Le micro reste écouté pendant que Jarvis parle, ce qui permet de l'interrompre.
+Le réveil et la détection de parole tournent sur la machine : aucun son ne la quitte avant « Hey Jarvis ». Ensuite, seule la phrase qui suit part chez Groq pour être transcrite (réglage « locale » : rien ne sort, Whisper tourne ici). Le micro reste écouté pendant que Jarvis parle, ce qui permet de l'interrompre.
+
+## Jarvis agit
+
+```mermaid
+flowchart LR
+  M["Modèle"] -- "appel d'outil" --> P{"Porte des<br/>permissions"}
+  P -- "niveau 1 : lire" --> O["Outil<br/>(web, fichier, navigateur,<br/>code en bac à sable)"]
+  O -- "résultat encadré<br/>&lt;donnees&gt;" --> M
+  P -- "niveau 2 ou 3" --> PL["Plan proposé"]
+  PL --> UI["Écran de validation"]
+  UI -- "validé (niveau 3 :<br/>double confirmation)" --> E["Exécuteur<br/>étape par étape"]
+  E --> P
+  P -. "avant / après" .-> J[("Journal immuable<br/>chaîné SHA-256")]
+  E -- "synthèse" --> C["Conversation"]
+```
+
+- **Une seule porte** (`permissions/gate.py`) exécute les outils. Niveau 1 : tout de suite. Niveau 2 : seulement avec la validation d'une étape d'un plan. Niveau 3 : avec la double confirmation. Une étape ne peut pas dépasser le niveau que tu as vu.
+- **Le modèle n'agit jamais seul.** S'il appelle directement une action, elle devient un plan d'une étape. S'il a lu un contenu externe juste avant, le plan est signalé, et ouvrir une adresse qu'il a fabriquée demande aussi ta validation.
+- **Le navigateur de Jarvis** (`browser/`) : Chromium piloté par Playwright, avec deux contextes. L'anonyme lit sans aucun cookie. L'« identité » ne contient que les sessions des domaines autorisés (coffre chiffré) : y aller est une action de niveau 2. Tout le trafic passe par un proxy local qui n'atteint que des adresses publiques.
 
 ## Qui protège quoi
 
@@ -79,6 +98,12 @@ Réveil, détection de parole et transcription tournent sur la machine : aucun s
 | Une clé fuit dans les logs | Filtre qui masque toute valeur du trousseau, le jeton de session et les formats de clés connus |
 | Une clé fuit vers l'interface | L'API n'a aucune route qui renvoie une valeur de secret |
 | Deux moteurs écrivent la même base | Verrou exclusif par dossier de données |
+| Une page piégée donne des ordres | Contenu encadré comme donnée ; toute action passe par un plan validé ; plan signalé |
+| Une page fait fuir des données par une adresse | Après une lecture externe, une adresse fabriquée demande ta validation |
+| Une page vise la box ou un service local | Proxy de garde : adresses publiques seulement, redirections comprises, DNS épinglé |
+| Un outil lit tes clés SSH ou un `.env` | Dossiers et fichiers sensibles refusés, liens symboliques suivis |
+| Du code lancé par Jarvis | Bac à sable Docker sans réseau, en lecture seule, limité ; bubblewrap en repli |
+| Une action effacée après coup | Journal en ajout seul, déclencheurs SQLite, chaîne d'empreintes vérifiée au démarrage |
 
 ## Où sont les données
 
@@ -89,6 +114,8 @@ Réveil, détection de parole et transcription tournent sur la machine : aucun s
 | Logs du moteur | `~/.local/state/o-jarvis/logs/engine.log` |
 | Mesures de fluidité | `~/.local/state/o-jarvis/perf/` |
 | Clés | trousseau GNOME, service `o-jarvis` |
+| Sessions du navigateur de Jarvis (domaines autorisés) | `~/.local/share/o-jarvis/navigateur/coffre.bin`, chiffré |
+| Journal des actions, plans | dans la base SQLite (tables `audit_log`, `plans`) |
 
 ## Les dossiers du dépôt
 
@@ -97,6 +124,7 @@ Réveil, détection de parole et transcription tournent sur la machine : aucun s
 | `app/src` | Interface React : écrans, sphère, client du moteur |
 | `app/src-tauri` | Coque Rust : fenêtre, barre système, lancement du moteur |
 | `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base, modèles, mémoire, contexte, chat, voix |
-| `engine/tools` | Corpus vocal de test et banc d'essai de latence |
+| `engine/src/ojarvis/{tools,permissions,agent,audit,browser,sandbox}` | Outils, porte des permissions, plans et exécuteur, journal, navigateur, bac à sable |
+| `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit ») |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |

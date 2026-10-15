@@ -39,6 +39,8 @@ from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline, Voice
 from ojarvis.voice.stt import (
     WHISPER_FILES,
     CartesiaSTT,
+    CloudTranscriber,
+    GroqTranscriber,
     StreamingTranscriber,
     WhisperTranscriber,
 )
@@ -331,13 +333,13 @@ class VoiceService:
             on_fallback=self._on_tts_fallback,
             prefer_secondary=lambda: self._preferences().voice_engine == "piper",
         )
-        cloud_stt = CartesiaSTT(lambda: self._secrets.get("CARTESIA_API_KEY"))
         self._parts = {
             "wake": wake,
             "vad": vad,
             "stt": stt,
             "tts": tts,
-            "streaming_stt": cloud_stt,
+            "cloud_stt": GroqTranscriber(lambda: self._secrets.get("GROQ_API_KEY"), self._http),
+            "streaming_stt": CartesiaSTT(lambda: self._secrets.get("CARTESIA_API_KEY")),
         }
 
     def _on_tts_fallback(self, reason: str) -> None:
@@ -382,6 +384,7 @@ class VoiceService:
                 on_turn=self._on_turn,
                 clock=self._clock,
                 streaming_stt=self._streaming_for(current),
+                cloud_stt=self._cloud_for(current),
             )
 
         self._pipeline = make_pipeline()
@@ -423,10 +426,17 @@ class VoiceService:
             await sink.close()
 
     def _streaming_for(self, prefs: Preferences) -> StreamingTranscriber | None:
-        """Transcription en ligne si elle est voulue ; Whisper local reste le secours."""
-        if prefs.voice_stt != "auto":
+        """Cartesia en flux : choisi, ou en relais de Groq si sa clé manque."""
+        if prefs.voice_stt == "local":
             return None
         engine: StreamingTranscriber | None = self._parts.get("streaming_stt")
+        return engine
+
+    def _cloud_for(self, prefs: Preferences) -> CloudTranscriber | None:
+        """Groq (Whisper large-v3) par phrase ; Whisper local reste le dernier secours."""
+        if prefs.voice_stt != "groq":
+            return None
+        engine: CloudTranscriber | None = self._parts.get("cloud_stt")
         return engine
 
     def _on_turn(self, report: TurnReport) -> None:
@@ -434,7 +444,10 @@ class VoiceService:
         self.status.last_turn_at = time.time()
         self.status.tts_engine = report.tts_engine
         self.status.stt_engine = report.stt_engine
-        wanted = self._pipeline is not None and self._pipeline.streaming_stt is not None
+        pipeline = self._pipeline
+        wanted = pipeline is not None and (
+            pipeline.streaming_stt is not None or pipeline.cloud_stt is not None
+        )
         self.status.stt_fallback = wanted and report.stt_engine != "cartesia"
         if report.tts_engine == "cartesia":
             self.status.tts_fallback = None
@@ -476,6 +489,7 @@ class VoiceService:
             if running and _device_prefs(prefs) == self._applied and self._pipeline is not None:
                 self._pipeline.config = self._config(prefs, echo_cancel=self.status.echo_cancel)
                 self._pipeline.streaming_stt = self._streaming_for(prefs)
+                self._pipeline.cloud_stt = self._cloud_for(prefs)
                 await self._publish()
                 return
             if running:

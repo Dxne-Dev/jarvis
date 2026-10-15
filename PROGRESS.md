@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**2 — Parler à Jarvis.** Terminée : les deux critères de sortie passent (réponse parlée en 1,75 s de médiane avec DeepSeek ; fait rappelé d'une session à l'autre), la boucle de vérification aussi. PR `dev → main` ouverte. Prochaine : phase 3.
+**3 — Jarvis agit.** Terminée : les deux critères de sortie passent (un plan multi-étapes avec navigateur s'exécute après validation ; tests de niveaux et d'injection verts), la boucle de vérification aussi. PR `dev → main` ouverte. Prochaine : phase 4.
 
 ## Fait
 
@@ -27,9 +27,18 @@
 - Écrans : Accueil (sphère + conversation + voix), Historique, Mémoire, Réglages (modèles, voix).
 - Docs : `docs/journal/02-parler-a-jarvis.md`, décisions, checklist manuelle.
 
+### Phase 3 — Jarvis agit (15/10/2026)
+- Outils à schéma strict et niveau de permission : recherche web (Tavily), lecture de page, fichiers, code en bac à sable, navigateur, capacités.
+- Porte unique des permissions ; plans vérifiés, validés ou refusés (un plan de lecture seule part sans attendre), exécutés étape par étape avec synthèse ; plans interrompus jamais relancés.
+- Journal des actions immuable (ajout seul, chaîne SHA-256, vérifié au démarrage), en lecture seule dans l'interface.
+- Navigateur de Jarvis : contexte anonyme et contexte « identité », proxy de garde, coffre chiffré, connexion dans sa fenêtre, import de cookies par domaine, révocation.
+- Défenses contre l'injection : contenu externe encadré, action toujours en plan, plan signalé, adresse fabriquée validée.
+- Interface : Actions à valider, plan dans la conversation, outils utilisés, journal des actions, Réglages → Navigateur et Permissions, notifications.
+- Docs : `docs/journal/03-jarvis-agit.md`, `docs/securite.md`, architecture, checklist manuelle.
+
 ## Ensuite
 
-1. Phase 3 — Jarvis agit : outils à schémas stricts, niveaux de permission, journal immuable, planificateur et exécuteur, recherche web, fichiers, sandbox, navigateur autonome, découverte des capacités.
+1. Phase 4 — Jarvis s'organise : moteur de workflows persistant, automatisations en langage naturel (CRUD), bus d'événements comme déclencheur, MCP (GitHub, Notion, Google Agenda), Telegram, briefing du matin.
 
 ## Problèmes ouverts
 
@@ -55,6 +64,10 @@
 | 15/10 | Essai au vrai micro (Octave) | réveil OK ; transcription locale illisible (micro à 25 %, Whisper base) |
 | 15/10 | Transcription Cartesia Ink-2 contre Whisper base, corpus dégradé (−30 dB + souffle) | 0 % contre 93 % de mots faux ; texte 180 ms après la phrase |
 | 15/10 | Vrai pipeline avec Ink-2 + DeepSeek + Cartesia | 12/12 tours, 0 % d'erreurs, latence médiane 1,72 s |
+| 15/10 | Deuxième essai au vrai micro (Octave) | Ink-2 entend souvent de l'anglais (accent) ; le paramètre de langue est ignoré |
+| 15/10 | Vrai pipeline avec Groq Whisper large-v3 (fr imposé) + DeepSeek + Cartesia | 12/12 tours justes, latence médiane 1,9 s, transcription 0,4 s |
+| 15/10 | Questions personnelles sur mémoire vide (vrai DeepSeek) | 6/6 « je ne le sais pas encore », aucune invention |
+| 15/10 | Troisième essai au vrai micro (Octave), transcription Groq | « tout fonctionne », environ 90 % de précision au réveil et à l'écoute |
 | 15/10 | Voix sur la machine réelle (micro, annulation d'écho) | prête en 6 s ; 50 trames en 4 s ; arrêt en 1,1 s, module retiré |
 | 15/10 | Moteur : ruff, mypy strict (code + tests), pytest | 0 erreur ; 346 tests ; couverture 91 % |
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 36 tests |
@@ -64,3 +77,14 @@
 | 15/10 | Démarrage à froid (clone neuf de `dev`, `install-dev.sh`, dossier vierge) | moteur prêt en 7,8 s ; voix prête en 35 s avec téléchargement et vérification des modèles (350 Mo) ; arrêt en 1,1 s |
 | 15/10 | Revue de sécurité (section 7) | clé collée dans le chat envoyée au modèle et stockée en clair : corrigé (masquage central) ; noms de périphériques passés à `pactl` : validés |
 | 15/10 | CI GitHub : moteur, interface, bout en bout, coque | vertes |
+| 15/10 | Plan navigateur de bout en bout (vraie interface, vrai moteur, vrai Chromium, boutique locale) | plan proposé, validé, 3 étapes faites, synthèse « 4,50 € », journal intègre |
+| 15/10 | Banc « Jarvis agit » avec le vrai DeepSeek | 5/5 : plan navigateur validé puis exécuté, page piégée ignorée, fichier écrit après validation, recherche web, code en bac à sable |
+| 15/10 | Page piégée (supprimer un fichier, fuite par adresse) avec le vrai modèle | 5/5 sans effet : fichier intact, aucune requête de fuite |
+| 15/10 | Redirection d'une page publique vers une adresse privée (navigateur) | bloquée (après correctif : proxy de garde) |
+| 15/10 | Bac à sable Docker et bubblewrap | sans réseau, dossier perso invisible, temps et mémoire bornés, conteneur supprimé |
+| 15/10 | Latence vocale avec les outils | médiane 1,93 s (6/6 tours) |
+| 15/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 465 tests ; couverture 91 % |
+| 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 44 tests |
+| 15/10 | Bout en bout Playwright + vrai moteur + axe | 14/14 ; aucune violation sérieuse |
+| 15/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
+| 15/10 | Revue de sécurité (section 7) | redirection privée, fuite par adresse fabriquée, double résolution DNS de `lire_page`, `~` hors du dossier configuré : corrigés |

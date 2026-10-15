@@ -29,12 +29,21 @@ from ojarvis.events.bus import EventBus
 from ojarvis.tracing.tracer import Tracer
 from ojarvis.voice.audio import FRAME_S, FRAME_SAMPLES, AudioSink, AudioSource, Frame, Pcm, level
 from ojarvis.voice.sentences import SentenceSplitter
-from ojarvis.voice.stt import StreamingTranscriber, SttStream, Transcriber, Transcript
+from ojarvis.voice.stt import (
+    CloudTranscriber,
+    StreamingTranscriber,
+    SttStream,
+    Transcriber,
+    Transcript,
+)
 from ojarvis.voice.tts import Synthesizer, TTSError
 from ojarvis.voice.vad import Endpoint, EndpointConfig, Endpointer, SpeechDetector
 from ojarvis.voice.wake import WakeDetector, mentions_jarvis, strip_wake_words
 
 log = get_logger(__name__)
+
+#: Modèle de transcription noté dans la trace, selon le moteur utilisé.
+STT_MODELS = {"cartesia": "cartesia-ink-2", "groq": "groq-whisper-large-v3"}
 
 SPOKEN_LLM_ERROR = "Je n'arrive pas à joindre le modèle pour l'instant. Réessaie dans un moment."
 
@@ -81,6 +90,7 @@ class _Listening:
     frames: list[Frame] = field(default_factory=list)
     speculative: asyncio.Task[Transcript] | None = None
     speculative_frames: int = 0
+    speculative_engine: str = "whisper"
     follow_up: bool = False
     #: Déjà relancé une fois après une transcription vide (« Hey Jarvis » … silence).
     retried: bool = False
@@ -122,10 +132,13 @@ class VoicePipeline:
         on_turn: Callable[[TurnReport], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         streaming_stt: StreamingTranscriber | None = None,
+        cloud_stt: CloudTranscriber | None = None,
     ) -> None:
         self._clock = clock
-        #: Transcription en ligne (Cartesia) ; `None` : Whisper local seulement. Modifiable à chaud.
+        #: Transcription en ligne : en flux (Cartesia) ou par phrase (Groq). `None` partout :
+        #: Whisper local seulement. Modifiables à chaud ; Whisper local reste le secours.
         self.streaming_stt = streaming_stt
+        self.cloud_stt = cloud_stt
         self._source = source
         self._sink = sink
         self._wake = wake
@@ -308,9 +321,12 @@ class VoicePipeline:
         event = self._endpointer.update(prob, frame.at, FRAME_S)
         self._stream_step(listening, frame, event)
         if event == Endpoint.PAUSE and listening.stream is None:
-            # Transcription locale anticipée (sans transcription en ligne).
+            # Transcription anticipée dès la courte pause : en ligne (Groq) si possible.
             audio = self._utterance_audio(listening)
-            listening.speculative = asyncio.create_task(self._stt.transcribe(audio))
+            cloud = self.cloud_stt
+            engine = cloud if cloud is not None and cloud.available else self._stt
+            listening.speculative_engine = getattr(engine, "name", "whisper")
+            listening.speculative = asyncio.create_task(engine.transcribe(audio))
             listening.speculative_frames = len(listening.frames)
         elif event == Endpoint.RESUME and listening.speculative is not None:
             listening.speculative.cancel()
@@ -336,6 +352,8 @@ class VoicePipeline:
         engine = self.streaming_stt
         if engine is None or not self._endpointer.speaking:
             return
+        if self.cloud_stt is not None and self.cloud_stt.available:
+            return  # Groq passe en premier ; Cartesia ne sert qu'en relais
         stream = listening.stream
         if stream is None:
             if not engine.available:
@@ -386,6 +404,7 @@ class VoicePipeline:
                 speech_end,
                 retried=listening.retried,
                 stream=listening.stream,
+                speculative_engine=listening.speculative_engine,
             )
         )
 
@@ -457,9 +476,17 @@ class VoicePipeline:
         *,
         retried: bool,
         stream: SttStream | None = None,
+        speculative_engine: str = "whisper",
     ) -> None:
         try:
-            await self._turn_steps(audio, speculative, speech_end, retried=retried, stream=stream)
+            await self._turn_steps(
+                audio,
+                speculative,
+                speech_end,
+                retried=retried,
+                stream=stream,
+                speculative_engine=speculative_engine,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -469,24 +496,47 @@ class VoicePipeline:
             await self._bus.publish("voice.error", {"message": f"{type(exc).__name__}"})
             self._go_idle()
 
+    def _stt_fallback(self, exc: BaseException) -> None:
+        log.warning("stt_fallback", error=str(exc))
+        self._spawn(self._bus.publish("voice.stt_fallback", {"reason": str(exc)[:200]}))
+
     async def _transcribe(
         self,
         audio: Pcm,
         speculative: asyncio.Task[Transcript] | None,
         stream: SttStream | None,
+        speculative_engine: str = "whisper",
     ) -> tuple[Transcript, bool, str]:
         """Texte de la phrase : en ligne si possible, sinon Whisper local (anticipé ou non)."""
         if stream is not None:
             try:
                 return await stream.finish(timeout_s=2.5), True, "cartesia"
             except Exception as exc:
-                log.warning("stt_fallback", error=str(exc))
-                self._spawn(self._bus.publish("voice.stt_fallback", {"reason": str(exc)[:200]}))
+                self._stt_fallback(exc)
             finally:
                 self._spawn(stream.cancel())  # sans attendre la fermeture de la connexion
+        cloud_failed = False
         if speculative is not None and not speculative.cancelled():
-            with contextlib.suppress(Exception):
-                return await speculative, True, "whisper"
+            try:
+                return await speculative, True, speculative_engine
+            except Exception as exc:
+                if speculative_engine != "whisper":
+                    self._stt_fallback(exc)
+                    cloud_failed = True
+        cloud = self.cloud_stt
+        if cloud is not None and cloud.available and stream is None and not cloud_failed:
+            try:
+                return await cloud.transcribe(audio), False, getattr(cloud, "name", "en ligne")
+            except Exception as exc:
+                self._stt_fallback(exc)
+                cloud_failed = True
+        relay = self.streaming_stt
+        if cloud_failed and relay is not None and relay.available:
+            # Groq indisponible : la phrase déjà enregistrée part d'un bloc chez Cartesia.
+            try:
+                return await _transcribe_at_once(relay, audio), False, "cartesia"
+            except Exception as exc:
+                self._stt_fallback(exc)
         return await self._stt.transcribe(audio), False, "whisper"
 
     async def _turn_steps(
@@ -497,10 +547,11 @@ class VoicePipeline:
         *,
         retried: bool,
         stream: SttStream | None = None,
+        speculative_engine: str = "whisper",
     ) -> None:
         stt_started = utc_now()
         transcript, used_speculative, stt_engine = await self._transcribe(
-            audio, speculative, stream
+            audio, speculative, stream, speculative_engine
         )
         text = strip_wake_words(transcript.text)
         if not _meaningful(text, transcript):
@@ -555,7 +606,7 @@ class VoicePipeline:
                 duration_ms=stt_ms,
                 audio_s=transcript.audio_s,
                 anticipee=speculative,
-                modele="cartesia-ink-2" if stt_engine == "cartesia" else "whisper-base",
+                modele=STT_MODELS.get(stt_engine, "whisper-base"),
             )
             producer = asyncio.create_task(
                 self._produce(text, queue, reply, done, learn=transcript.reliable)
@@ -655,6 +706,17 @@ class VoicePipeline:
                 self._conversation = (self._conversation[0], self._clock())
         finally:
             await queue.put(None)
+
+
+async def _transcribe_at_once(engine: StreamingTranscriber, audio: Pcm) -> Transcript:
+    """Une phrase déjà enregistrée, envoyée d'un bloc à une transcription en flux."""
+    stream = engine.open()
+    try:
+        for start in range(0, len(audio), FRAME_SAMPLES):
+            stream.send(audio[start : start + FRAME_SAMPLES])
+        return await stream.finish(timeout_s=3.0)
+    finally:
+        await stream.cancel()
 
 
 async def _sentences(queue: asyncio.Queue[str | None], bus: EventBus) -> AsyncIterator[str]:

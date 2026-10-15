@@ -1,0 +1,100 @@
+"""La seule porte d'exécution des outils : niveau vérifié, validation exigée, journal tenu.
+
+Aucun outil ne s'exécute ailleurs qu'ici. Niveau 1 : directement. Niveau 2 : seulement avec
+une validation (une étape d'un plan approuvé). Niveau 3 : avec une double confirmation.
+Chaque action de niveau 2 ou 3 est écrite au journal immuable, avant puis après.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from ojarvis.audit.journal import AuditJournal
+from ojarvis.core.errors import EngineError
+from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput, ToolRegistry
+
+
+@dataclass(frozen=True)
+class Approval:
+    """Ta validation, rattachée à une étape précise d'un plan et au niveau que tu as vu."""
+
+    plan_id: str
+    step: int
+    level: int
+    double_confirmed: bool = False
+
+
+class ApprovalRequiredError(EngineError):
+    status_code = 403
+    code = "approval_required"
+
+
+class PermissionGate:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        journal: AuditJournal,
+        context: Callable[[], ToolContext],
+    ) -> None:
+        self.registry = registry
+        self._journal = journal
+        self._context = context
+
+    def check(self, name: str, raw_args: dict[str, Any]) -> tuple[Tool[Any], ToolArgs, Level]:
+        """Outil connu, arguments valides, niveau calculé : sans rien exécuter."""
+        tool = self.registry.get(name)
+        args = tool.parse(raw_args)
+        return tool, args, tool.level_for(args)
+
+    async def execute(
+        self, name: str, raw_args: dict[str, Any], *, approval: Approval | None = None
+    ) -> ToolOutput:
+        tool, args, level = self.check(name, raw_args)
+        summary = tool.describe(args)
+        if level >= Level.AGIR:
+            if approval is None:
+                raise ApprovalRequiredError(f"« {summary} » demande ta validation.")
+            if level > approval.level:
+                # Ex. : une adresse tirée d'une étape précédente mène à un site où tu es
+                # connecté. Tu n'as pas validé l'usage de tes cookies : rien n'est fait.
+                raise ApprovalRequiredError(
+                    f"« {summary} » demande un niveau plus élevé que celui validé."
+                )
+            if level >= Level.DETRUIRE and not approval.double_confirmed:
+                raise ApprovalRequiredError(f"« {summary} » demande une double confirmation.")
+            await self._journal.append(
+                actor="jarvis",
+                action=f"outil.{name}",
+                level=int(level),
+                summary=f"Lancé : {summary}",
+                details={"plan": approval.plan_id, "etape": approval.step, "arguments": raw_args},
+            )
+        try:
+            output = await tool.run(args, self._context())
+        except Exception as exc:
+            if level >= Level.AGIR:
+                await self._journal.append(
+                    actor="jarvis",
+                    action=f"outil.{name}.echec",
+                    level=int(level),
+                    summary=f"Échec : {summary}",
+                    details={
+                        "erreur": str(exc)[:300],
+                        "plan": approval.plan_id if approval else None,
+                    },
+                )
+            raise
+        if level >= Level.AGIR:
+            await self._journal.append(
+                actor="jarvis",
+                action=f"outil.{name}.fait",
+                level=int(level),
+                summary=f"Fait : {summary}",
+                details={
+                    "resultat": output.text[:300],
+                    "plan": approval.plan_id if approval else None,
+                },
+            )
+        return output

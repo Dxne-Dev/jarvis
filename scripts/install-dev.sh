@@ -39,6 +39,16 @@ echo "uv $(uv --version | cut -d' ' -f2) · cargo $(cargo --version | cut -d' ' 
 step "Moteur Python"
 (cd "$ROOT/engine" && uv sync --frozen)
 
+step "Navigateur de Jarvis et bac à sable"
+# Chromium piloté par le moteur (profil à part, jamais ton navigateur).
+(cd "$ROOT/engine" && uv run playwright install chromium)
+# Image du bac à sable pour le code (si Docker est là ; sinon bubblewrap prend le relais).
+if have docker && docker info >/dev/null 2>&1; then
+  docker pull --quiet python:3.12-alpine >/dev/null && echo "Bac à sable Docker prêt."
+else
+  echo "Docker absent ou arrêté : le code tournera sous bubblewrap (bwrap)."
+fi
+
 step "Interface"
 (cd "$ROOT/app" && pnpm install --frozen-lockfile)
 

@@ -31,7 +31,7 @@ from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
 from ojarvis.voice.audio import FileSource, MemorySink, read_wav
 from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline
-from ojarvis.voice.stt import CartesiaSTT, WhisperTranscriber
+from ojarvis.voice.stt import CartesiaSTT, GroqTranscriber, WhisperTranscriber
 from ojarvis.voice.tts import CartesiaTTS, FallbackTTS, PiperTTS
 from ojarvis.voice.vad import SileroVad
 from ojarvis.voice.wake import OpenWakeWord
@@ -115,6 +115,7 @@ async def run_sample(
         config=VoiceConfig(follow_up_s=0, barge_in=False),
         on_turn=lambda _report: finished.set(),
         streaming_stt=parts.get("streaming_stt"),
+        cloud_stt=parts.get("cloud_stt"),
     )
     parts["wake"].reset()
     started = time.monotonic()
@@ -152,7 +153,7 @@ async def main() -> None:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--tts", default="auto", choices=["auto", "piper"])
     parser.add_argument("--limit", type=int, default=0)
-    parser.add_argument("--stt", default="cartesia", choices=["cartesia", "local"])
+    parser.add_argument("--stt", default="groq", choices=["groq", "cartesia", "local"])
     parser.add_argument("--degrade", action="store_true", help="micro faible et bruité")
     parser.add_argument("--events", action="store_true", help="affiche les événements voice.*")
     args = parser.parse_args()
@@ -190,8 +191,12 @@ async def main() -> None:
         "stt": stt,
         "tts": tts,
     }
-    if args.stt == "cartesia":
+    if args.stt in ("groq", "cartesia"):
         parts["streaming_stt"] = CartesiaSTT(lambda: services.secrets.get("CARTESIA_API_KEY"))
+    if args.stt == "groq":
+        parts["cloud_stt"] = GroqTranscriber(
+            lambda: services.secrets.get("GROQ_API_KEY"), services.http
+        )
     results: list[Result] = []
     if args.events:
         origin = time.monotonic()

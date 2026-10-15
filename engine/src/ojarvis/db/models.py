@@ -147,3 +147,127 @@ class Embedding(Base):
     dim: Mapped[int]
     vector: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime]
+
+
+class AuditEntry(Base):
+    """Journal des actions : ajout seul, chaîné par SHA-256 (des déclencheurs refusent toute
+    modification ou suppression). Vérifié à chaque démarrage."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime]
+    actor: Mapped[str] = mapped_column(String(32))  # utilisateur | jarvis | automatisation
+    action: Mapped[str] = mapped_column(String(64))
+    level: Mapped[int]
+    summary: Mapped[str] = mapped_column(String(500))
+    details: Mapped[dict[str, Any]]
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class Plan(Base):
+    """Un plan proposé par Jarvis : rien de niveau 2 ou 3 ne s'exécute avant sa validation."""
+
+    __tablename__ = "plans"
+    __table_args__ = (Index("ix_plans_status", "status"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    request: Mapped[str] = mapped_column(Text)  # la demande de l'utilisateur, pour la synthèse
+    status: Mapped[str] = mapped_column(String(16))
+    max_level: Mapped[int]
+    #: Proposé après lecture d'un contenu externe (page, fichier) : vigilance à la validation.
+    tainted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    decided_at: Mapped[datetime | None]
+    result: Mapped[str | None] = mapped_column(Text)
+
+
+class PlanStep(Base):
+    __tablename__ = "plan_steps"
+    __table_args__ = (Index("ix_plan_steps_plan_position", "plan_id", "position"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"))
+    position: Mapped[int]
+    tool: Mapped[str] = mapped_column(String(64))
+    arguments: Mapped[dict[str, Any]]
+    why: Mapped[str] = mapped_column(String(500))
+    level: Mapped[int]
+    description: Mapped[str] = mapped_column(String(500))  # ce qui va se passer, sur quoi
+    status: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime | None]
+    ended_at: Mapped[datetime | None]
+
+
+class CookieGrant(Base):
+    """Cookies d'un domaine importés dans le navigateur de Jarvis, avec ton accord."""
+
+    __tablename__ = "browser_cookie_grants"
+
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))  # brave | chrome | chromium
+    imported_at: Mapped[datetime]
+    count: Mapped[int]
+    revoked_at: Mapped[datetime | None]
+
+
+class Automation(Base):
+    """Une automatisation : un déclencheur (horaire ou événement) et une action.
+
+    Elle ne déclenche jamais seule une action de niveau 2 ou 3 : elle la prépare (un plan)
+    et te prévient."""
+
+    __tablename__ = "automations"
+    __table_args__ = (Index("ix_automations_due", "enabled", "next_run_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    trigger: Mapped[dict[str, Any]]
+    action: Mapped[dict[str, Any]]
+    enabled: Mapped[bool] = mapped_column(default=True)
+    #: Ponctuelle : désactivée après son passage.
+    one_shot: Mapped[bool] = mapped_column(default=False)
+    created_by: Mapped[str] = mapped_column(String(16))  # utilisateur | jarvis
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    next_run_at: Mapped[datetime | None]
+    last_run_at: Mapped[datetime | None]
+    last_status: Mapped[str | None] = mapped_column(String(16))  # ok | failed | missed
+    run_count: Mapped[int] = mapped_column(default=0)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+
+
+class WorkflowRun(Base):
+    """Une chaîne de tâches persistée : elle reprend à la dernière étape faite après un
+    arrêt (plantage, redémarrage du PC)."""
+
+    __tablename__ = "workflow_runs"
+    __table_args__ = (Index("ix_workflow_runs_status", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))  # automation | briefing
+    automation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("automations.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16))  # pending | running | done | failed
+    steps: Mapped[list[dict[str, Any]]]
+    #: Index de la prochaine étape à faire.
+    position: Mapped[int] = mapped_column(default=0)
+    context: Mapped[dict[str, Any]]
+    attempts: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    started_at: Mapped[datetime | None]
+    ended_at: Mapped[datetime | None]

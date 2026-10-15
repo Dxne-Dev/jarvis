@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pytest
 
-from ojarvis.context.engine import ContextEngine, estimate_tokens, french_now
+from ojarvis.context.engine import EMPTY_MEMORY, ContextEngine, estimate_tokens, french_now
 from ojarvis.conversations.store import ConversationStore
 from ojarvis.core.errors import InvalidInputError, NotFoundError
 from ojarvis.db.engine import Database
@@ -250,7 +250,7 @@ async def test_context_selects_within_budget(
     assert summary["kept"] + summary["dropped"] == len(built.items)  # type: ignore[operator]
 
 
-async def test_context_without_memory_has_no_memory_block(
+async def test_context_without_memory_says_so(
     memory: MemoryStore, conversations: ConversationStore
 ) -> None:
     engine = ContextEngine(memory, conversations, embedder_id="hash")
@@ -258,6 +258,7 @@ async def test_context_without_memory_has_no_memory_block(
     built = await engine.build(
         conversation_id=conversation.id, user_text="Bonjour", channel="app", history=[]
     )
-    assert "</memoire>" not in built.messages[0].content  # pas de bloc mémoire vide
+    # Mémoire vide dite noir sur blanc : le modèle ne doit pas combler le vide en inventant.
+    assert EMPTY_MEMORY in built.messages[0].content
     assert "markdown" in built.messages[0].content
     assert [m.role for m in built.messages] == ["system", "user"]

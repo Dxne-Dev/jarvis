@@ -1,10 +1,21 @@
-import { AlertCircle, BrainCircuit, ChevronDown } from "lucide-react";
+import {
+  AlertCircle,
+  BrainCircuit,
+  Check,
+  ChevronDown,
+  ClipboardList,
+  LoaderCircle,
+  XCircle,
+} from "lucide-react";
 import { memo, useId, useState, type ComponentProps } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import type { ToolActivity } from "../../lib/engine/types";
 import { formatDuration } from "../../lib/format";
 import { openExternal } from "../../lib/links";
+import actions from "../actions/Actions.module.css";
+import { PlanCard } from "../actions/PlanCard";
 import styles from "./Chat.module.css";
 import type { ChatItem } from "./useChat";
 
@@ -71,6 +82,40 @@ function ContextDisclosure({ item }: { item: ChatItem }) {
   );
 }
 
+function ToolIcon({ status }: { status: ToolActivity["status"] }) {
+  if (status === "running") return <LoaderCircle aria-hidden="true" />;
+  if (status === "failed") return <XCircle aria-hidden="true" />;
+  if (status === "proposed") return <ClipboardList aria-hidden="true" />;
+  return <Check aria-hidden="true" />;
+}
+
+const TOOL_STATUS: Record<ToolActivity["status"], string> = {
+  running: "en cours",
+  done: "fait",
+  failed: "en échec",
+  proposed: "plan proposé",
+};
+
+/** Ce que Jarvis a fait pendant le tour : une ligne par outil. */
+function ToolActivityList({ tools }: { tools: ToolActivity[] }) {
+  const shown = tools.filter((t) => t.status !== "proposed");
+  if (shown.length === 0) return null;
+  return (
+    <ul className={actions.tools} aria-label="Outils utilisés">
+      {shown.map((tool) => (
+        <li key={tool.id} className={actions.tool} data-status={tool.status}>
+          <ToolIcon status={tool.status} />
+          <span className={actions.toolText} title={tool.error ?? tool.description}>
+            {tool.description}
+            <span className="visually-hidden"> : {TOOL_STATUS[tool.status]}</span>
+            {tool.error ? ` — ${tool.error}` : ""}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export const ChatMessage = memo(function ChatMessage({ item }: { item: ChatItem }) {
   if (item.role === "user") {
     return (
@@ -89,6 +134,7 @@ export const ChatMessage = memo(function ChatMessage({ item }: { item: ChatItem 
   return (
     <li className={styles.assistant} aria-busy={streaming}>
       <span className="visually-hidden">Jarvis :</span>
+      <ToolActivityList tools={item.tools} />
       {item.content ? (
         <div className={styles.markdown}>
           <Markdown remarkPlugins={[remarkGfm]} components={{ a: ExternalLink }}>
@@ -114,6 +160,9 @@ export const ChatMessage = memo(function ChatMessage({ item }: { item: ChatItem 
           {meta.fallbackFrom.split("/")[0]} ne répondait pas : réponse de {meta.provider}.
         </p>
       )}
+      {item.plans.map((id) => (
+        <PlanCard key={id} id={id} />
+      ))}
       <ContextDisclosure item={item} />
       {details.length > 0 && <p className={styles.meta}>{details.join(" · ")}</p>}
     </li>

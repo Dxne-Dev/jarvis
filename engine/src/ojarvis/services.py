@@ -8,17 +8,28 @@ import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import anyio.to_thread
 import httpx
 
 from ojarvis import __version__
+from ojarvis.agent.executor import PlanExecutor
+from ojarvis.agent.loop import Agent
+from ojarvis.agent.plans import PlanStore
+from ojarvis.audit.journal import AuditJournal
+from ojarvis.automations.scheduler import AutomationScheduler
+from ojarvis.automations.steps import AutomationSteps
+from ojarvis.automations.store import AutomationStore
+from ojarvis.browser.proxy import GuardProxy
+from ojarvis.browser.service import BrowserAccess
+from ojarvis.browser.vault import CookieVault
 from ojarvis.chat.service import ChatService
 from ojarvis.config import EngineConfig
 from ojarvis.context.engine import ContextEngine
 from ojarvis.conversations.store import ConversationStore
-from ojarvis.core.clock import utc_now
+from ojarvis.core.clock import local_timezone, utc_now
 from ojarvis.core.errors import UnavailableError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
@@ -32,11 +43,24 @@ from ojarvis.llm.providers.registry import OllamaProvider, build_providers, disc
 from ojarvis.llm.router import ModelRouter
 from ojarvis.memory.embeddings import E5Embedder, Embedder
 from ojarvis.memory.store import MemoryStore
-from ojarvis.security.secrets import KeyringBackend, MemoryBackend, SecretBackend, SecretStore
+from ojarvis.notifications import Notifier
+from ojarvis.permissions.gate import PermissionGate
+from ojarvis.sandbox.runner import SandboxRunner
+from ojarvis.security.secrets import (
+    LOCAL_KEY_NAME,
+    KeyringBackend,
+    MemoryBackend,
+    SecretBackend,
+    SecretStore,
+)
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.tools.automations import automation_tools
+from ojarvis.tools.base import ToolContext, ToolRegistry
+from ojarvis.tools.catalog import build_registry
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
+from ojarvis.workflows.engine import WorkflowEngine
 
 log = get_logger(__name__)
 
@@ -91,6 +115,100 @@ async def _open_secrets(
 
 
 @dataclass
+class _Actions:
+    """Ce qui permet à Jarvis d'agir et de s'organiser (assemblé à part, pour la lisibilité)."""
+
+    journal: AuditJournal
+    integrity_ok: bool
+    guard: GuardProxy
+    browser: BrowserAccess
+    sandbox: SandboxRunner
+    notifier: Notifier
+    automations: AutomationStore
+    workflows: WorkflowEngine
+    scheduler: AutomationScheduler
+    tools: ToolRegistry
+    gate: PermissionGate
+    plans: PlanStore
+    executor: PlanExecutor
+
+
+async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
+    config: EngineConfig,
+    db: Database,
+    bus: EventBus,
+    secrets: SecretStore,
+    http: httpx.AsyncClient,
+    router: ModelRouter,
+    conversations: ConversationStore,
+) -> _Actions:
+    # Jarvis agit : journal immuable vérifié au démarrage, outils derrière une seule porte.
+    journal = AuditJournal(db, bus)
+    integrity = await journal.verify()
+    user_home = config.user_home or Path.home()
+    vault = CookieVault(
+        config.paths.data_dir / "navigateur" / "coffre.bin",
+        lambda: secrets.get(LOCAL_KEY_NAME),
+    )
+    # Toute lecture du web (navigateur, pages) passe par ce proxy : adresses publiques.
+    guard = GuardProxy(allowed_hosts=config.tool_private_hosts)
+    await guard.start()
+    browser = BrowserAccess(
+        db=db,
+        vault=vault,
+        journal=journal,
+        bus=bus,
+        home=user_home,
+        allowed_hosts=config.tool_private_hosts,
+        proxy=guard,
+    )
+    await browser.start()
+    sandbox = SandboxRunner()
+    # Jarvis s'organise : automatisations, workflows persistés, notifications.
+    notifier = Notifier(bus)
+    automations = AutomationStore(db, local_timezone)
+    workflows = WorkflowEngine(db, bus)
+    scheduler = AutomationScheduler(store=automations, workflows=workflows, bus=bus)
+    tools = build_registry(browser.session, automation_tools(automations, scheduler))
+
+    def tool_context() -> ToolContext:
+        return ToolContext(
+            http=http,
+            secret=secrets.get,
+            home=user_home,
+            sandbox=sandbox,
+            allowed_private_hosts=config.tool_private_hosts,
+            fetch_proxy=f"http://127.0.0.1:{guard.port}",
+        )
+
+    gate = PermissionGate(tools, journal, tool_context)
+    plans = PlanStore(db, gate)
+    executor = PlanExecutor(
+        plans=plans,
+        gate=gate,
+        journal=journal,
+        router=router,
+        conversations=conversations,
+        bus=bus,
+    )
+    return _Actions(
+        journal=journal,
+        integrity_ok=integrity.ok,
+        guard=guard,
+        browser=browser,
+        sandbox=sandbox,
+        notifier=notifier,
+        automations=automations,
+        workflows=workflows,
+        scheduler=scheduler,
+        tools=tools,
+        gate=gate,
+        plans=plans,
+        executor=executor,
+    )
+
+
+@dataclass
 class Services:
     config: EngineConfig
     db: Database
@@ -114,6 +232,18 @@ class Services:
     context: ContextEngine
     chat: ChatService
     voice: VoiceService
+    journal: AuditJournal
+    tools: ToolRegistry
+    gate: PermissionGate
+    plans: PlanStore
+    executor: PlanExecutor
+    browser: BrowserAccess
+    sandbox: SandboxRunner
+    guard: GuardProxy
+    notifier: Notifier
+    automations: AutomationStore
+    workflows: WorkflowEngine
+    scheduler: AutomationScheduler
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -156,6 +286,9 @@ class Services:
         conversations = ConversationStore(db, embedder)
         await conversations.start()
         context = ContextEngine(memory, conversations, embedder_id=embedder.model_id)
+
+        acts = await _assemble_actions(config, db, bus, secrets, http, router, conversations)
+        journal, gate, plans, executor = acts.journal, acts.gate, acts.plans, acts.executor
         chat = ChatService(
             conversations=conversations,
             memory=memory,
@@ -164,6 +297,7 @@ class Services:
             tracer=tracer,
             bus=bus,
             learn=preferences.learn_from_conversations,
+            agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
         )
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
@@ -209,8 +343,26 @@ class Services:
             context=context,
             chat=chat,
             voice=voice,
+            journal=journal,
+            tools=acts.tools,
+            gate=gate,
+            plans=plans,
+            executor=executor,
+            browser=acts.browser,
+            sandbox=acts.sandbox,
+            guard=acts.guard,
+            notifier=acts.notifier,
+            automations=acts.automations,
+            workflows=acts.workflows,
+            scheduler=acts.scheduler,
         )
         services._holder = holder
+        await executor.recover()
+        acts.workflows.handlers.update(
+            AutomationSteps(store=acts.automations, chat=chat, notifier=acts.notifier).handlers()
+        )
+        await acts.workflows.start()
+        await acts.scheduler.start()
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
@@ -223,6 +375,7 @@ class Services:
                 "dev_mode": config.dev_mode,
                 "keyring": backend.name,
                 "imported_secrets": imported,
+                "audit_ok": acts.integrity_ok,
             },
         )
         log.info("engine_started", version=__version__, keyring=backend.name)
@@ -286,6 +439,11 @@ class Services:
         await self.bus.publish("engine.stopping", {})
         await self.voice.close()
         await self.chat.close()
+        await self.scheduler.close()
+        await self.workflows.close()
+        await self.executor.close()
+        await self.browser.close()
+        await self.guard.close()
         for task in list(self.background):
             task.cancel()
         await asyncio.gather(*list(self.background), return_exceptions=True)

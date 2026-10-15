@@ -22,6 +22,10 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["llm.", "llm"],
   ["voice.status", "voice"],
   ["voice.turn", "conversations"],
+  ["plan.", "plans"],
+  ["plan.finished", "conversations"],
+  ["audit.", "audit"],
+  ["browser.", "browser"],
 ];
 
 /** Événements qui méritent une notification quand la fenêtre est en arrière-plan. */
@@ -40,6 +44,17 @@ function notifyFor(event: EngineEvent): void {
       "Voix indisponible",
       "Le pipeline vocal s'est arrêté. Nouvel essai en cours.",
     );
+  } else if (event.type === "plan.proposed") {
+    const title = typeof event.payload.title === "string" ? event.payload.title : "";
+    void notifyDesktop("Action à valider", title || "Jarvis attend ta décision.");
+  } else if (event.type === "plan.finished") {
+    const ok = event.payload.status === "done";
+    void notifyDesktop(
+      ok ? "Plan terminé" : "Plan interrompu",
+      ok ? "Jarvis a fini ce que tu as validé." : "Une étape a échoué : rien de plus n'a été fait.",
+    );
+  } else if (event.type === "audit.integrity_failed") {
+    void notifyDesktop("Journal des actions altéré", "Une entrée a été modifiée hors de Jarvis.");
   }
 }
 
@@ -93,6 +108,8 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       stream.onState((state) => {
         uiLog("info", `flux d'événements : ${state}`);
         setStream(state);
+        // Après une coupure, des événements ont pu être manqués : on relit tout.
+        if (state === "open") void queryClient.invalidateQueries();
       });
       stream.onEvent((event: EngineEvent) => {
         // Le niveau sonore arrive une douzaine de fois par seconde : il ne passe

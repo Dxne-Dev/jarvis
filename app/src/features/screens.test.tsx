@@ -40,6 +40,9 @@ const VOICE: VoiceStatus = {
 
 /** Réponses communes du faux moteur (modèles, voix), à combiner avec celles d'un test. */
 function common(path: string): [number, unknown] | null {
+  if (path.startsWith("/v1/plans")) return [200, []];
+  if (path === "/v1/browser") return [200, { sources: [], grants: [], login_domain: null }];
+  if (path === "/v1/tools") return [200, []];
   if (path === "/v1/llm/status") return [200, []];
   if (path === "/v1/llm/models") return [200, []];
   if (path === "/v1/voice/status") return [200, VOICE];
@@ -229,8 +232,9 @@ describe("Réglages", () => {
       },
     ]);
     renderScreen(<SettingsScreen />, { client });
-    expect(await screen.findByText("Erreur interne du moteur.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
+    // Chaque section dit son erreur et propose de réessayer.
+    expect((await screen.findAllByText("Erreur interne du moteur.")).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Réessayer" }).length).toBeGreaterThan(0);
   });
 });
 

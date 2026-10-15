@@ -220,3 +220,25 @@ class FakeStreamingSTT:
     def open(self) -> FakeSttStream:
         self.streams.append(FakeSttStream(self))
         return self.streams[-1]
+
+
+@dataclass
+class FakeCloudSTT:
+    """Transcription par phrase simulée (Groq)."""
+
+    text: str = "Hey Jarvis, quelle heure est-il ?"
+    fail: bool = False
+    has_key: bool = True
+    name: str = "groq"
+    calls: list[float] = field(default_factory=list)
+
+    @property
+    def available(self) -> bool:
+        return self.has_key
+
+    async def transcribe(self, audio: Pcm) -> Transcript:
+        self.calls.append(len(audio) / RATE)
+        await asyncio.sleep(0)
+        if self.fail:
+            raise SttError("Groq injoignable")
+        return Transcript(text=self.text, audio_s=len(audio) / RATE, duration_ms=30.0)

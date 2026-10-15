@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
@@ -92,6 +92,8 @@ class MessageOut(BaseModel):
     cost_usd: float | None
     latency_ms: float | None
     trace_id: str | None
+    #: Outils utilisés et plans proposés pendant ce tour.
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationDetailOut(ConversationOut):

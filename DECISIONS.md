@@ -64,7 +64,8 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Réveil en deux temps : openWakeWord `hey_jarvis`, puis vérification locale** — le modèle est entraîné sur l'anglais : prononcé « à la française », « Jarvis » obtient un score moyen. Score ≥ 0,5 : réveil. Entre 0,15 et 0,5 : les 2 dernières secondes sont transcrites en local et l'on y cherche « Jarvis », même écorché (« Jarvi », « Jervus »…). Corpus du 15/10 : 17 réveils sur 21 (11/11 prononcés à l'anglaise, 6/6 à la française par Cartesia dont 3 grâce à la vérification, 0/4 pour espeak-ng à l'accent français), aucun faux réveil sur les phrases sans mot de réveil. Coût : ~4 ms par trame de 80 ms.
 - **openWakeWord sans TFLite** — sa dépendance `tflite-runtime` n'existe pas pour Python 3.12 ; elle est retirée de ses métadonnées (`[tool.uv.dependency-metadata]`), le modèle tourne en ONNX.
 - **Détection de parole : Silero VAD v6, fourni avec faster-whisper** — rien à télécharger. Fin de phrase après 0,6 s de silence ; dès 0,2 s, la transcription démarre en avance (jetée si la parole reprend).
-- **Transcription : Cartesia Ink-2 en flux, Whisper local en secours (décidé avec Octave le 15/10/2026)** — au vrai micro, Whisper `base` rendait du charabia. Mesuré sur le corpus dégradé (micro à −30 dB et souffle) : 93 % de mots faux avec Whisper base, 0 % avec Ink-2 sur les voix naturelles. L'audio part pendant la phrase ; le texte est demandé dès la courte pause et arrive ~180 ms après : il est prêt quand la fin de phrase est confirmée. « Jarvis » est donné comme mot clé. Sur panne ou délai dépassé (2,5 s), Whisper local reprend la phrase. La vérification du mot de réveil reste locale (rien ne sort avant le réveil). Clé Cartesia déjà en place : aucun nouveau service.
+- **Transcription : Groq Whisper large-v3, français imposé (décidé avec Octave le 15/10/2026)** — premier essai au vrai micro : Whisper `base` local rendait du charabia (93 % de mots faux sur le corpus rendu faible et bruité). Essai suivant avec Cartesia Ink-2 en flux : parfait sur des voix natives, mais il devine la langue seul (il ignore le paramètre `language`, vérifié) et, avec l'accent d'Octave, entendait souvent de l'anglais ; `ink-whisper`, qui impose le français, perd la fin des phrases. Groq : langue imposée, ~0,4 s par phrase, envoyée dès la courte pause (le texte est prêt à la fin de la phrase), ~0,0003 $ par phrase. Vrai pipeline : 12/12 tours justes, latence médiane 1,9 s.
+- **Relais de la transcription** — Groq limite l'offre gratuite à 20 phrases par minute : sur un 429, il est mis de côté le temps demandé et la phrase enregistrée part d'un bloc chez Cartesia Ink-2 ; Whisper local en dernier secours. La vérification du mot de réveil reste locale : rien ne sort avant le réveil.
 - **Whisper local : `base` int8, fenêtre de 10 s au lieu de 30 s** — pour la vérification du réveil et le secours. `small` prend ~5 s ici, trop lent ; `base` prend 0,45 s sur une fenêtre de 10 s au lieu de 1,7 s sur 30 s.
 - **Volume du micro interne : 80 % (au lieu de 25 %)** — à 25 %, la voix arrivait à −36 dB : trop faible pour le réveil comme pour la transcription (15/10/2026).
 - **Synthèse : Cartesia Sonic `sonic-3.6` en flux (WebSocket)** — connexion ouverte dès le mot de réveil (250 ms gagnées), première phrase envoyée sans tampon (premier son en ~90 ms), clé en en-tête et jamais dans l'URL. Voix par défaut « Étienne » (masculine, posée), modifiable dans Réglages.
@@ -79,12 +80,32 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 
 ## Sécurité
 
-- **Clés dans le trousseau (Secret Service via `keyring`)**, jamais renvoyées à l'interface. Seuls les 12 noms du brief sont importés depuis `.env`.
+- **Clés dans le trousseau (Secret Service via `keyring`)**, jamais renvoyées à l'interface. Seuls les 12 noms du brief sont importés depuis `.env`, plus `GROQ_API_KEY` (transcription, décidée avec Octave le 15/10/2026).
 - **Masquage central avant tout appel à un modèle** — le routeur remplace chaque valeur du trousseau et chaque format de clé connu par `***` ; le chat et la mémoire font de même avant d'enregistrer. Une clé collée dans le chat ne part jamais au modèle et ne reste pas en clair dans la base (15/10/2026).
 - **Noms de périphériques audio à caractères sûrs** — ils sont passés à `pactl` : pas d'espace, donc pas d'option glissée en plus.
 - **Trois niveaux de permission appliqués par une seule couche** — lire, agir (validation), détruire ou s'étendre (sandbox puis double confirmation).
-- **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage.
+- **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage. Chaque action y est écrite avant (« Lancé : ») et après (« Fait : » ou « Échec : ») ; chaque décision sur un plan aussi.
 - **Sandbox : Docker sans réseau, limites CPU, mémoire, PID et durée, nettoyage garanti** ; bubblewrap en repli.
+
+## Jarvis agit (phase 3, 15/10/2026)
+
+- **Une seule porte d'exécution des outils** (`permissions/gate.py`) — niveau calculé avec les vrais arguments ; niveau 2 sur validation d'une étape de plan, niveau 3 sur double confirmation ; une étape ne dépasse jamais le niveau que tu as vu (ex. une adresse reprise d'une étape qui mène à un site où tu es connecté).
+- **Un appel direct à une action devient un plan d'une étape** — plutôt que de le refuser : la porte tient même si le modèle se trompe ou est manipulé.
+- **Un plan est vérifié avant d'être montré** — outils connus, arguments valides, niveaux calculés ; la cible d'une action (adresse, fichier, bouton) doit être connue à la validation : `{{etape N}}` n'est permis que dans un contenu (texte à écrire, valeur d'un champ).
+- **Plan signalé après un contenu externe** (« tainted ») — l'écran de validation prévient : vérifie que les étapes correspondent à ta demande.
+- **Après une lecture externe, une adresse fabriquée demande ta validation** — lire est autonome, donc une page pouvait faire ouvrir « https://…/?d= ce que tu sais » ; suivre un lien réellement lu reste libre.
+- **Un plan coupé par un arrêt du moteur n'est jamais relancé** — marqué en échec et journalisé ; une action ne se rejoue pas sans toi.
+- **Validation selon le niveau** — un plan qui ne fait que lire (niveau 1) part sans attendre, sauf s'il suit la lecture d'un contenu externe ; niveau 2 : ta validation ; niveau 3 : double confirmation.
+- **Synthèse finale par le modèle**, à partir des résultats encadrés comme données ; repli sur un résumé chiffré si le modèle ne répond pas.
+- **Navigateur : Playwright + Chromium, deux contextes** — un anonyme (aucun cookie) pour lire, un « identité » limité aux domaines autorisés ; y naviguer est une action de niveau 2. Une page piégée lue anonymement n'a jamais tes sessions.
+- **Sessions dans un coffre chiffré plutôt qu'un profil Chromium persistant** — Chromium lancé par Playwright chiffre ses cookies avec une clé fixe ; ici, Fernet avec une clé dérivée (HKDF) de la clé locale du trousseau, fichier en 0600, filtré par domaine autorisé.
+- **Tout le trafic du navigateur par un proxy de garde maison** (`browser/proxy.py`, ~150 lignes) — le filtrage de Playwright ne voit pas les redirections (vérifié : une redirection vers `127.0.0.2` passait). Le proxy résout, vérifie toutes les adresses, se connecte lui-même à l'adresse vérifiée (DNS épinglé) ; WebRTC limité au proxy. `lire_page` passe par le même proxy.
+- **Connexion : fenêtre visible, l'utilisateur se connecte lui-même** — Jarvis garde seulement les cookies du domaine choisi (et de ses domaines parents utiles, ex. `.google.com` pour `mail.google.com`) ; il ne remplit jamais un mot de passe, une carte ou un code à usage unique.
+- **Import de cookies Chrome/Chromium/Brave domaine par domaine** — base copiée puis lue ; `v10` (clé fixe), `v11` (mot de passe du navigateur dans le trousseau), préfixe SHA-256 du domaine des versions récentes retiré. Testé sur des bases fabriquées : les vrais cookies ne sont lus que sur ta demande, depuis Réglages.
+- **Recherche web : Tavily** — la clé existe déjà ; résultats encadrés comme données.
+- **Bac à sable : Docker `python:3.12-alpine`** sans réseau, en lecture seule, utilisateur `nobody`, 1 CPU, 256 Mo, 64 processus, 10 s ; **bubblewrap + prlimit** en repli. Le code tourne en niveau 1 : il n'atteint ni le réseau ni tes fichiers.
+- **Suppression = corbeille** (`gio trash`) — récupérable ; sans `gio`, rien n'est supprimé.
+- **Les outils sont proposés aussi à la voix** — ~2 000 jetons de plus par requête ; latence vocale mesurée : médiane 1,93 s (1,9 s avant).
 
 ## Interface
 
@@ -103,6 +124,8 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Notifications du bureau seulement fenêtre en arrière-plan** — fournisseur en panne, voix de secours, voix arrêtée.
 - **Niveau sonore hors de React** — une douzaine de mesures par seconde, lissées et lues par la sphère à chaque image, sans redessiner l'écran.
 - **Sous-titres** — chaque phrase dite par Jarvis s'affiche à l'accueil, au rythme de sa voix.
+- **Validation : « Refuser » et « Valider » de même taille, côte à côte** (brief : refuser aussi simple qu'accepter) ; niveau 3 : « Valider… » ouvre une seconde confirmation qui nomme l'action destructrice.
+- **Plans dans la conversation et dans un écran dédié** — la même carte, tenue à jour par les événements du moteur ; compteur des plans en attente dans la navigation ; la sphère passe en « action en attente ».
 
 ## Qualité
 

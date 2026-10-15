@@ -4,7 +4,9 @@ import { describeError } from "../../lib/engine/client";
 import { useSecrets, useStatus } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
+import { BrowserSection } from "./BrowserSection";
 import { ModelsSection } from "./ModelsSection";
+import { PermissionsSection } from "./PermissionsSection";
 import { Choice } from "./PreferenceControls";
 import { SecretRow } from "./SecretRow";
 import { VoiceSection } from "./VoiceSection";
@@ -14,8 +16,8 @@ const GROUPS: { id: SecretGroup; title: string; description: string }[] = [
   { id: "llm", title: "Modèles de langage", description: "Le cerveau de Jarvis." },
   {
     id: "voice",
-    title: "Synthèse vocale",
-    description: "La voix naturelle de Jarvis (Cartesia).",
+    title: "Voix en ligne",
+    description: "Transcription de ta voix (Groq) et voix naturelle de Jarvis (Cartesia).",
   },
   { id: "search", title: "Recherche", description: "Recherche sur le web." },
   { id: "integrations", title: "Intégrations", description: "GitHub, Notion, Google Agenda." },
@@ -101,6 +103,18 @@ export function SettingsScreen() {
           Voix
         </h2>
         <VoiceSection />
+      </section>
+      <section className={styles.section} aria-labelledby="navigateur">
+        <h2 id="navigateur" className={styles.sectionTitle}>
+          Navigateur et cookies
+        </h2>
+        <BrowserSection />
+      </section>
+      <section className={styles.section} aria-labelledby="permissions">
+        <h2 id="permissions" className={styles.sectionTitle}>
+          Permissions
+        </h2>
+        <PermissionsSection />
       </section>
       <section className={styles.section} aria-labelledby="apparence">
         <h2 id="apparence" className={styles.sectionTitle}>

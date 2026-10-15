@@ -29,12 +29,14 @@ def store(tmp_path: Path) -> SecretStore:
 
 
 def test_catalog_matches_the_brief() -> None:
+    # Les 12 noms du brief, plus GROQ_API_KEY (transcription, décidée avec Octave le 15/10).
     assert [s.name for s in CATALOG] == [
         "DEEPSEEK_API_KEY",
         "OPENROUTER_API_KEY",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "CARTESIA_API_KEY",
+        "GROQ_API_KEY",
         "TAVILY_API_KEY",
         "GITHUB_TOKEN",
         "NOTION_TOKEN",

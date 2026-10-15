@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
@@ -88,12 +89,57 @@ class FakeProvider:
         return ["fake-model"]
 
 
+_SHOP = re.compile(r"https?://127\.0\.0\.1:\d+/boutique")
+_PRICE = re.compile(r"\d+,\d{2} €")
+
+
+def _shop_agent(request: LLMRequest, shop: str) -> FakeReply:
+    """Ouvre la boutique (lecture, sans validation), puis propose un plan d'actions."""
+    rounds = sum(1 for m in request.messages if m.role == "assistant" and m.tool_calls)
+    if rounds == 0:
+        return FakeReply(
+            text="J'ouvre la boutique.",
+            tool_calls=[ToolCall("e2e-ouvrir", "navigateur_ouvrir", {"url": shop})],
+        )
+    if rounds == 1:
+        steps = [
+            {
+                "outil": "navigateur_remplir",
+                "arguments": {"champ": "Recherche", "valeur": "thé vert"},
+                "pourquoi": "Taper le produit dans la recherche de la boutique.",
+            },
+            {
+                "outil": "navigateur_cliquer",
+                "arguments": {"element": "Chercher"},
+                "pourquoi": "Lancer la recherche.",
+            },
+            {
+                "outil": "navigateur_lire",
+                "arguments": {"quoi": "texte"},
+                "pourquoi": "Lire le prix dans les résultats.",
+            },
+        ]
+        plan = {"titre": "Chercher le thé vert sur la boutique", "etapes": steps}
+        return FakeReply(tool_calls=[ToolCall("e2e-plan", "proposer_un_plan", plan)])
+    return FakeReply(text="J'ai préparé un plan en trois étapes : il attend ta validation.")
+
+
 def e2e_script(request: LLMRequest) -> FakeReply:
     """Réponses prévisibles pour les tests de bout en bout (mode développement uniquement)."""
     if request.tools and request.tools[0].name == "repondre":
         return FakeReply(tool_calls=[ToolCall("e2e", "repondre", {"faits": []})])
     system = request.messages[0].content if request.messages else ""
-    if "titre" in system:
-        return FakeReply(text="Conversation de test")
     last = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
+    if "titre" in system:
+        return FakeReply(
+            text="Courses à la boutique" if _SHOP.search(last) else "Conversation de test"
+        )
+    if "Tu viens d'exécuter un plan" in system:
+        price = _PRICE.search(last)
+        return FakeReply(
+            text=f"C'est fait : le thé vert coûte {price.group(0)}." if price else "C'est fait."
+        )
+    shop = _SHOP.search(last)
+    if shop and request.tools:
+        return _shop_agent(request, shop.group(0))
     return FakeReply(text=f"Bien reçu : **{last}**. Je suis la réponse de test de Jarvis.")

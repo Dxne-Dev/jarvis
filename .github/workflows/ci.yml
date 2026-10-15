@@ -26,12 +26,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
       - run: uv sync --frozen
+      - name: Navigateur de Jarvis (Chromium de Playwright)
+        run: uv run playwright install --with-deps chromium
       - name: Lint et format
         run: |
-          uv run ruff check src tests
-          uv run ruff format --check src tests
+          uv run ruff check src tests tools
+          uv run ruff format --check src tests tools
       - name: Typage strict
-        run: uv run mypy src tests
+        run: uv run mypy src tests tools
       - name: Tests et couverture
         run: uv run pytest -m "not real" --cov --cov-report=term --cov-fail-under=80
       - name: Audit des dépendances
@@ -76,6 +78,9 @@ jobs:
           cache-dependency-glob: engine/uv.lock
       - run: uv sync --frozen
         working-directory: engine
+      - name: Navigateur de Jarvis (Chromium de Playwright)
+        run: uv run playwright install --with-deps chromium
+        working-directory: engine
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -90,6 +95,18 @@ jobs:
         working-directory: app
       - run: pnpm e2e
         working-directory: app
+        env:
+          OJARVIS_E2E_HOME: ${{ runner.temp }}/ojarvis-e2e
+      # Données de test seulement (trousseau en mémoire, .env vide) : rien de secret.
+      - name: Traces et logs du moteur en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bout-en-bout
+          path: |
+            artefacts/e2e-results
+            ${{ runner.temp }}/ojarvis-e2e/state/logs
+          retention-days: 7
 
   coque:
     name: Coque Tauri (Rust)

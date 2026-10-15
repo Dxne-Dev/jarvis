@@ -1,0 +1,381 @@
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-10) var(--space-8) var(--space-16);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-10);
+}
+
+.sectionTitle {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-lg);
+}
+
+.plans {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ------------------------------------------------------------------ carte d'un plan */
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.plan[data-status="proposed"] {
+  border-color: var(--color-accent-soft);
+  box-shadow: var(--glow-accent);
+}
+
+.plan[data-status="refused"],
+.plan[data-status="done"] {
+  border-color: var(--color-border);
+}
+
+.planHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.planStatus {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.planStatus[data-status="proposed"] {
+  color: var(--color-accent-strong);
+}
+
+.planStatus[data-status="failed"] {
+  color: var(--color-danger);
+}
+
+.planStatus[data-status="done"] {
+  color: var(--color-success);
+}
+
+.planTime {
+  margin-left: auto;
+  color: var(--color-text-faint);
+}
+
+.planTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-display);
+}
+
+.request {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.planLoading {
+  color: var(--color-text-faint);
+  font-size: var(--text-sm);
+}
+
+.level {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-faint);
+  color: var(--color-accent-strong);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.level[data-level="2"] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.level[data-level="3"] {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.tainted {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.tainted svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--color-warning);
+}
+
+/* ------------------------------------------------------------------ étapes */
+
+.steps {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+}
+
+.stepNumber {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.stepText {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.stepWhy {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.stepError {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.stepSide {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stepSide svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.stepDone {
+  color: var(--color-success);
+}
+
+.stepFailed {
+  color: var(--color-danger);
+}
+
+.stepRunning {
+  color: var(--color-accent);
+  animation: spin 1s linear infinite;
+}
+
+.stepSkipped,
+.stepPending {
+  color: var(--color-text-faint);
+}
+
+.detailsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-faint);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.detailsToggle:hover {
+  color: var(--color-text-muted);
+}
+
+.detailsToggle:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus);
+}
+
+.chevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.args {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.args > div {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.args dt {
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.args dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.result {
+  max-height: 12rem;
+  overflow: auto;
+  color: var(--color-text-muted);
+}
+
+.synthesis {
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--color-accent);
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+.decideError {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+/* Refuser est aussi simple qu'accepter : deux boutons de même taille, côte à côte. */
+.decision {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 12rem));
+  gap: var(--space-3);
+  justify-content: end;
+}
+
+.decision > button {
+  width: 100%;
+  justify-content: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ outils dans le chat */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.tool {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.tool svg {
+  flex: none;
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.tool[data-status="running"] svg {
+  color: var(--color-accent);
+  animation: spin 1s linear infinite;
+}
+
+.tool[data-status="done"] svg {
+  color: var(--color-success);
+}
+
+.tool[data-status="failed"] svg {
+  color: var(--color-danger);
+}
+
+.tool[data-status="proposed"] svg {
+  color: var(--color-warning);
+}
+
+.toolText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (width < 1100px) {
+  .decision {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Mouvement réduit : mêmes informations, sans rotation. */
+@media (prefers-reduced-motion: reduce) {
+  .stepRunning,
+  .tool[data-status="running"] svg {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduce"] .stepRunning,
+:root[data-motion="reduce"] .tool[data-status="running"] svg {
+  animation: none;
+}

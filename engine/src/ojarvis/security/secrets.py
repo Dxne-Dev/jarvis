@@ -49,6 +49,7 @@ CATALOG: tuple[SecretSpec, ...] = (
     SecretSpec("OPENAI_API_KEY", "OpenAI", "llm", "Optionnel."),
     SecretSpec("ANTHROPIC_API_KEY", "Anthropic", "llm", "Optionnel."),
     SecretSpec("CARTESIA_API_KEY", "Cartesia", "voice", "Synthèse vocale Sonic."),
+    SecretSpec("GROQ_API_KEY", "Groq", "voice", "Transcription Whisper large-v3."),
     SecretSpec("TAVILY_API_KEY", "Tavily", "search", "Recherche web."),
     SecretSpec("GITHUB_TOKEN", "GitHub", "integrations", "Jeton fine-grained."),
     SecretSpec("NOTION_TOKEN", "Notion", "integrations", "Intégration interne."),

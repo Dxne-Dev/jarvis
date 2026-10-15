@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router";
 import { Button } from "../../components/Button";
 import { ErrorState, LoadingState } from "../../components/States";
 import {
+  usePlans,
   usePreferences,
   useStatus,
   useVoiceListen,
@@ -76,6 +77,8 @@ export function HomeScreen() {
   const reducedMotion = useReducedMotion();
   const online = useEngineOnline();
   const live = useLiveSphereState();
+  const pending = usePlans("pending");
+  const waitingPlans = pending.data?.length ?? 0;
   const [preview, setPreview] = useState<SphereState | null>(null);
   const { status: probe, onFrame } = usePerfProbe(perfProbe);
   const demoLevel = useMemo(() => createDemoLevel(), []);
@@ -108,7 +111,9 @@ export function HomeScreen() {
   const voiceActive = VOICE_ACTIVE.includes(voicePhase);
 
   const showPreview = params.has("demo") || status.data?.dev_mode === true;
-  const state: SphereState = probe.current ?? preview ?? chat.sphere ?? voiceSphere ?? live;
+  // Une action attend ta validation : la sphère le montre quand rien d'autre ne se passe.
+  const resting: SphereState = live === "idle" && waitingPlans > 0 ? "awaiting" : live;
+  const state: SphereState = probe.current ?? preview ?? chat.sphere ?? voiceSphere ?? resting;
   const usesDemoLevel = preview === "listening" || preview === "speaking" || probe.current !== null;
   const level = usesDemoLevel
     ? demoLevel
@@ -153,7 +158,7 @@ export function HomeScreen() {
             <h1 className={home.title}>{greeting(new Date())}.</h1>
           )}
           <p className={home.stateLabel} aria-live="polite" data-state={state}>
-            {conversing || voiceActive ? STATE_LABELS[state] : idleSubtitle(live, voicePhase)}
+            {conversing || voiceActive ? STATE_LABELS[state] : idleSubtitle(resting, voicePhase)}
           </p>
         </div>
         {conversing && (

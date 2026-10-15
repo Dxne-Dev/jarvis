@@ -92,6 +92,11 @@ class EngineConfig:
     log_level: str = "INFO"
     allowed_origins: tuple[str, ...] = TAURI_ORIGINS
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost")
+    #: Hôtes privés que les outils (web, navigateur) peuvent joindre malgré la garde réseau :
+    #: le site local des tests de bout en bout, en mode développement uniquement.
+    tool_private_hosts: tuple[str, ...] = ()
+    #: Dossier personnel où les outils de fichiers travaillent (tests : un dossier jetable).
+    user_home: Path | None = None
     extra: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -105,4 +110,12 @@ def load_config(*, dev_mode: bool, env: Mapping[str, str] | None = None) -> Engi
         dotenv_path=resolve_dotenv(paths, env, dev_mode),
         log_level=env.get("OJARVIS_LOG_LEVEL", "DEBUG" if dev_mode else "INFO").upper(),
         allowed_origins=origins,
+        tool_private_hosts=tuple(
+            h.strip().lower()
+            for h in env.get("OJARVIS_TOOL_PRIVATE_HOSTS", "").split(",")
+            if h.strip() and dev_mode
+        ),
+        user_home=Path(env["OJARVIS_USER_HOME"])
+        if dev_mode and env.get("OJARVIS_USER_HOME")
+        else None,
     )
