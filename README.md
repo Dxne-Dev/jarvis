@@ -33,7 +33,7 @@ scripts/install-launcher.sh       # compile et ajoute « O-jarvis » au menu des
 
 Fermer la fenêtre arrête tout, moteur compris. `Ctrl+Q` aussi.
 
-Au premier lancement, le moteur télécharge ses modèles locaux (environ 340 Mo : recherche par le sens, mot de réveil, transcription, voix de secours), puis la voix est prête. Au premier lancement par l'icône, GNOME demande d'autoriser le raccourci `Ctrl+Alt+J`.
+Au premier lancement, le moteur télécharge ses modèles locaux (environ 350 Mo : recherche par le sens, mot de réveil, transcription, voix de secours), puis la voix est prête. Au premier lancement par l'icône, GNOME demande d'autoriser le raccourci `Ctrl+Alt+J`.
 
 ## Vérifier
 
