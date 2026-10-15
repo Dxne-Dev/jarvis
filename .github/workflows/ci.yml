@@ -35,7 +35,7 @@ jobs:
       - name: Typage strict
         run: uv run mypy src tests tools
       - name: Tests et couverture
-        run: uv run pytest -m "not real" --cov --cov-report=term --cov-fail-under=80
+        run: uv run pytest -m "not real" -rs --cov --cov-report=term --cov-fail-under=80
       - name: Audit des dépendances
         run: uv run --with pip-audit pip-audit --skip-editable --progress-spinner off
 

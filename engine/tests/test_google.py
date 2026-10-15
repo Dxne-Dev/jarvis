@@ -7,6 +7,7 @@ import hashlib
 import json
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -128,8 +129,16 @@ def test_without_app_keys_the_login_explains_what_is_missing(client: TestClient)
 
 
 def test_the_agenda_falls_back_to_jarvis_own_mcp_server(
-    client: TestClient, services: Services, google: list[dict[str, Any]], backend: MemoryBackend
+    client: TestClient,
+    services: Services,
+    google: list[dict[str, Any]],
+    backend: MemoryBackend,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Heures affichées dans le fuseau du système : on le fixe (la CI tourne en UTC).
+    monkeypatch.setattr(
+        "ojarvis.integrations.calendar_server.local_timezone", lambda: ZoneInfo("Europe/Paris")
+    )
     backend.set(TOKEN_KEY, json.dumps({"refresh_token": REFRESH}))
     # Le serveur officiel de Google ne répond pas (pas activé dans le projet) : repli.
     services.google.official_target = lambda: StdioServerParameters(command="/bin/false")  # type: ignore[method-assign]
