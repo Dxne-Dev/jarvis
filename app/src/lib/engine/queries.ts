@@ -16,11 +16,15 @@ import type {
   Conversation,
   ConversationDetail,
   EngineStatus,
+  GraphEntity,
+  GraphKind,
+  GraphRelation,
   Integration,
   McpInstallRequest,
   McpProbe,
   McpRegistryEntry,
   McpServerInfo,
+  MemoryGraph,
   MemoryItem,
   MemoryKind,
   ModelInfo,
@@ -728,3 +732,56 @@ export function useStartMission() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
 }
+
+// ---------------------------------------------------------------- mémoire graphe
+
+export function useMemoryGraph() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["memory", "graph"],
+    queryFn: () => requireClient(client).get<MemoryGraph>("/v1/memory/graph"),
+    enabled: client !== null,
+  });
+}
+
+function useGraphMutation<T>(action: (client: EngineClient, input: T) => Promise<unknown>) {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: T) => action(requireClient(client), input),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["memory", "graph"] }),
+  });
+}
+
+export function useAddEntity() {
+  return useGraphMutation((client, input: { name: string; kind: GraphKind; description: string }) =>
+    client.post<GraphEntity>("/v1/memory/graph/entities", input),
+  );
+}
+
+export function useUpdateEntity() {
+  return useGraphMutation(
+    (client, { id, ...changes }: { id: number; name?: string; description?: string }) =>
+      client.patch<GraphEntity>(`/v1/memory/graph/entities/${id}`, changes),
+  );
+}
+
+export function useDeleteEntity() {
+  return useGraphMutation((client, id: number) =>
+    client.delete<undefined>(`/v1/memory/graph/entities/${id}`),
+  );
+}
+
+export function useAddRelation() {
+  return useGraphMutation(
+    (client, input: { source_id: number; label: string; target_id: number }) =>
+      client.post<GraphRelation>("/v1/memory/graph/relations", input),
+  );
+}
+
+export function useDeleteRelation() {
+  return useGraphMutation((client, id: number) =>
+    client.delete<undefined>(`/v1/memory/graph/relations/${id}`),
+  );
+}
+

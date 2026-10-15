@@ -567,3 +567,31 @@ export interface AgentRun {
   started_at: string;
   ended_at: string | null;
 }
+
+export type GraphKind =
+  "moi" | "personne" | "projet" | "evenement" | "lieu" | "organisation" | "sujet";
+
+export interface GraphEntity {
+  id: number;
+  kind: GraphKind;
+  name: string;
+  description: string | null;
+  source: string;
+  mentions: number;
+  created_at: string;
+  last_seen_at: string;
+}
+
+export interface GraphRelation {
+  id: number;
+  source_id: number;
+  target_id: number;
+  label: string;
+  mentions: number;
+  last_seen_at: string;
+}
+
+export interface MemoryGraph {
+  entities: GraphEntity[];
+  relations: GraphRelation[];
+}
