@@ -253,7 +253,7 @@
 
 .edge text {
   fill: var(--color-text-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .node {
@@ -273,7 +273,7 @@
 
 .node text {
   fill: var(--color-text);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: var(--weight-medium);
 }
 

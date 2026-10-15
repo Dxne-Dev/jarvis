@@ -82,7 +82,7 @@ describe("Skills et plugins", () => {
 
     await user.click(within(card).getByRole("button", { name: "Activer…" }));
     const dialog = await screen.findByRole("alertdialog", {
-      name: /Activer « jours-entre-dates »/,
+      name: /Activer «\sjours-entre-dates\s»/,
     });
     expect(dialog).toHaveTextContent("sans te demander");
     await user.click(within(dialog).getByRole("button", { name: "Annuler" }));
@@ -189,7 +189,7 @@ describe("Serveurs MCP", () => {
       secrets: { WIKI_KEY: "cle-secrete" },
     });
     await user.click(within(card).getByRole("button", { name: "Installer…" }));
-    const dialog = await screen.findByRole("alertdialog", { name: /Installer « wikipedia/ });
+    const dialog = await screen.findByRole("alertdialog", { name: /Installer «\swikipedia/ });
     expect(dialog).toHaveTextContent("Chaque action attendra ta validation");
     await user.click(within(dialog).getByRole("button", { name: "Installer" }));
     await waitFor(() => {

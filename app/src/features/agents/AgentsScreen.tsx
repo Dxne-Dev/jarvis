@@ -4,12 +4,14 @@ import { Link } from "react-router";
 
 import { Button } from "../../components/Button";
 import { PageHeader } from "../../components/PageHeader";
+import { RichText } from "../../components/RichText";
 import { EmptyState, ErrorState, LoadingState, OfflineState } from "../../components/States";
 import { describeError } from "../../lib/engine/client";
 import { useAgentRuns, useAgents, useStartMission } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { AgentInfo, AgentRun, AgentStep } from "../../lib/engine/types";
 import { formatMoment } from "../../lib/format";
+import chat from "../chat/Chat.module.css";
 import styles from "./Agents.module.css";
 
 const RUN_STATUS: Record<AgentRun["status"], string> = {
@@ -118,7 +120,7 @@ function AgentCard({
           {agent.busy ? "En mission" : "Disponible"}
         </span>
       </header>
-      <p className={styles.goal}>{agent.goal}</p>
+      <p className={styles.goal}>{agent.goal.charAt(0).toUpperCase() + agent.goal.slice(1)}</p>
       <ul className={styles.tools} aria-label={`Outils de l'agent ${agent.label}`}>
         {agent.tools.map((tool) => (
           <li key={tool}>
@@ -128,7 +130,7 @@ function AgentCard({
       </ul>
       {agent.busy && current && (
         <div className={styles.live} aria-live="polite">
-          <p className={styles.liveTask}>« {current.task} »</p>
+          <p className={styles.liveTask}>« {current.task} »</p>
           <Steps run={current} />
         </div>
       )}
@@ -150,9 +152,9 @@ function RunCard({ run, label }: { run: AgentRun; label: string }) {
           {run.origin === "chat" ? " · confiée par Jarvis" : " · confiée par toi"}
         </span>
       </header>
-      <p className={styles.runTask}>« {run.task} »</p>
+      <p className={styles.runTask}>« {run.task} »</p>
       <Steps run={run} />
-      {run.result && <p className={styles.result}>{run.result}</p>}
+      {run.result && <RichText text={run.result} className={chat.markdown} />}
       {run.error && <p className={styles.error}>{run.error}</p>}
       {(run.plans.length > 0 || run.trace_id) && (
         <p className={styles.meta}>
@@ -213,8 +215,8 @@ export function AgentsScreen() {
             <ErrorState message={describeError(runs.error)} />
           ) : runs.data.length === 0 ? (
             <EmptyState title="Aucune mission pour l'instant">
-              Confie une tâche à un agent ci-dessus, ou demande à Jarvis « fais faire une recherche
-              sur… » : il la déléguera.
+              Confie une tâche à un agent ci-dessus, ou demande à Jarvis « fais faire une recherche
+              sur… » : il la déléguera.
             </EmptyState>
           ) : (
             <ul className={styles.runs} aria-label="Missions récentes">

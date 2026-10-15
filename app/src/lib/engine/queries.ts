@@ -784,4 +784,3 @@ export function useDeleteRelation() {
     client.delete<undefined>(`/v1/memory/graph/relations/${id}`),
   );
 }
-
