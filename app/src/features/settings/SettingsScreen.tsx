@@ -5,6 +5,7 @@ import { useSecrets, useStatus } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
 import { BrowserSection } from "./BrowserSection";
+import { DesktopSection } from "./DesktopSection";
 import { IntegrationsSection } from "./IntegrationsSection";
 import { ModelsSection } from "./ModelsSection";
 import { PermissionsSection } from "./PermissionsSection";
@@ -116,6 +117,12 @@ export function SettingsScreen() {
           Navigateur et cookies
         </h2>
         <BrowserSection />
+      </section>
+      <section className={styles.section} aria-labelledby="controle-pc">
+        <h2 id="controle-pc" className={styles.sectionTitle}>
+          Contrôle du PC
+        </h2>
+        <DesktopSection />
       </section>
       <section className={styles.section} aria-labelledby="permissions">
         <h2 id="permissions" className={styles.sectionTitle}>

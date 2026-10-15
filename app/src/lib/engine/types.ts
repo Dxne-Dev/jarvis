@@ -55,6 +55,8 @@ export interface Preferences {
   voice_barge_in: boolean;
   voice_headset: boolean;
   briefing_enabled: boolean;
+  os_control_enabled: boolean;
+  screen_vision: "local" | "en_ligne";
 }
 
 export type VoicePhase =
@@ -334,6 +336,7 @@ export interface ToolInfo {
   description: string;
   level: PermissionLevel;
   level_label: string;
+  os_control: boolean;
 }
 
 export interface BrowserGrant {

@@ -533,6 +533,13 @@
 }
 
 /* Formulaires et remarques des blocs du navigateur : alignés sur le texte du bloc. */
+.toolTag {
+  margin-left: var(--space-2);
+  color: var(--color-accent);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
 .blockForm {
   display: flex;
   flex-wrap: wrap;

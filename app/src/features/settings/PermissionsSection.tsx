@@ -1,6 +1,6 @@
 import { ErrorState, LoadingState } from "../../components/States";
 import { describeError } from "../../lib/engine/client";
-import { useTools } from "../../lib/engine/queries";
+import { usePreferences, useTools } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { PermissionLevel } from "../../lib/engine/types";
 import { LEVEL_HINT, LEVEL_NAME } from "../actions/levels";
@@ -11,7 +11,9 @@ const LEVELS: PermissionLevel[] = [1, 2, 3];
 /** Les trois niveaux, et le niveau de chaque outil (fixé par le moteur, pas modifiable ici). */
 export function PermissionsSection() {
   const tools = useTools();
+  const preferences = usePreferences();
   const online = useEngineOnline();
+  const osControl = preferences.data?.os_control_enabled ?? false;
   if (!online && !tools.data)
     return <p className={styles.note}>Disponible dès que le moteur répondra.</p>;
   if (tools.isPending) return <LoadingState label="Lecture des outils…" />;
@@ -40,7 +42,14 @@ export function PermissionsSection() {
               .map((tool) => (
                 <li key={tool.name} className={styles.toolRow}>
                   <code className={styles.code}>{tool.name}</code>
-                  <span className={styles.secretHelp}>{tool.description}</span>
+                  <span className={styles.secretHelp}>
+                    {tool.description}
+                    {tool.os_control && (
+                      <span className={styles.toolTag}>
+                        {osControl ? " Contrôle du PC" : " Contrôle du PC (désactivé)"}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
           </ul>
