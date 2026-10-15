@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -82,6 +83,61 @@ def test_the_menu_index_reads_desktop_entries(menu: Path, monkeypatch: pytest.Mo
         applications.find(apps, "photoshop")
     with pytest.raises(NotFoundError, match="Plusieurs applications"):
         applications.find(apps, "gnome")
+
+
+def write_mo(path: Path, catalog: dict[str, str]) -> None:
+    """Un catalogue gettext minimal (format .mo, comme `msgfmt`)."""
+    entries = {"": "Content-Type: text/plain; charset=UTF-8\n", **catalog}
+    keys = sorted(entries)
+    ids = b"".join(k.encode() + b"\0" for k in keys)
+    strs = b"".join(entries[k].encode() + b"\0" for k in keys)
+    start = 7 * 4 + 16 * len(keys)
+    table_ids, table_strs, at_id, at_str = [], [], start, start + len(ids)
+    for key in keys:
+        table_ids += [len(key.encode()), at_id]
+        table_strs += [len(entries[key].encode()), at_str]
+        at_id += len(key.encode()) + 1
+        at_str += len(entries[key].encode()) + 1
+    header = struct.pack("<7I", 0x950412DE, 0, len(keys), 28, 28 + 8 * len(keys), 0, 0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        header
+        + struct.pack(f"<{len(table_ids)}I", *table_ids)
+        + struct.pack(f"<{len(table_strs)}I", *table_strs)
+        + ids
+        + strs
+    )
+
+
+def test_names_are_translated_like_the_ubuntu_menu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Sous Ubuntu, la plupart des entrées n'ont pas de Name[fr] : leur nom passe par gettext.
+    monkeypatch.setenv("LANGUAGE", "")
+    monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+    folder = tmp_path / "applications"
+    domain = "X-Ubuntu-Gettext-Domain=gnome-calculator\nKeywords=calculation;arithmetic;"
+    write_app(folder, "org.gnome.Calculator", "Calculator", "gnome-calculator", domain)
+    browser = "GenericName=Web Browser\nGenericName[fr]=Navigateur web"
+    write_app(folder, "firefox", "Firefox", "firefox", browser)
+    write_app(folder, "chromium", "Chromium", "chromium", browser)
+    sneaky = "X-GNOME-Gettext-Domain=../../../tmp/piege"
+    write_app(folder, "piege", "Piège", "piege", sneaky)
+    locales = tmp_path / "locale"
+    write_mo(
+        locales / "fr" / "LC_MESSAGES" / "gnome-calculator.mo",
+        {"Calculator": "Calculatrice", "calculation;arithmetic;": "calcul;arithmétique;"},
+    )
+    apps = applications.index([folder], locale_dirs=(tmp_path / "absent", locales))
+    calc = apps["org.gnome.Calculator"]
+    assert (calc.name, calc.aliases) == ("Calculatrice", ("Calculator",))
+    assert calc.keywords == ("calcul", "arithmétique")
+    assert applications.find(apps, "calculatrice").id == "org.gnome.Calculator"
+    assert applications.find(apps, "calculator").id == "org.gnome.Calculator"  # nom d'origine
+    assert applications.find(apps, "arithmetique").id == "org.gnome.Calculator"
+    assert apps["piege"].name == "Piège"  # un domaine qui sort du dossier est ignoré
+    with pytest.raises(NotFoundError, match=r"Plusieurs applications.*Chromium, Firefox"):
+        applications.find(apps, "navigateur")  # Jarvis te demandera lequel
 
 
 def test_closing_only_targets_your_own_matching_processes(tmp_path: Path) -> None:

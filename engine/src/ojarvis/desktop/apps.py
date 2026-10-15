@@ -2,6 +2,8 @@
 
 - Index : les fichiers `.desktop` des dossiers XDG (applications du système, Flatpak,
   Snap, les tiennes), comme le fait le menu d'Ubuntu ; les entrées cachées sont ignorées.
+  Les noms sont traduits comme dans le menu : `Name[fr]`, sinon le catalogue gettext que
+  l'entrée désigne (sous Ubuntu, la plupart : « Calculator » y devient « Calculatrice »).
 - Ouvrir : `gtk-launch <identifiant>` (GLib), qui marche sous Wayland comme sous X11 ;
   jamais un shell, jamais la commande `Exec` interprétée par Jarvis.
 - Fermer : seulement tes processus dont l'exécutable correspond à l'application, par
@@ -11,12 +13,15 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import gettext
 import os
 import re
 import shlex
 import shutil
 import signal
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,15 +53,18 @@ PROTECTED = frozenset(
     }
 )
 _FIELD_CODES = re.compile(r"%[fFuUdDnNickvm]")
+_DOMAIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
+LOCALE_DIRS = (Path("/usr/share/locale-langpack"), Path("/usr/share/locale"))
 
 
 @dataclass(frozen=True)
 class AppEntry:
     id: str  # « org.gnome.Calculator »
-    name: str  # nom affiché, en français si l'entrée le donne
+    name: str  # nom affiché, traduit comme dans le menu
     exec_name: str  # exécutable (« gnome-calculator »)
     path: Path
     keywords: tuple[str, ...] = field(default_factory=tuple)
+    aliases: tuple[str, ...] = field(default_factory=tuple)  # nom d'origine (« Calculator »)
 
     @property
     def label(self) -> str:
@@ -85,7 +93,41 @@ def application_dirs() -> list[Path]:
     return seen
 
 
-def _parse(path: Path, desktop: str) -> AppEntry | None:
+def _languages() -> tuple[str, ...]:
+    """Langues du système (règles de gettext), puis le français : Jarvis parle français."""
+    wanted = os.environ.get("LANGUAGE", "").split(":")
+    for variable in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        if os.environ.get(variable):
+            wanted.append(os.environ[variable])
+            break
+    out: list[str] = []
+    for item in [*wanted, "fr"]:
+        code = item.split(".")[0].split("@")[0]
+        for candidate in (code, code.split("_")[0]):
+            if candidate and candidate not in ("C", "POSIX") and candidate not in out:
+                out.append(candidate)
+    return tuple(out)
+
+
+@functools.lru_cache(maxsize=256)
+def _translator(
+    domain: str, languages: tuple[str, ...], locale_dirs: tuple[Path, ...]
+) -> Callable[[str], str]:
+    """Traduction d'un catalogue gettext (le premier dossier qui l'a gagne)."""
+    if not _DOMAIN.fullmatch(domain):  # le nom finit dans un chemin : rien d'autre
+        return str
+    for directory in locale_dirs:
+        try:
+            catalog = gettext.translation(domain, directory, languages=list(languages))
+        except OSError:
+            continue
+        return catalog.gettext
+    return str
+
+
+def _parse(
+    path: Path, desktop: str, locale_dirs: tuple[Path, ...] = LOCALE_DIRS
+) -> AppEntry | None:
     values: dict[str, str] = {}
     section = None
     try:
@@ -108,7 +150,6 @@ def _parse(path: Path, desktop: str) -> AppEntry | None:
     only = values.get("OnlyShowIn")
     if only and desktop and not any(d in only.split(";") for d in desktop.split(":")):
         return None
-    name = values.get("Name[fr]") or values.get("Name[fr_FR]") or values.get("Name") or path.stem
     try:
         command = [t for t in shlex.split(_FIELD_CODES.sub("", values["Exec"])) if t]
     except ValueError:
@@ -116,17 +157,31 @@ def _parse(path: Path, desktop: str) -> AppEntry | None:
     while command and (command[0] == "env" or "=" in command[0]):
         command = command[1:]
     exec_name = Path(command[0]).name if command else ""
-    keywords = values.get("Keywords[fr]") or values.get("Keywords") or ""
+    domain = values.get("X-GNOME-Gettext-Domain") or values.get("X-Ubuntu-Gettext-Domain")
+    translate = _translator(domain, _languages(), locale_dirs) if domain else str
+
+    def local(key: str) -> str:
+        """`Clé[fr]`, sinon la traduction du catalogue (jamais celle de "" : l'en-tête)."""
+        own = values.get(f"{key}[fr]") or values.get(f"{key}[fr_FR]")
+        original = values.get(key, "")
+        return own or (translate(original) if original else "")
+
+    original = values.get("Name") or path.stem
+    name = local("Name") or original
+    keywords = [*local("Keywords").split(";"), local("GenericName"), values.get("GenericName", "")]
     return AppEntry(
         path.name.removesuffix(".desktop"),
         name,
         exec_name,
         path,
-        tuple(k for k in keywords.split(";") if k),
+        tuple(dict.fromkeys(k for k in keywords if k)),
+        (original,) if original != name else (),
     )
 
 
-def index(dirs: list[Path] | None = None) -> dict[str, AppEntry]:
+def index(
+    dirs: list[Path] | None = None, locale_dirs: tuple[Path, ...] = LOCALE_DIRS
+) -> dict[str, AppEntry]:
     """Applications visibles dans le menu, par identifiant (la première trouvée gagne)."""
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "")
     apps: dict[str, AppEntry] = {}
@@ -137,7 +192,7 @@ def index(dirs: list[Path] | None = None) -> dict[str, AppEntry]:
             app_id = path.name.removesuffix(".desktop")
             if app_id in apps:
                 continue
-            entry = _parse(path, desktop)
+            entry = _parse(path, desktop, locale_dirs)
             if entry is not None:
                 apps[app_id] = entry
     return apps
@@ -150,7 +205,7 @@ def find(apps: dict[str, AppEntry], query: str) -> AppEntry:
         raise NotFoundError("Nom d'application vide.")
     scored: list[tuple[int, AppEntry]] = []
     for entry in apps.values():
-        names = [_fold(entry.name), _fold(entry.id), _fold(entry.exec_name)]
+        names = [_fold(n) for n in (entry.name, entry.id, entry.exec_name, *entry.aliases)]
         words = [_fold(k) for k in entry.keywords]
         if wanted in names:
             score = 100
@@ -160,6 +215,8 @@ def find(apps: dict[str, AppEntry], query: str) -> AppEntry:
             score = 60
         elif wanted in words:
             score = 40
+        elif any(wanted in w for w in words):  # « navigateur » dans « navigateur web »
+            score = 20
         else:
             continue
         scored.append((score, entry))
