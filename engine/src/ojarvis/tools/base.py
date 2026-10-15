@@ -131,6 +131,10 @@ class ToolRegistry:
             raise ValueError(f"outil déjà enregistré : {tool.name}")
         self._tools[tool.name] = tool
 
+    def unregister(self, name: str) -> None:
+        """Retire un outil (un skill désactivé, un serveur MCP désinstallé)."""
+        self._tools.pop(name, None)
+
     def get(self, name: str) -> Tool[Any]:
         tool = self._tools.get(name)
         if tool is None:

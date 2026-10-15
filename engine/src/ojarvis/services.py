@@ -58,12 +58,17 @@ from ojarvis.security.secrets import (
     SecretStore,
 )
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.skills.runner import SkillRunner
+from ojarvis.skills.service import SkillService
+from ojarvis.skills.store import SkillStore
 from ojarvis.telegram.bot import TelegramService
 from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
+from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.integrations import integration_tools
+from ojarvis.tools.skills import skill_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
@@ -137,6 +142,7 @@ class _Actions:
     scheduler: AutomationScheduler
     integrations: IntegrationManager
     tools: ToolRegistry
+    skills: SkillService
     gate: PermissionGate
     plans: PlanStore
     executor: PlanExecutor
@@ -188,6 +194,14 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
             *desktop_tools(router, lambda: prefs().screen_vision),
         ],
     )
+    # Jarvis s'étend : les skills actifs apportent leurs outils, testés en bac à sable.
+    skills = SkillService(SkillStore(db), SkillRunner(sandbox), tools, bus)
+    for tool in skill_tools(skills):
+        tools.register(tool)
+    capabilities = tools.get("lister_capacites")
+    if isinstance(capabilities, ListCapabilities):
+        capabilities.add_section("Skills", skills.capabilities)
+    await skills.start()
 
     def tool_context() -> ToolContext:
         return ToolContext(
@@ -223,6 +237,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         scheduler=scheduler,
         integrations=integrations,
         tools=tools,
+        skills=skills,
         gate=gate,
         plans=plans,
         executor=executor,
@@ -297,6 +312,7 @@ class Services:
     telegram: TelegramService
     integrations: IntegrationManager
     google: GoogleAccount
+    skills: SkillService
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -426,6 +442,7 @@ class Services:
             telegram=telegram,
             integrations=acts.integrations,
             google=google,
+            skills=acts.skills,
         )
         services._holder = holder
         await executor.recover()

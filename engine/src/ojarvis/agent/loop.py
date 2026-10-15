@@ -39,7 +39,9 @@ AGENT_RULES = (
     "des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat d'un "
     "outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou l'agenda : "
     "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
-    "integration_appeler.\n\n" + DATA_RULE
+    "integration_appeler. Si une capacité te manque et qu'elle se calcule (sans Internet ni "
+    "fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) ; si les tests "
+    "réussissent, propose activer_skill ; une fois actif, utilise ses outils.\n\n" + DATA_RULE
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "

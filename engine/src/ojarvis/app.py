@@ -18,6 +18,7 @@ from ojarvis.api import (
     routes_core,
     routes_integrations,
     routes_secrets,
+    routes_skills,
     routes_stream,
     routes_voice,
 )
@@ -86,6 +87,7 @@ def create_app(
     app.include_router(routes_automations.router)
     app.include_router(routes_automations.session_router)
     app.include_router(routes_integrations.router)
+    app.include_router(routes_skills.router)
 
     # Ordre : le dernier ajouté est le plus externe.
     app.add_middleware(TokenAuthMiddleware, token=token, public_paths=PUBLIC_PATHS)

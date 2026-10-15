@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import Field
@@ -60,13 +61,18 @@ class NoArgs(ToolArgs):
 class ListCapabilities(Tool[NoArgs]):
     name: ClassVar[str] = "lister_capacites"
     description: ClassVar[str] = (
-        "Liste les outils de Jarvis, leur niveau de permission, ses skills."
+        "Liste les outils de Jarvis, leur niveau de permission, ses skills et ses serveurs MCP."
     )
     Args: ClassVar[type[ToolArgs]] = NoArgs
     level: ClassVar[Level] = Level.LIRE
 
     def __init__(self, registry: ToolRegistry) -> None:
         self._registry = registry
+        #: Sections ajoutées par les registres (skills, serveurs MCP) : titre → lignes.
+        self._sections: dict[str, Callable[[], list[str]]] = {}
+
+    def add_section(self, title: str, lines: Callable[[], list[str]]) -> None:
+        self._sections[title] = lines
 
     def describe(self, args: NoArgs) -> str:
         del args
@@ -78,5 +84,8 @@ class ListCapabilities(Tool[NoArgs]):
         for item in self._registry.catalog():
             level = Level(item["level"])
             lines.append(f"- {item['name']} : {item['description']} [{LEVEL_LABELS[level]}]")
-        lines += ["Skills : aucun pour l'instant.", "Serveurs MCP : aucun pour l'instant."]
+        for title, section in self._sections.items():
+            found = section()
+            lines.append(f"{title} :" if found else f"{title} : aucun pour l'instant.")
+            lines += found
         return ToolOutput("\n".join(lines), {"outils": self._registry.catalog()})

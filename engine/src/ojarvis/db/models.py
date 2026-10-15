@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ojarvis.db.base import Base
@@ -271,3 +271,35 @@ class WorkflowRun(Base):
     updated_at: Mapped[datetime]
     started_at: Mapped[datetime | None]
     ended_at: Mapped[datetime | None]
+
+
+class Skill(Base):
+    """Une version d'un skill : description, outils, code et tests, avec le rapport des tests.
+
+    Une version testée ne change plus (empreinte) ; une seule version d'un skill est active."""
+
+    __tablename__ = "skills"
+    __table_args__ = (
+        UniqueConstraint("name", "version"),
+        Index("ix_skills_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    version: Mapped[str] = mapped_column(String(20))
+    description: Mapped[str] = mapped_column(String(300))
+    #: Mode d'emploi et outils (nom, description, schéma des arguments).
+    manifest: Mapped[dict[str, Any]]
+    code: Mapped[str] = mapped_column(Text)
+    tests: Mapped[str] = mapped_column(Text)
+    digest: Mapped[str] = mapped_column(String(64))
+    #: brouillon | pret | echec | actif | desactive | remplace
+    status: Mapped[str] = mapped_column(String(16))
+    report: Mapped[dict[str, Any] | None]
+    created_by: Mapped[str] = mapped_column(String(16))  # jarvis | utilisateur
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime]
+    tested_at: Mapped[datetime | None]
+    activated_at: Mapped[datetime | None]
