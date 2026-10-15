@@ -54,12 +54,14 @@ from ojarvis.security.secrets import (
     SecretStore,
 )
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.telegram.bot import TelegramService
 from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
+from ojarvis.voice.stt import GroqTranscriber
 from ojarvis.workflows.engine import WorkflowEngine
 
 log = get_logger(__name__)
@@ -244,6 +246,7 @@ class Services:
     automations: AutomationStore
     workflows: WorkflowEngine
     scheduler: AutomationScheduler
+    telegram: TelegramService
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -298,6 +301,16 @@ class Services:
             bus=bus,
             learn=preferences.learn_from_conversations,
             agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
+        )
+        telegram = TelegramService(
+            http=http,
+            secret=secrets.get,
+            chat=chat,
+            plans=plans,
+            executor=executor,
+            notifier=acts.notifier,
+            bus=bus,
+            transcriber=GroqTranscriber(lambda: secrets.get("GROQ_API_KEY"), http),
         )
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
@@ -355,6 +368,7 @@ class Services:
             automations=acts.automations,
             workflows=acts.workflows,
             scheduler=acts.scheduler,
+            telegram=telegram,
         )
         services._holder = holder
         await executor.recover()
@@ -363,6 +377,10 @@ class Services:
         )
         await acts.workflows.start()
         await acts.scheduler.start()
+        # Telegram : seulement pour un vrai lancement (un banc d'essai ou un test ne doit pas
+        # répondre à tes messages à la place de l'app).
+        if discover or os.environ.get("OJARVIS_TELEGRAM") == "1":
+            await services.telegram.start()
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
@@ -439,6 +457,7 @@ class Services:
         await self.bus.publish("engine.stopping", {})
         await self.voice.close()
         await self.chat.close()
+        await self.telegram.close()
         await self.scheduler.close()
         await self.workflows.close()
         await self.executor.close()

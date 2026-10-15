@@ -70,7 +70,9 @@ class PlanExecutor:
     async def _publish(self, plan_id: str, **extra: Any) -> None:
         await self._bus.publish("plan.updated", {"id": plan_id, **extra}, persist=False)
 
-    async def approve(self, plan_id: str, *, double_confirm: bool = False) -> PlanRecord:
+    async def approve(
+        self, plan_id: str, *, double_confirm: bool = False, channel: str = "app"
+    ) -> PlanRecord:
         plan = await self._plans.get(plan_id)
         if plan.status != "proposed":
             raise ConflictError("Ce plan n'attend plus de décision.", code="plan_decided")
@@ -89,6 +91,7 @@ class PlanExecutor:
                 "etapes": [s.description for s in plan.steps],
                 "double_confirmation": double_confirm,
                 "propose_apres_contenu_externe": plan.tainted,
+                "canal": channel,
             },
         )
         await self._publish(plan_id, status="approved")
@@ -111,7 +114,7 @@ class PlanExecutor:
         self._running[plan_id] = task
         task.add_done_callback(lambda _t: self._running.pop(plan_id, None))
 
-    async def refuse(self, plan_id: str) -> PlanRecord:
+    async def refuse(self, plan_id: str, *, channel: str = "app") -> PlanRecord:
         plan = await self._plans.get(plan_id)
         if plan.status != "proposed":
             raise ConflictError("Ce plan n'attend plus de décision.", code="plan_decided")
@@ -121,7 +124,7 @@ class PlanExecutor:
             action="plan.refuse",
             level=plan.max_level,
             summary=f"Plan refusé : {plan.title}",
-            details={"plan": plan_id},
+            details={"plan": plan_id, "canal": channel},
         )
         await self._publish(plan_id, status="refused")
         return await self._plans.get(plan_id)

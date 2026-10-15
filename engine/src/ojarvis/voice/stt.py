@@ -446,6 +446,27 @@ class GroqTranscriber:
     def available(self) -> bool:
         return bool(self._api_key()) and time.monotonic() >= self._blocked_until
 
+    async def transcribe_file(self, data: bytes, filename: str, mime: str) -> str:
+        """Un fichier audio entier (ex. un message vocal Telegram en OGG/Opus)."""
+        import httpx  # noqa: PLC0415
+
+        key = self._api_key()
+        if not key:
+            raise SttError("clé Groq absente")
+        try:
+            response = await self._http.post(
+                GROQ_STT_URL,
+                headers={"Authorization": f"Bearer {key}"},
+                data={"model": self._model, "language": "fr", "prompt": GROQ_PROMPT},
+                files={"file": (filename, data, mime)},
+                timeout=30.0,
+            )
+        except httpx.HTTPError as exc:
+            raise SttError(f"Groq injoignable : {type(exc).__name__}") from exc
+        if response.status_code != 200:
+            raise SttError(f"Groq a refusé la transcription (HTTP {response.status_code})")
+        return str(response.json().get("text", "")).strip()
+
     async def transcribe(self, audio: Pcm) -> Transcript:
         import httpx  # noqa: PLC0415
 
