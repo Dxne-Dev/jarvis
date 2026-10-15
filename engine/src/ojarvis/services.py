@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,7 +23,7 @@ from ojarvis.core.errors import UnavailableError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
-from ojarvis.events.bus import EventBus
+from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.providers.base import Provider
@@ -38,6 +39,10 @@ from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
 
 log = get_logger(__name__)
+
+#: Modèle local de repli (voir la politique du routeur) et fréquence maximale de préchargement.
+LOCAL_MODEL = "ministral-3:3b"
+LOCAL_PRELOAD_EVERY_S = 300.0
 
 
 class UnavailableBackend:
@@ -209,6 +214,7 @@ class Services:
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
+            bus.subscribe("llm.provider_degraded", services._preload_local_model)
         services.spawn(voice.start())
         await bus.publish(
             "engine.started",
@@ -223,6 +229,25 @@ class Services:
         return services
 
     _holder: dict[str, Preferences] = field(default_factory=dict)
+    _last_local_preload: float = -LOCAL_PRELOAD_EVERY_S
+
+    async def _preload_local_model(self, event: Event) -> None:
+        """Un fournisseur en ligne tombe : on charge le modèle local en mémoire, en avance.
+
+        Son premier chargement prend de 13 à 50 s sur cette machine ; s'il est déjà en
+        mémoire quand le repli arrive, la réponse part tout de suite.
+        """
+        ollama = self.providers.get("ollama")
+        if event.payload.get("provider") == "ollama" or not isinstance(ollama, OllamaProvider):
+            return
+        now = time.monotonic()
+        if now - self._last_local_preload < LOCAL_PRELOAD_EVERY_S:
+            return
+        self._last_local_preload = now
+        await ollama.refresh(self.http)
+        if LOCAL_MODEL in ollama.models:
+            log.info("local_model_preload", model=LOCAL_MODEL)
+            await ollama.warm_up(self.http, LOCAL_MODEL)
 
     def spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
         """Tâche de fond suivie (annulée proprement à l'arrêt)."""
