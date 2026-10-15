@@ -41,6 +41,15 @@ AGENT_RULES = (
     "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
     "integration_appeler.\n\n" + DATA_RULE
 )
+OS_CONTROL_ON = (
+    "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "
+    "(par un plan à valider), et regarder l'écran avec regarder_ecran quand on te le demande."
+)
+OS_CONTROL_OFF = (
+    "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "
+    "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
+    "dans Réglages, section « Contrôle du PC »."
+)
 PLAN_STARTED = (
     "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "
     "dans la conversation. N'appelle pas d'autre outil : dis en une phrase ce que tu fais."
@@ -116,6 +125,11 @@ class Agent:
         self._plans = plans
         self._bus = bus
         self._executor = executor
+
+    def rules(self) -> str:
+        """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
+        os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
+        return f"{AGENT_RULES}\n\n{os_control}"
 
     def specs(self) -> list[ToolSpec]:
         specs = self._gate.registry.specs(

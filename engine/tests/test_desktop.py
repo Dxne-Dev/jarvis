@@ -427,6 +427,10 @@ def test_an_app_opens_only_after_validation(
     failed = [d for e, d in events if e == "tool" and d["status"] == "failed"]
     assert failed
     assert "désactivé" in failed[0]["error"]
+    # Le modèle sait que c'est désactivé, et où tu l'actives.
+    system = next(r for r, _ in llm["deepseek"].requests if r.tools).messages[0].content
+    assert "Contrôle du PC désactivé" in system
+    assert "Réglages, section « Contrôle du PC »" in system
 
     assert client.patch("/v1/settings", json={"os_control_enabled": True}).status_code == 200
     events = read_sse(client.post("/v1/chat", json={"text": "Ouvre la calculatrice"}).text)
@@ -435,6 +439,8 @@ def test_an_app_opens_only_after_validation(
         plan["steps"][0]["description"]
         == "Ouvrir l'application Calculatrice (org.gnome.Calculator)"
     )
+    system = [r for r, _ in llm["deepseek"].requests if r.tools][-1].messages[0].content
+    assert "Contrôle du PC activé" in system
     assert not calls.exists()  # rien avant ta validation
     client.post(f"/v1/plans/{plan['id']}/approve", json={})
     for _ in range(100):

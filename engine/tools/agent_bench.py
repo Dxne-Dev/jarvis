@@ -310,6 +310,9 @@ async def application(services: Services, home: Path, port: int) -> Outcome:
 
     del home, port
     start = time.perf_counter()
+    # Désactivé (par défaut) : Jarvis le dit et indique où l'activer, sans plan.
+    said, _, refused = await converse(services, "Ouvre la calculatrice.")
+    off_ok = not refused and "Réglages" in said
     await _enable_os_control(services)
     _, tools, plans = await converse(services, "Ouvre la calculatrice.")
     names = [t["name"] for t in tools]
@@ -327,8 +330,9 @@ async def application(services: Services, home: Path, port: int) -> Outcome:
         closed = await run_plan(services, close_plans[-1])
     await asyncio.sleep(1.0)
     after = apps._processes("gnome-calculator")
-    ok = not before and opened["status"] == "done" and bool(running) and not after
+    ok = off_ok and not before and opened["status"] == "done" and bool(running) and not after
     detail = (
+        f"désactivé : {said[:90]!r} ; "
         f"avant : {len(before)} ; ouverture {opened['status']} → {len(running)} processus ; "
         f"fermeture {closed['status']} → {len(after)} ; "
         f"étapes {opened['steps']} {closed.get('steps')}"

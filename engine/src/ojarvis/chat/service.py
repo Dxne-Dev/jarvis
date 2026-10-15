@@ -17,7 +17,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ojarvis.agent.loop import (
-    AGENT_RULES,
     MAX_TOOL_ROUNDS,
     Agent,
     AgentTurn,
@@ -263,7 +262,7 @@ class ChatService:
             turn.agent.known_urls |= urls_in(user_text)
             request.tools = agent.specs()
             system = request.messages[0]
-            request.messages[0] = Message("system", f"{system.content}\n\n{AGENT_RULES}")
+            request.messages[0] = Message("system", f"{system.content}\n\n{agent.rules()}")
         for rounds in range(MAX_TOOL_ROUNDS + 1):
             step = _Round()
             async for event in self._stream_round(task, request, turn, step):
