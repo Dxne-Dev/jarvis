@@ -54,8 +54,10 @@ test("au bouton micro, Jarvis écoute, répond à voix haute puis montre la conv
   await page.screenshot({ path: `${CAPTURES}/voix-conversation.png` });
 
   await page.getByRole("link", { name: "Historique" }).click();
+  // Attendre la page : sur l'accueil, la conversation contient aussi la question.
+  const conversations = page.getByRole("list", { name: "Conversations" });
   await expect(
-    page.getByRole("listitem").filter({ hasText: "Quelle heure est-il ?" }),
+    conversations.getByRole("listitem").filter({ hasText: "Quelle heure est-il ?" }),
   ).toBeVisible();
 });
 

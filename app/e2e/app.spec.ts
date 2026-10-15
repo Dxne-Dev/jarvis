@@ -89,7 +89,14 @@ test("une clé s'ajoute, se vérifie, laisse une trace, puis se supprime", async
 test("la navigation se fait entièrement au clavier", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Aller au contenu" })).toBeFocused();
-  for (const name of ["Accueil", "Historique", "Mémoire", "Journal et traces", "Réglages"]) {
+  for (const name of [
+    "Accueil",
+    "Historique",
+    "Mémoire",
+    "Actions à valider",
+    "Journal et traces",
+    "Réglages",
+  ]) {
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name })).toBeFocused();
   }

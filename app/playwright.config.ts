@@ -54,6 +54,10 @@ export default defineConfig({
         OJARVIS_FAKE_LLM: "1",
         OJARVIS_FAKE_AUDIO: "1",
         OJARVIS_SKIP_WARMUP: "1",
+        // Le site de test (boutique locale) est sur 127.0.0.1 : les outils ont le droit
+        // de l'ouvrir, et seulement lui ; les fichiers restent dans un dossier jetable.
+        OJARVIS_TOOL_PRIVATE_HOSTS: "127.0.0.1",
+        OJARVIS_USER_HOME: join(home, "perso"),
       },
     },
     {
