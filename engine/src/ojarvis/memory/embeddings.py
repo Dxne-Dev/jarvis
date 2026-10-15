@@ -19,6 +19,7 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 
+from ojarvis.core.downloads import PinnedFile, fetch_pinned, files_present
 from ojarvis.core.logs import get_logger
 
 log = get_logger(__name__)
@@ -27,12 +28,12 @@ Kind = Literal["query", "passage"]
 Vectors = npt.NDArray[np.float32]
 
 HF_BASE = "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main"
-E5_FILES: dict[str, tuple[str, str]] = {
-    "model_quantized.onnx": (
+E5_FILES: dict[str, PinnedFile] = {
+    "model_quantized.onnx": PinnedFile(
         f"{HF_BASE}/onnx/model_quantized.onnx",
         "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193",
     ),
-    "tokenizer.json": (
+    "tokenizer.json": PinnedFile(
         f"{HF_BASE}/tokenizer.json",
         "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
     ),
@@ -56,14 +57,6 @@ def _normalize(vectors: npt.NDArray[np.float32]) -> Vectors:
     return result
 
 
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 class E5Embedder:
     model_id = "e5s"
     dim = 384
@@ -83,28 +76,15 @@ class E5Embedder:
         return self._status
 
     def files_present(self) -> bool:
-        return all((self.folder / name).is_file() for name in E5_FILES)
+        return files_present(self.folder, E5_FILES)
 
     async def download(self, client: httpx.AsyncClient) -> None:
-        self.folder.mkdir(parents=True, exist_ok=True)
-        for name, (url, expected) in E5_FILES.items():
-            target = self.folder / name
-            if target.is_file():
-                continue
-            self._status = "téléchargement"
-            partial = target.with_suffix(target.suffix + ".part")
-            log.info("embedding_model_download", file=name)
-            async with client.stream("GET", url, follow_redirects=True, timeout=120.0) as response:
-                response.raise_for_status()
-                with partial.open("wb") as handle:
-                    async for chunk in response.aiter_bytes(1 << 20):
-                        handle.write(chunk)
-            actual = await anyio.to_thread.run_sync(sha256_of, partial)
-            if actual != expected:
-                partial.unlink(missing_ok=True)
-                self._status = "erreur"
-                raise RuntimeError(f"empreinte inattendue pour {name}")
-            partial.replace(target)
+        self._status = "téléchargement"
+        try:
+            await fetch_pinned(client, self.folder, E5_FILES)
+        except Exception:
+            self._status = "erreur"
+            raise
 
     async def ensure(self, client: httpx.AsyncClient | None = None) -> None:
         if self._ready.is_set():
