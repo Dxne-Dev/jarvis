@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 
 from ojarvis.chat.service import clean_title
 from ojarvis.llm.errors import ProviderUnavailableError
-from ojarvis.llm.providers.fake import FakeProvider, FakeReply
+from ojarvis.llm.providers.fake import FakeProvider, FakeReply, e2e_script
 from ojarvis.llm.structured import TOOL_NAME
-from ojarvis.llm.types import LLMRequest, ToolCall
+from ojarvis.llm.types import LLMRequest, Message, ToolCall, ToolSpec
 from ojarvis.services import Services
 
 
@@ -203,3 +203,12 @@ def test_clean_title() -> None:
     assert clean_title("« Le café du matin ».") == "Le café du matin"
     assert clean_title('"Projet Rust"\nAutre ligne') == "Projet Rust"
     assert clean_title("   ") == ""
+
+
+def test_e2e_script_is_predictable() -> None:
+    chat = e2e_script(LLMRequest([Message("system", "x"), Message("user", "Salut")]))
+    assert chat.text.startswith("Bien reçu : **Salut**")
+    tool = e2e_script(LLMRequest([Message("user", "x")], tools=[ToolSpec("repondre", "d", {})]))
+    assert tool.tool_calls[0].arguments == {"faits": []}
+    title = e2e_script(LLMRequest([Message("system", "Donne un titre"), Message("user", "x")]))
+    assert title.text == "Conversation de test"

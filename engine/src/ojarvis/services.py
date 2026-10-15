@@ -26,6 +26,7 @@ from ojarvis.events.bus import EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.providers.base import Provider
+from ojarvis.llm.providers.fake import FakeProvider, e2e_script
 from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
 from ojarvis.llm.router import ModelRouter
 from ojarvis.memory.embeddings import E5Embedder, Embedder
@@ -123,6 +124,9 @@ class Services:
         tracer = Tracer(db, bus)
         http = httpx.AsyncClient(timeout=httpx.Timeout(10.0), transport=http_transport)
         catalog = Catalog()
+        if providers is None and config.dev_mode and os.environ.get("OJARVIS_FAKE_LLM") == "1":
+            # Tests de bout en bout : réponses prévisibles, aucun appel à un vrai modèle.
+            providers = {"deepseek": FakeProvider("deepseek", script=e2e_script, delay_s=0.05)}
         providers = providers if providers is not None else build_providers(secrets)
         holder: dict[str, Preferences] = {"value": preferences}
         router = ModelRouter(
