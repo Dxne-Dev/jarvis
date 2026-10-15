@@ -4,6 +4,9 @@ import type { EngineClient } from "./client";
 import { useEngineStore } from "./store";
 import type {
   AuditPage,
+  Automation,
+  AutomationDraft,
+  AutomationRun,
   BrowserGrant,
   BrowserState,
   CartesiaVoice,
@@ -414,5 +417,86 @@ export function useBrowserLogin() {
         ? requireClient(client).post<{ domain: string }>("/v1/browser/login", { url })
         : requireClient(client).post<BrowserGrant | null>("/v1/browser/login/finish"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["browser"] }),
+  });
+}
+
+// ---------------------------------------------------------------- automatisations
+
+export function useAutomations() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["automations"],
+    queryFn: () => requireClient(client).get<Automation[]>("/v1/automations"),
+    enabled: client !== null,
+  });
+}
+
+export function useAutomationEvents() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["automations", "events"],
+    queryFn: () =>
+      requireClient(client).get<{ type: string; label: string }[]>("/v1/automations/events"),
+    enabled: client !== null,
+    staleTime: 600_000,
+  });
+}
+
+export function useAutomationRuns(id: string, enabled: boolean) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["automations", "runs", id],
+    queryFn: () =>
+      requireClient(client).get<AutomationRun[]>(
+        `/v1/automations/${encodeURIComponent(id)}/runs?limit=10`,
+      ),
+    enabled: client !== null && enabled,
+  });
+}
+
+export function useSaveAutomation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, draft }: { id?: string; draft: AutomationDraft }) =>
+      id
+        ? requireClient(client).patch<Automation>(
+            `/v1/automations/${encodeURIComponent(id)}`,
+            draft,
+          )
+        : requireClient(client).post<Automation>("/v1/automations", draft),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["automations"] }),
+  });
+}
+
+export function useToggleAutomation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      requireClient(client).patch<Automation>(`/v1/automations/${encodeURIComponent(id)}`, {
+        enabled,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["automations"] }),
+  });
+}
+
+export function useDeleteAutomation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).delete<undefined>(`/v1/automations/${encodeURIComponent(id)}`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["automations"] }),
+  });
+}
+
+export function useRunAutomation() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).post<AutomationRun>(`/v1/automations/${encodeURIComponent(id)}/run`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["automations"] }),
   });
 }

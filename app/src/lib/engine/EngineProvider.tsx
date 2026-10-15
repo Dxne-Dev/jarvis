@@ -26,6 +26,8 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["plan.finished", "conversations"],
   ["audit.", "audit"],
   ["browser.", "browser"],
+  ["automation.", "automations"],
+  ["workflow.", "automations"],
 ];
 
 /** Événements qui méritent une notification quand la fenêtre est en arrière-plan. */
@@ -53,6 +55,10 @@ function notifyFor(event: EngineEvent): void {
       ok ? "Plan terminé" : "Plan interrompu",
       ok ? "Jarvis a fini ce que tu as validé." : "Une étape a échoué : rien de plus n'a été fait.",
     );
+  } else if (event.type === "notification") {
+    const title = typeof event.payload.title === "string" ? event.payload.title : "Jarvis";
+    const body = typeof event.payload.body === "string" ? event.payload.body : "";
+    void notifyDesktop(title, body);
   } else if (event.type === "audit.integrity_failed") {
     void notifyDesktop("Journal des actions altéré", "Une entrée a été modifiée hors de Jarvis.");
   }

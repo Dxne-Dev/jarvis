@@ -17,5 +17,11 @@ export function noticeFor(event: EngineEvent): string | null {
     return `${name} ne répond pas : Jarvis passe par un autre modèle.`;
   }
   if (event.type === "llm.provider_recovered") return `${name} répond de nouveau.`;
+  if (event.type === "notification") {
+    const title = typeof event.payload.title === "string" ? event.payload.title : "Jarvis";
+    const body = typeof event.payload.body === "string" ? event.payload.body : "";
+    const short = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+    return short ? `${title} — ${short}` : title;
+  }
   return null;
 }

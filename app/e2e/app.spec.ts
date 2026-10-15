@@ -94,6 +94,7 @@ test("la navigation se fait entièrement au clavier", async ({ page }) => {
     "Historique",
     "Mémoire",
     "Actions à valider",
+    "Automatisations",
     "Journal et traces",
     "Réglages",
   ]) {

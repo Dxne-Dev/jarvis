@@ -1,4 +1,12 @@
-import { BrainCircuit, History, ListChecks, Orbit, ScrollText, Settings2 } from "lucide-react";
+import {
+  BrainCircuit,
+  CalendarClock,
+  History,
+  ListChecks,
+  Orbit,
+  ScrollText,
+  Settings2,
+} from "lucide-react";
 import { useEffect, type ComponentType, type SVGProps } from "react";
 import { NavLink, Outlet } from "react-router";
 
@@ -20,6 +28,7 @@ const NAV: NavItem[] = [
   { to: "/historique", label: "Historique", icon: History },
   { to: "/memoire", label: "Mémoire", icon: BrainCircuit },
   { to: "/actions", label: "Actions à valider", icon: ListChecks },
+  { to: "/automatisations", label: "Automatisations", icon: CalendarClock },
   { to: "/journal", label: "Journal et traces", icon: ScrollText },
   { to: "/reglages", label: "Réglages", icon: Settings2 },
 ];
