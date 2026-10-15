@@ -141,9 +141,15 @@ class EchoCancel:
 
 
 def _refresh_devices() -> None:
-    """PortAudio ne voit les nouveaux périphériques qu'après une réinitialisation."""
-    import sounddevice as sd  # noqa: PLC0415
+    """PortAudio ne voit les nouveaux périphériques qu'après une réinitialisation.
 
+    À n'appeler que micro et sortie fermés : réinitialiser PortAudio pendant l'écoute
+    coupe le micro sans prévenir.
+    """
+    try:
+        import sounddevice as sd  # noqa: PLC0415
+    except (ImportError, OSError):  # pas de PortAudio sur la machine : rien à rafraîchir
+        return
     with contextlib.suppress(Exception):
         sd._terminate()
         sd._initialize()
@@ -340,7 +346,7 @@ class VoiceService:
         echo = await anyio.to_thread.run_sync(
             self._echo.load, prefs.voice_input_device, prefs.voice_output_device
         )
-        if echo:
+        if echo and self._source_factory is MicrophoneSource:
             await anyio.to_thread.run_sync(_refresh_devices)
         self.status.echo_cancel = echo
         sink = self._sink_factory(EC_SINK if echo else prefs.voice_output_device)

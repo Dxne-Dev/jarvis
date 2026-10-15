@@ -80,7 +80,10 @@ async fn listen(app: &AppHandle) -> ashpd::Result<()> {
         .find(|s| s.id() == SHORTCUT_ID)
         .map(|s| s.trigger_description().to_owned())
         .filter(|t| !t.is_empty());
-    log::info!("raccourci global prêt : {}", trigger.as_deref().unwrap_or("(à choisir)"));
+    log::info!(
+        "raccourci global prêt : {}",
+        trigger.as_deref().unwrap_or("(à choisir)")
+    );
     set_status(
         app,
         ShortcutStatus {
