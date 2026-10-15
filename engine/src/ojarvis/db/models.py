@@ -147,3 +147,73 @@ class Embedding(Base):
     dim: Mapped[int]
     vector: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime]
+
+
+class AuditEntry(Base):
+    """Journal des actions : ajout seul, chaîné par SHA-256 (des déclencheurs refusent toute
+    modification ou suppression). Vérifié à chaque démarrage."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime]
+    actor: Mapped[str] = mapped_column(String(32))  # utilisateur | jarvis | automatisation
+    action: Mapped[str] = mapped_column(String(64))
+    level: Mapped[int]
+    summary: Mapped[str] = mapped_column(String(500))
+    details: Mapped[dict[str, Any]]
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64), unique=True)
+
+
+class Plan(Base):
+    """Un plan proposé par Jarvis : rien de niveau 2 ou 3 ne s'exécute avant sa validation."""
+
+    __tablename__ = "plans"
+    __table_args__ = (Index("ix_plans_status", "status"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL")
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    request: Mapped[str] = mapped_column(Text)  # la demande de l'utilisateur, pour la synthèse
+    status: Mapped[str] = mapped_column(String(16))
+    max_level: Mapped[int]
+    #: Proposé après lecture d'un contenu externe (page, fichier) : vigilance à la validation.
+    tainted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    decided_at: Mapped[datetime | None]
+    result: Mapped[str | None] = mapped_column(Text)
+
+
+class PlanStep(Base):
+    __tablename__ = "plan_steps"
+    __table_args__ = (Index("ix_plan_steps_plan_position", "plan_id", "position"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("plans.id", ondelete="CASCADE"))
+    position: Mapped[int]
+    tool: Mapped[str] = mapped_column(String(64))
+    arguments: Mapped[dict[str, Any]]
+    why: Mapped[str] = mapped_column(String(500))
+    level: Mapped[int]
+    description: Mapped[str] = mapped_column(String(500))  # ce qui va se passer, sur quoi
+    status: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(String(500))
+    started_at: Mapped[datetime | None]
+    ended_at: Mapped[datetime | None]
+
+
+class CookieGrant(Base):
+    """Cookies d'un domaine importés dans le navigateur de Jarvis, avec ton accord."""
+
+    __tablename__ = "browser_cookie_grants"
+
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))  # brave | chrome | chromium
+    imported_at: Mapped[datetime]
+    count: Mapped[int]
+    revoked_at: Mapped[datetime | None]
