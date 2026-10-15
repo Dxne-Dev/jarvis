@@ -45,7 +45,9 @@ Le réveil marchait, la transcription non : « Peuja mis », « Hey, Charles ! �
 - **Le micro était réglé à 25 %** : la voix arrivait à −36 dB, trop faible. Il est à 80 %.
 - **Whisper `base` est trop petit** pour un micro intégré, à distance, avec du bruit. Sur le corpus rendu aussi faible et bruité, il se trompe sur 93 % des mots.
 
-Décision prise ensemble : **la phrase est transcrite par Cartesia Ink-2**, en ligne, pendant qu'on parle. Sur le même corpus dégradé : 0 % d'erreurs. Le texte arrive 180 ms après la fin de la phrase. Whisper local reste en secours si le réseau tombe, et rien ne sort avant « Hey Jarvis ».
+Décision prise ensemble : transcrire en ligne. Premier choix, **Cartesia Ink-2** : 0 % d'erreurs sur le corpus dégradé… mais au deuxième essai, il a cru entendre de l'anglais (« balance it to 5 divided by 36 hours »). Ink-2 devine la langue seul, et un accent l'en fait douter.
+
+Choix final : **Groq Whisper large-v3, avec le français imposé**. Le texte arrive en 0,4 s, envoyé dès la courte pause : il est prêt à la fin de la phrase. Si Groq sature (20 phrases par minute en offre gratuite), Cartesia prend le relais, puis Whisper local. Rien ne sort avant « Hey Jarvis ».
 
 En chemin : le début d'une phrase dite juste après « Hey Jarvis » pouvait être coupé (le tampon d'avant la phrase n'était pas ajouté). Corrigé.
 

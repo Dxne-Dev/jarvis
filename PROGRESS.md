@@ -55,6 +55,9 @@
 | 15/10 | Essai au vrai micro (Octave) | réveil OK ; transcription locale illisible (micro à 25 %, Whisper base) |
 | 15/10 | Transcription Cartesia Ink-2 contre Whisper base, corpus dégradé (−30 dB + souffle) | 0 % contre 93 % de mots faux ; texte 180 ms après la phrase |
 | 15/10 | Vrai pipeline avec Ink-2 + DeepSeek + Cartesia | 12/12 tours, 0 % d'erreurs, latence médiane 1,72 s |
+| 15/10 | Deuxième essai au vrai micro (Octave) | Ink-2 entend souvent de l'anglais (accent) ; le paramètre de langue est ignoré |
+| 15/10 | Vrai pipeline avec Groq Whisper large-v3 (fr imposé) + DeepSeek + Cartesia | 12/12 tours justes, latence médiane 1,9 s, transcription 0,4 s |
+| 15/10 | Questions personnelles sur mémoire vide (vrai DeepSeek) | 6/6 « je ne le sais pas encore », aucune invention |
 | 15/10 | Voix sur la machine réelle (micro, annulation d'écho) | prête en 6 s ; 50 trames en 4 s ; arrêt en 1,1 s, module retiré |
 | 15/10 | Moteur : ruff, mypy strict (code + tests), pytest | 0 erreur ; 346 tests ; couverture 91 % |
 | 15/10 | Interface : tsc, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 36 tests |
