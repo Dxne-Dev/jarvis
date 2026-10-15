@@ -270,3 +270,11 @@ async def test_a_clear_transcript_can_be_learned() -> None:
     async with rig(audio) as r:
         await wait_until(lambda: r.pipeline.last_report is not None)
         assert r.chat.calls[0]["learn"] is True
+
+
+async def test_the_start_of_a_sentence_said_right_after_the_wake_word_is_kept() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.2))
+    async with rig(audio) as r:
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        # Marqueur restant (0,72 s) + phrase (1,2 s) + pause (0,16 s) + préroll (0,35 s).
+        assert r.stt.calls[0] >= 2.3

@@ -319,10 +319,11 @@ class VoicePipeline:
         start = self._endpointer.speech_start_at or listening.opened_at
         first = start - self.config.preroll_s
         frames = [f for f in listening.frames[:upto] if f.at > first]
-        if len(frames) < len(listening.frames[:upto]) and first < listening.opened_at:
-            # Le début de la phrase précède l'ouverture de l'écoute : on reprend l'historique.
-            earlier = [f for f in self._history if first < f.at <= listening.opened_at]
-            frames = earlier + frames
+        if frames and frames[0] is listening.frames[0]:
+            # La phrase a commencé tout de suite : le préroll est dans l'historique, juste
+            # avant l'ouverture de l'écoute (sans lui, la première syllabe serait coupée).
+            opened = frames[0].at
+            frames = [f for f in self._history if first < f.at < opened] + frames
         return np.concatenate([f.pcm for f in frames]) if frames else np.zeros(0, np.int16)
 
     def _finish_listening(self, listening: _Listening) -> None:
