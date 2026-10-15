@@ -108,6 +108,8 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       stream.onState((state) => {
         uiLog("info", `flux d'événements : ${state}`);
         setStream(state);
+        // Après une coupure, des événements ont pu être manqués : on relit tout.
+        if (state === "open") void queryClient.invalidateQueries();
       });
       stream.onEvent((event: EngineEvent) => {
         // Le niveau sonore arrive une douzaine de fois par seconde : il ne passe
