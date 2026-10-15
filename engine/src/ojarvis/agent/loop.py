@@ -37,7 +37,18 @@ AGENT_RULES = (
     "appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
     "validera. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, avec "
     "des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat d'un "
-    "outil. Cite tes sources quand tu t'appuies sur le web.\n\n" + DATA_RULE
+    "outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou l'agenda : "
+    "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
+    "integration_appeler.\n\n" + DATA_RULE
+)
+OS_CONTROL_ON = (
+    "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "
+    "(par un plan à valider), et regarder l'écran avec regarder_ecran quand on te le demande."
+)
+OS_CONTROL_OFF = (
+    "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "
+    "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
+    "dans Réglages, section « Contrôle du PC »."
 )
 PLAN_STARTED = (
     "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "
@@ -115,8 +126,16 @@ class Agent:
         self._bus = bus
         self._executor = executor
 
+    def rules(self) -> str:
+        """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
+        os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
+        return f"{AGENT_RULES}\n\n{os_control}"
+
     def specs(self) -> list[ToolSpec]:
-        return [*self._gate.registry.specs(max_level=Level.DETRUIRE), plan_tool_spec()]
+        specs = self._gate.registry.specs(
+            max_level=Level.DETRUIRE, os_control=self._gate.os_control()
+        )
+        return [*specs, plan_tool_spec()]
 
     def describe(self, call: ToolCall) -> str:
         """Ce que fait l'appel, en clair (pour l'interface), sans rien exécuter."""

@@ -8,7 +8,20 @@ const dateTime = new Intl.DateTimeFormat("fr-FR", {
   second: "2-digit",
 });
 
+const moment = new Intl.DateTimeFormat("fr-FR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 const relative = new Intl.RelativeTimeFormat("fr-FR", { numeric: "auto" });
+
+/** « vendredi 16 octobre à 08:00 » : pour une échéance. */
+export function formatMoment(iso: string): string {
+  return moment.format(new Date(iso));
+}
 
 export function formatDateTime(iso: string): string {
   return dateTime.format(new Date(iso));

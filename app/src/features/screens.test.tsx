@@ -43,6 +43,12 @@ function common(path: string): [number, unknown] | null {
   if (path.startsWith("/v1/plans")) return [200, []];
   if (path === "/v1/browser") return [200, { sources: [], grants: [], login_domain: null }];
   if (path === "/v1/tools") return [200, []];
+  if (path === "/v1/integrations") return [200, []];
+  if (path === "/v1/telegram")
+    return [
+      200,
+      { configured: false, connected: false, bot: null, last_error: null, handled: 0, rejected: 0 },
+    ];
   if (path === "/v1/llm/status") return [200, []];
   if (path === "/v1/llm/models") return [200, []];
   if (path === "/v1/voice/status") return [200, VOICE];
@@ -211,6 +217,43 @@ describe("Réglages", () => {
     await user.click(within(voice).getByRole("switch", { name: /Parler à Jarvis/ }));
     await waitFor(() => {
       expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ voice_enabled: false });
+    });
+  });
+
+  it("n'active le contrôle du PC qu'après confirmation", async () => {
+    const user = userEvent.setup();
+    let prefs = { os_control_enabled: false, screen_vision: "local" };
+    const { client, calls } = fakeEngine((method, path, body) => {
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/settings" && method === "PATCH") {
+        prefs = { ...prefs, ...(body as object) };
+        return [200, prefs];
+      }
+      if (path === "/v1/settings") return [200, prefs];
+      if (path === "/v1/status") return [200, STATUS];
+      return [200, []];
+    });
+    renderScreen(<SettingsScreen />, { client });
+    const section = await screen.findByRole("region", { name: "Contrôle du PC" });
+    expect(await within(section).findByText(/Désactivé : Jarvis ne voit/)).toBeInTheDocument();
+    // Tant qu'il est désactivé, le choix de lecture de l'écran est grisé.
+    expect(within(section).getByRole("radio", { name: /Sur ce PC/ })).toBeDisabled();
+    await user.click(within(section).getByRole("button", { name: "Activer…" }));
+    const dialog = await screen.findByRole("alertdialog", { name: /Activer le contrôle du PC/ });
+    await user.click(within(dialog).getByRole("button", { name: "Annuler" }));
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    await user.click(within(section).getByRole("button", { name: "Activer…" }));
+    await user.click(await screen.findByRole("button", { name: "Activer" }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ os_control_enabled: true });
+    });
+    expect(await within(section).findByText(/Activé : Jarvis peut/)).toBeInTheDocument();
+    await user.click(within(section).getByRole("radio", { name: /En ligne/ }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.method === "PATCH").at(-1)?.body).toEqual({
+        screen_vision: "en_ligne",
+      });
     });
   });
 

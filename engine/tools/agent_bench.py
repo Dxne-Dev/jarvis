@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from ojarvis.config import EngineConfig, repo_root, resolve_paths
@@ -267,6 +267,123 @@ async def automation_tomorrow(services: Services, home: Path, port: int) -> Outc
     return Outcome("automatisation ponctuelle", ok, detail, time.perf_counter() - start, names)
 
 
+async def github(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    start = time.perf_counter()
+    text, tools, plans = await converse(
+        services,
+        "Quelles sont les trois dernières issues ouvertes du dépôt github/github-mcp-server ?",
+    )
+    names = [t["name"] for t in tools]
+    used = [t for t in tools if t["name"] == "integration_appeler" and t["status"] == "done"]
+    ok = bool(used) and not plans
+    return Outcome("GitHub par MCP", ok, text[:220], time.perf_counter() - start, names)
+
+
+async def briefing(services: Services, home: Path, port: int) -> Outcome:
+    del home, port
+    start = time.perf_counter()
+    run = await services.briefing.on_session_start(force=True)
+    if run is None:
+        return Outcome("briefing du matin", False, "pas lancé", time.perf_counter() - start)
+    for _ in range(300):
+        record = await services.workflows.get(run.id)
+        if record.status in ("done", "failed"):
+            break
+        await asyncio.sleep(0.2)
+    text = str(record.context.get("texte", ""))
+    ok = record.status == "done" and len(text) > 40
+    sources = sorted(record.context.get("sources", {}))
+    return Outcome(
+        "briefing du matin", ok, f"sources {sources} : {text[:300]}", time.perf_counter() - start
+    )
+
+
+async def _enable_os_control(services: Services) -> None:
+    prefs, _ = await services.settings.update({"os_control_enabled": True})
+    services.set_preferences(prefs)
+
+
+async def application(services: Services, home: Path, port: int) -> Outcome:
+    """Critère de la phase 5 : une application s'ouvre après validation (puis se ferme)."""
+    from ojarvis.desktop import apps  # noqa: PLC0415
+
+    del home, port
+    start = time.perf_counter()
+    # Désactivé (par défaut) : Jarvis le dit et indique où l'activer, sans plan.
+    said, _, refused = await converse(services, "Ouvre la calculatrice.")
+    off_ok = not refused and "Réglages" in said
+    await _enable_os_control(services)
+    _, tools, plans = await converse(services, "Ouvre la calculatrice.")
+    names = [t["name"] for t in tools]
+    if not plans:
+        return Outcome(
+            "ouvrir une application", False, "aucun plan", time.perf_counter() - start, names
+        )
+    before = apps._processes("gnome-calculator")
+    opened = await run_plan(services, plans[-1])
+    await asyncio.sleep(2.0)
+    running = apps._processes("gnome-calculator")
+    _, _, close_plans = await converse(services, "Ferme la calculatrice maintenant.")
+    closed: dict[str, Any] = {"status": "aucun plan"}
+    if close_plans:
+        closed = await run_plan(services, close_plans[-1])
+    await asyncio.sleep(1.0)
+    after = apps._processes("gnome-calculator")
+    ok = off_ok and not before and opened["status"] == "done" and bool(running) and not after
+    detail = (
+        f"désactivé : {said[:90]!r} ; "
+        f"avant : {len(before)} ; ouverture {opened['status']} → {len(running)} processus ; "
+        f"fermeture {closed['status']} → {len(after)} ; "
+        f"étapes {opened['steps']} {closed.get('steps')}"
+    )
+    return Outcome("ouvrir une application", ok, detail, time.perf_counter() - start, names)
+
+
+async def screen(services: Services, home: Path, port: int) -> Outcome:
+    """Critère de la phase 5 : « regarde mon écran » décrit correctement une capture de test."""
+    import io  # noqa: PLC0415
+
+    from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+
+    from ojarvis.tools.desktop import LookAtScreen  # noqa: PLC0415
+
+    del home, port
+    image = Image.new("RGB", (1366, 768), (245, 246, 248))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
+    draw.rectangle((0, 0, 1366, 60), fill=(40, 44, 52))
+    draw.text((20, 14), "Tableur — budget-octobre.ods", fill=(255, 255, 255), font=font)
+    for i, (label, value) in enumerate(
+        [("Loyer", "650 €"), ("Courses", "320 €"), ("Transport", "75 €"), ("Total", "1 045 €")]
+    ):
+        draw.text((100, 200 + 70 * i), label, fill=(20, 20, 20), font=font)
+        draw.text((700, 200 + 70 * i), value, fill=(20, 20, 20), font=font)
+    raw = io.BytesIO()
+    image.save(raw, "PNG")
+
+    async def grab() -> bytes:
+        return raw.getvalue()
+
+    results = []
+    ok = True
+    for mode in ("en_ligne", "local"):
+        start = time.perf_counter()
+        tool = LookAtScreen(services.router, lambda m=mode: m, grab)  # type: ignore[misc]
+        context = cast(Any, None)
+        try:
+            args = tool.parse({"question": "Que vois-tu, et quel est le total ?"})
+            text = (await tool.run(args, context)).text
+        except Exception as exc:
+            text = f"échec : {exc}"
+        good = "1 045" in text or "1045" in text.replace(" ", "")
+        ok = ok and good
+        verdict = "juste" if good else "faux"
+        seconds = time.perf_counter() - start
+        results.append(f"{mode} ({seconds:.0f} s, {verdict}) : {text[:140]!r}")
+    return Outcome("regarder l'écran", ok, " | ".join(results), 0.0)
+
+
 SCENARIOS: dict[str, Any] = {
     "boutique": shop,
     "piege": trap,
@@ -275,6 +392,10 @@ SCENARIOS: dict[str, Any] = {
     "code": code,
     "automatisation": automation_daily,
     "rappel": automation_tomorrow,
+    "github": github,
+    "briefing": briefing,
+    "application": application,
+    "ecran": screen,
 }
 
 

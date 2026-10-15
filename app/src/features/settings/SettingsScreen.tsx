@@ -5,6 +5,8 @@ import { useSecrets, useStatus } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
 import { BrowserSection } from "./BrowserSection";
+import { DesktopSection } from "./DesktopSection";
+import { IntegrationsSection } from "./IntegrationsSection";
 import { ModelsSection } from "./ModelsSection";
 import { PermissionsSection } from "./PermissionsSection";
 import { Choice } from "./PreferenceControls";
@@ -104,11 +106,23 @@ export function SettingsScreen() {
         </h2>
         <VoiceSection />
       </section>
+      <section className={styles.section} aria-labelledby="integrations">
+        <h2 id="integrations" className={styles.sectionTitle}>
+          Intégrations et téléphone
+        </h2>
+        <IntegrationsSection />
+      </section>
       <section className={styles.section} aria-labelledby="navigateur">
         <h2 id="navigateur" className={styles.sectionTitle}>
           Navigateur et cookies
         </h2>
         <BrowserSection />
+      </section>
+      <section className={styles.section} aria-labelledby="controle-pc">
+        <h2 id="controle-pc" className={styles.sectionTitle}>
+          Contrôle du PC
+        </h2>
+        <DesktopSection />
       </section>
       <section className={styles.section} aria-labelledby="permissions">
         <h2 id="permissions" className={styles.sectionTitle}>

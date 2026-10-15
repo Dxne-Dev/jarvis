@@ -107,6 +107,35 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Suppression = corbeille** (`gio trash`) — récupérable ; sans `gio`, rien n'est supprimé.
 - **Les outils sont proposés aussi à la voix** — ~2 000 jetons de plus par requête ; latence vocale mesurée : médiane 1,93 s (1,9 s avant).
 
+## Jarvis s'organise (phase 4, 15/10/2026)
+
+- **Horaires calculés en heure locale (zoneinfo), rangés en UTC** — « 8 h » reste 8 h après chaque changement d'heure ; testé sur les nuits du 29 mars et du 25 octobre 2026 (heure inexistante → une heure plus tard ; heure doublée → une seule exécution). Pas de cron : chaque jour / certains jours / une fois / intervalle / chaque mois suffisent et se décrivent simplement.
+- **Moteur de workflows maison, en base** — chaque étape enregistrée avec le contexte produit ; reprise à l'étape coupée ; trois essais espacés sur erreur. Pas de file externe (brief : pas de microservices).
+- **Échéance manquée** (PC éteint) : rattrapée si le retard est de moins de 6 h, sinon notée « manquée » ; une automatisation ponctuelle se désactive après son passage.
+- **Une automatisation n'agit jamais seule** — consigne exécutée comme un tour de conversation (canal « automation ») : lecture libre, action → plan qui t'attend, notification.
+- **Pas de réaction en chaîne** — les exécutions de workflows portent un identifiant de corrélation `wf…` ; leurs événements ne déclenchent aucune automatisation ; une automatisation au plus une fois par minute. Événements déclencheurs limités à une liste lisible (démarrage, plan terminé ou proposé, mémoire, Telegram, voix).
+- **Créer une automatisation depuis le chat = niveau 2** — elle agira plus tard en ton nom ; la supprimer = niveau 3. Depuis l'écran Automatisations, c'est toi qui agis : journalisé directement.
+- **Client MCP officiel (SDK Python 2.x)** — un serveur par tâche asyncio ; niveau de chaque outil tiré des annotations MCP (lecture seule → 1, destructeur → 3, sinon 2, prudence par défaut).
+- **Deux outils génériques pour le modèle** (`integrations_outils`, `integration_appeler`) plutôt que 70 outils dans chaque requête — coût et latence de la voix ; les arguments sont validés par le schéma de l'outil (jsonschema).
+- **GitHub : `ghcr.io/github/github-mcp-server:v1.12.2` en conteneur** (système en lecture seule, sans privilèges, 256 Mo) ; outils `context, repos, issues, pull_requests, notifications`. Version d'il y a un mois plutôt que la 2.0 sortie la semaine passée.
+- **Notion : `@notionhq/notion-mcp-server@2.5.2` dans `node:24.21.0-alpine3.24`** — cache npm dans un volume monté sur `/home/node` (monté sur `.npm`, il appartenait à root). Notion annote ses écritures comme destructrices : elles demandent donc une double confirmation.
+- **Google Agenda : OAuth « Desktop app » maison (PKCE, état, redirection 127.0.0.1)** — jeton durable au trousseau. Serveur MCP officiel de Google (préversion, à activer dans le projet) s'il répond, sinon serveur MCP de Jarvis (`calendar_server.py`, trois outils annotés).
+- **Telegram en « long polling »** (pas de webhook : rien à exposer sur Internet) ; seul un vrai lancement de l'app écoute (un banc d'essai ne répond pas à ta place) ; conversation continue tant qu'on se parle (2 h) ; message vocal transcrit par Groq (fichier OGG envoyé tel quel).
+- **Briefing à la première session du jour = première ouverture de l'app** (annoncée par l'interface) ; date notée tout de suite (deux fenêtres → un seul briefing) ; c'est un workflow (rassembler, rédiger, dire) ; la voix sait dire un texte d'elle-même, interruptible.
+- **Interface : relecture complète à chaque reconnexion du flux d'événements** — une coupure faisait manquer des événements (un test a échoué une fois en CI).
+
+## Jarvis contrôle le PC (phase 5, 15/10/2026)
+
+- **Désactivé par défaut, une seule marque sur les outils** (`os_control`) — tant que le réglage est éteint, la porte refuse ces outils et le modèle ne les voit pas ; il sait dire où l'activer. L'activer demande une confirmation dans Réglages ; chaque changement est journalisé (niveau 3, par toi).
+- **Capture : portail `org.freedesktop.portal.Screenshot` sous Wayland (jeepney), `mss` sous X11** — GNOME 50 n'a plus de session X11 et Wayland interdit la lecture directe de l'écran. Mesuré : 1366 × 768 en 4,1 s, sans boîte de dialogue. Le fichier écrit par le portail est effacé dès sa lecture.
+- **Lecture de l'écran en local par défaut (`ministral-3:3b`, image de 768 px)** — un écran peut montrer un secret qu'aucun filtre ne sait masquer dans une image, et les offres gratuites en ligne peuvent garder ce qu'elles reçoivent. Mesuré sur une capture de test : juste (« 1 045 € ») ; 30 s modèle chargé, 94 s pour une nouvelle image de 768 px, plus de 2 min à froid. À 512 px, c'est plus rapide (34 s), mais un texte de 13 px sur l'écran tombe à 5 px.
+- **« En ligne » au choix (OpenRouter, 1 600 px), repli local** — rapide quand OpenRouter répond ; l'offre gratuite renvoie souvent 429 : l'écran est alors relu en local avec l'image de 768 px (en 1 600 px, le modèle local dépassait son délai).
+- **Ollama revérifié avant une demande « locale seulement »** (au plus une fois par minute) — juste après le démarrage, ou si Ollama démarre après le moteur, la lecture locale échouait (« aucun modèle disponible »).
+- **Ouvrir : `gtk-launch -- <identifiant>`** — l'entrée du menu telle quelle, comme GNOME, sous Wayland comme sous X11 ; jamais de shell, jamais `Exec` interprété par Jarvis ; `--` empêche un identifiant de passer pour une option.
+- **Noms traduits par gettext** — sous Ubuntu, 86 fichiers `.desktop` sur 126 n'ont pas de `Name[fr]` : le nom français vient du catalogue désigné par `X-Ubuntu-Gettext-Domain` (ou `X-GNOME-Gettext-Domain`). Le nom d'origine reste reconnu ; un nom de catalogue qui sortirait du dossier des traductions est ignoré.
+- **Fermer : SIGTERM, tes processus seulement, jamais un processus protégé** — session, shells, Python, Jarvis, lanceurs partagés (`flatpak`, `snap`, `env`). Une application lancée par un script (Chrome, LibreOffice, VS Code) est reconnue à son dossier, jamais un dossier partagé (`/usr/bin`, ton dossier personnel). Les entrées du menu qui partagent ce programme sont nommées à la validation.
+- **Fichiers : déplacer, copier, créer un dossier = niveau 2** — mêmes garde-fous que la phase 3 (dossier personnel, dossiers sensibles refusés, liens suivis avant la vérification).
+
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.

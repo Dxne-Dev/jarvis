@@ -134,6 +134,8 @@ def e2e_script(request: LLMRequest) -> FakeReply:
         return FakeReply(
             text="Courses à la boutique" if _SHOP.search(last) else "Conversation de test"
         )
+    if "briefing du matin" in system:
+        return FakeReply(text="Bonjour ! Briefing de test : rien d'urgent aujourd'hui.")
     if "Tu viens d'exécuter un plan" in system:
         price = _PRICE.search(last)
         return FakeReply(

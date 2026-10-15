@@ -533,6 +533,13 @@
 }
 
 /* Formulaires et remarques des blocs du navigateur : alignés sur le texte du bloc. */
+.toolTag {
+  margin-left: var(--space-2);
+  color: var(--color-accent);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
 .blockForm {
   display: flex;
   flex-wrap: wrap;
@@ -543,4 +550,18 @@
 .note {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+.integrationStatus {
+  margin-top: var(--space-1);
+  color: var(--color-text-faint);
+  font-size: var(--text-sm);
+}
+
+.integrationStatus[data-tone="ok"] {
+  color: var(--color-success);
+}
+
+.integrationStatus[data-tone="down"] {
+  color: var(--color-danger);
 }

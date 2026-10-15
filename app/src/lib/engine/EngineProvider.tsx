@@ -26,7 +26,15 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["plan.finished", "conversations"],
   ["audit.", "audit"],
   ["browser.", "browser"],
+  ["automation.", "automations"],
+  ["workflow.", "automations"],
+  ["integration.", "integrations"],
+  ["telegram.", "telegram"],
+  ["briefing.", "conversations"],
 ];
+
+/** Une seule annonce de session par lancement de l'app (le briefing du jour en dépend). */
+let sessionAnnounced = false;
 
 /** Événements qui méritent une notification quand la fenêtre est en arrière-plan. */
 function notifyFor(event: EngineEvent): void {
@@ -53,6 +61,10 @@ function notifyFor(event: EngineEvent): void {
       ok ? "Plan terminé" : "Plan interrompu",
       ok ? "Jarvis a fini ce que tu as validé." : "Une étape a échoué : rien de plus n'a été fait.",
     );
+  } else if (event.type === "notification") {
+    const title = typeof event.payload.title === "string" ? event.payload.title : "Jarvis";
+    const body = typeof event.payload.body === "string" ? event.payload.body : "";
+    void notifyDesktop(title, body);
   } else if (event.type === "audit.integrity_failed") {
     void notifyDesktop("Journal des actions altéré", "Une entrée a été modifiée hors de Jarvis.");
   }
@@ -110,6 +122,13 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         setStream(state);
         // Après une coupure, des événements ont pu être manqués : on relit tout.
         if (state === "open") void queryClient.invalidateQueries();
+        // Première connexion de ce lancement : à la première session du jour, le briefing.
+        if (state === "open" && !sessionAnnounced) {
+          sessionAnnounced = true;
+          void client.post("/v1/session", { force: false }).catch(() => {
+            sessionAnnounced = false;
+          });
+        }
       });
       stream.onEvent((event: EngineEvent) => {
         // Le niveau sonore arrive une douzaine de fois par seconde : il ne passe

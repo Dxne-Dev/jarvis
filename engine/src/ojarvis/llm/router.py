@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 
 from ojarvis.core.logs import get_logger
@@ -142,6 +142,7 @@ class Constraints:
     needs_vision: bool = False
     sensitive: bool = False
     offline: bool = False
+    online_only: bool = False  # l'appelant prévoit son propre repli local
 
 
 @dataclass
@@ -168,8 +169,10 @@ class ModelRouter:
         clock: Callable[[], float] = time.monotonic,
         first_event_timeout: Mapping[TaskType, float] = FIRST_EVENT_TIMEOUT_S,
         local_first_event_timeout: float = LOCAL_FIRST_EVENT_TIMEOUT_S,
+        refresh_local: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.providers = dict(providers)
+        self._refresh_local = refresh_local
         self._first_event_timeout = first_event_timeout
         self._local_first_event_timeout = local_first_event_timeout
         self.catalog = catalog
@@ -191,6 +194,8 @@ class ModelRouter:
             return False
         spec = self._spec(route)
         if (constraints.sensitive or constraints.offline) and not provider.local:
+            return False
+        if constraints.online_only and provider.local:
             return False
         if spec is None:
             return not (constraints.needs_tools or constraints.needs_vision)
@@ -307,6 +312,9 @@ class ModelRouter:
         )
         state = state or RoutedStream()
         request = without_secrets(request)
+        if self._refresh_local and (constraints.sensitive or constraints.offline):
+            # Seul le local convient : Ollama a pu démarrer après le moteur.
+            await self._refresh_local()
         routes = self.routes(task, constraints)
         if not routes:
             raise NoRouteAvailableError(f"aucune route pour {task}")

@@ -89,6 +89,42 @@ flowchart LR
 - **Le modèle n'agit jamais seul.** S'il appelle directement une action, elle devient un plan d'une étape. S'il a lu un contenu externe juste avant, le plan est signalé, et ouvrir une adresse qu'il a fabriquée demande aussi ta validation.
 - **Le navigateur de Jarvis** (`browser/`) : Chromium piloté par Playwright, avec deux contextes. L'anonyme lit sans aucun cookie. L'« identité » ne contient que les sessions des domaines autorisés (coffre chiffré) : y aller est une action de niveau 2. Tout le trafic passe par un proxy local qui n'atteint que des adresses publiques.
 
+## Jarvis s'organise
+
+```mermaid
+flowchart LR
+  H["Horloge<br/>(heure locale)"] --> S["Planificateur"]
+  B["Bus d'événements"] --> S
+  S --> W[("Workflows<br/>étapes enregistrées")]
+  W --> C["Consigne<br/>(outils de lecture)"]
+  C -- "action" --> P["Plan à valider"]
+  W --> N["Notification<br/>app, bureau, Telegram"]
+  T["Telegram"] --> CH["Chat"]
+  CH --> M["Intégrations MCP<br/>GitHub, Notion, Agenda"]
+```
+
+- **Workflows** (`workflows/`) : chaque étape enregistrée ; après un arrêt, reprise à l'étape coupée.
+- **Automatisations** (`automations/`) : horaire calculé en heure locale et rangé en UTC ; déclencheurs sur événement ; rattrapage sous 6 h.
+- **Intégrations** (`integrations/`) : client MCP officiel ; GitHub et Notion en conteneurs ; Google Agenda par OAuth.
+- **Telegram** (`telegram/`) : écoute par « long polling », seul ton identifiant est servi.
+- **Briefing** (`briefing/`) : à la première session du jour, un workflow rassemble, rédige, puis dit.
+
+## Jarvis contrôle le PC
+
+```mermaid
+flowchart LR
+  R["Réglages<br/>contrôle du PC"] -- "activé ?" --> P{"Porte des<br/>permissions"}
+  M["Modèle"] --> P
+  P -- "ouvrir / fermer<br/>(plan validé)" --> A["Applications<br/>gtk-launch, SIGTERM"]
+  P -- "regarder (lecture)" --> S["Capture<br/>portail Wayland ou X11"]
+  S --> V["Vision<br/>Ollama (défaut) ou OpenRouter"]
+  V -- "description encadrée<br/>&lt;donnees&gt;" --> M
+```
+
+- **Applications** (`desktop/apps.py`) : index du menu (fichiers `.desktop`, noms traduits), ouverture par `gtk-launch`, fermeture par SIGTERM de tes seuls processus.
+- **Écran** (`desktop/screen.py`) : portail `xdg-desktop-portal` sous Wayland, `mss` sous X11 ; image réduite en JPEG, jamais gardée.
+- **Outils** (`tools/desktop.py`) : marqués « contrôle du PC » ; la porte les refuse tant que le réglage est éteint.
+
 ## Qui protège quoi
 
 | Menace | Protection |
@@ -104,6 +140,14 @@ flowchart LR
 | Un outil lit tes clés SSH ou un `.env` | Dossiers et fichiers sensibles refusés, liens symboliques suivis |
 | Du code lancé par Jarvis | Bac à sable Docker sans réseau, en lecture seule, limité ; bubblewrap en repli |
 | Une action effacée après coup | Journal en ajout seul, déclencheurs SQLite, chaîne d'empreintes vérifiée au démarrage |
+| Une automatisation agit pendant ton absence | Outils de lecture seulement ; une action devient un plan qui t'attend |
+| Un inconnu écrit au bot Telegram | Ignoré et journalisé ; seul ton identifiant est servi |
+| Une destruction validée depuis le téléphone | Impossible : la double confirmation n'existe que dans l'app |
+| Un serveur MCP tiers | Conteneur sans privilèges, version épinglée, niveaux tirés de ses annotations |
+| Jarvis touche au PC sans ton accord | Contrôle du PC désactivé par défaut ; outils refusés par la porte ; changement journalisé |
+| Ton écran part en ligne | Lecture locale par défaut ; « en ligne » est un choix explicite |
+| Un texte à l'écran donne des ordres | Description encadrée comme donnée ; toute action passe par un plan signalé |
+| Fermer la session ou Jarvis par erreur | Processus protégés ; tes processus seulement ; programme partagé annoncé à la validation |
 
 ## Où sont les données
 
@@ -116,6 +160,8 @@ flowchart LR
 | Clés | trousseau GNOME, service `o-jarvis` |
 | Sessions du navigateur de Jarvis (domaines autorisés) | `~/.local/share/o-jarvis/navigateur/coffre.bin`, chiffré |
 | Journal des actions, plans | dans la base SQLite (tables `audit_log`, `plans`) |
+| Automatisations, exécutions de workflows | dans la base SQLite (tables `automations`, `workflow_runs`) |
+| Accès à Google Agenda (jeton durable) | trousseau GNOME |
 
 ## Les dossiers du dépôt
 
@@ -125,6 +171,8 @@ flowchart LR
 | `app/src-tauri` | Coque Rust : fenêtre, barre système, lancement du moteur |
 | `engine/src/ojarvis` | Moteur : API, secrets, bus, traces, base, modèles, mémoire, contexte, chat, voix |
 | `engine/src/ojarvis/{tools,permissions,agent,audit,browser,sandbox}` | Outils, porte des permissions, plans et exécuteur, journal, navigateur, bac à sable |
-| `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit ») |
+| `engine/src/ojarvis/{automations,workflows,integrations,telegram,briefing}` | Automatisations, workflows, intégrations MCP, Telegram, briefing |
+| `engine/src/ojarvis/desktop` | Applications et capture d'écran (contrôle du PC) |
+| `engine/tools` | Corpus vocal, bancs d'essai (voix, « Jarvis agit », contrôle du PC) |
 | `docs/journal` | Une page par évolution |
 | `scripts` | Installation de développement, lanceur |

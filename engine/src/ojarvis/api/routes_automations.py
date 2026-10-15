@@ -209,3 +209,20 @@ async def automation_runs(
     return [
         _run(r) for r in await services.workflows.runs(automation_id=automation_id, limit=limit)
     ]
+
+
+session_router = APIRouter(prefix="/v1")
+
+
+class SessionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Rejouer le briefing même s'il a déjà été fait aujourd'hui (bouton « Écouter »).
+    force: bool = False
+
+
+@session_router.post("/session")
+async def session_started(body: SessionIn, services: ServicesDep) -> dict[str, Any]:
+    """L'app vient de s'ouvrir : à la première session du jour, le briefing se joue."""
+    run = await services.briefing.on_session_start(force=body.force)
+    return {"briefing": run.id if run else None}
