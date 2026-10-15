@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -86,8 +86,20 @@ class Tracer:
 
     @asynccontextmanager
     async def trace(
-        self, name: str, *, kind: str = "task", meta: dict[str, Any] | None = None
+        self,
+        name: str,
+        *,
+        kind: str = "task",
+        meta: dict[str, Any] | None = None,
+        reuse: bool = False,
     ) -> AsyncIterator[TraceHandle]:
+        """Ouvre une trace. Avec `reuse`, rejoint la trace en cours s'il y en a une
+        (un tour vocal englobe la transcription, la réponse du modèle et la voix)."""
+        current = _current_trace.get()
+        if reuse and current is not None:
+            current.meta.update(meta or {})
+            yield current
+            return
         correlation_id = current_correlation_id() or new_correlation_id()
         handle = TraceHandle(
             id=_new_id(),
@@ -202,6 +214,29 @@ class Tracer:
                 source="tracing",
                 persist=False,
             )
+
+    async def add_span(
+        self, name: str, *, kind: str, started_at: datetime, duration_ms: float, **attributes: Any
+    ) -> None:
+        """Enregistre une étape déjà mesurée (par exemple une transcription faite en avance)."""
+        trace = _current_trace.get()
+        if trace is None:
+            return
+        parent = _current_span.get()
+        record = SpanRecord(
+            id=_new_id(),
+            trace_id=trace.id,
+            parent_id=parent.id if parent else None,
+            name=name[:200],
+            kind=kind,
+            status="ok",
+            started_at=started_at,
+            ended_at=started_at + timedelta(milliseconds=duration_ms),
+            duration_ms=duration_ms,
+            attributes=REDACTOR.redact_obj(dict(attributes)),
+            error=None,
+        )
+        await self._db.run(lambda s: s.add(record))
 
 
 @dataclass(frozen=True)

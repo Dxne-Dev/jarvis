@@ -157,6 +157,7 @@ class ChatService:
                 f"Tour {'vocal' if channel == 'voice' else 'de conversation'}",
                 kind="voice" if channel == "voice" else "chat",
                 meta={"conversation_id": conversation.id, "channel": channel},
+                reuse=True,
             ) as trace:
                 turn.trace_id = trace.id
                 async with self._tracer.span("contexte", kind="context") as span:
