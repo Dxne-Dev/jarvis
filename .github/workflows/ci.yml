@@ -95,6 +95,18 @@ jobs:
         working-directory: app
       - run: pnpm e2e
         working-directory: app
+        env:
+          OJARVIS_E2E_HOME: ${{ runner.temp }}/ojarvis-e2e
+      # Données de test seulement (trousseau en mémoire, .env vide) : rien de secret.
+      - name: Traces et logs du moteur en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bout-en-bout
+          path: |
+            artefacts/e2e-results
+            ${{ runner.temp }}/ojarvis-e2e/state/logs
+          retention-days: 7
 
   coque:
     name: Coque Tauri (Rust)

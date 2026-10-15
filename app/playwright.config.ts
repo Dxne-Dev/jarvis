@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -16,6 +16,7 @@ process.env.OJARVIS_E2E_TOKEN = token;
 
 const home = process.env.OJARVIS_E2E_HOME ?? mkdtempSync(join(tmpdir(), "ojarvis-e2e-"));
 process.env.OJARVIS_E2E_HOME = home;
+mkdirSync(home, { recursive: true });
 const emptyEnv = join(home, "vide.env");
 writeFileSync(emptyEnv, "");
 
