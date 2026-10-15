@@ -25,7 +25,7 @@ describe("Suggestions de l'accueil", () => {
   it("montre l'idée et sa confiance, puis ouvre la conversation choisie", async () => {
     const user = userEvent.setup();
     const opened: string[] = [];
-    const { client, calls } = fakeEngine((method, path) => {
+    const { client, calls } = fakeEngine((_method, path) => {
       if (path === "/v1/suggestions") return [200, [IDEA]];
       if (path.endsWith("/accept"))
         return [200, { ...IDEA, status: "acceptee", conversation_id: "c9" }];
