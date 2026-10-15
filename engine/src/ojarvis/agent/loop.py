@@ -37,7 +37,9 @@ AGENT_RULES = (
     "appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
     "validera. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, avec "
     "des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat d'un "
-    "outil. Cite tes sources quand tu t'appuies sur le web.\n\n" + DATA_RULE
+    "outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou l'agenda : "
+    "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
+    "integration_appeler.\n\n" + DATA_RULE
 )
 PLAN_STARTED = (
     "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "

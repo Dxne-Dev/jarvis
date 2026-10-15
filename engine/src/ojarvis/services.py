@@ -36,6 +36,8 @@ from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
+from ojarvis.integrations.google import GoogleAccount, attach_agenda
+from ojarvis.integrations.manager import IntegrationManager
 from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.fake import FakeProvider, e2e_script
@@ -58,6 +60,7 @@ from ojarvis.telegram.bot import TelegramService
 from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
+from ojarvis.tools.integrations import integration_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
@@ -129,6 +132,7 @@ class _Actions:
     automations: AutomationStore
     workflows: WorkflowEngine
     scheduler: AutomationScheduler
+    integrations: IntegrationManager
     tools: ToolRegistry
     gate: PermissionGate
     plans: PlanStore
@@ -171,7 +175,11 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     automations = AutomationStore(db, local_timezone)
     workflows = WorkflowEngine(db, bus)
     scheduler = AutomationScheduler(store=automations, workflows=workflows, bus=bus)
-    tools = build_registry(browser.session, automation_tools(automations, scheduler))
+    integrations = IntegrationManager(secrets.get)
+    tools = build_registry(
+        browser.session,
+        [*automation_tools(automations, scheduler), *integration_tools(integrations)],
+    )
 
     def tool_context() -> ToolContext:
         return ToolContext(
@@ -203,11 +211,41 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         automations=automations,
         workflows=workflows,
         scheduler=scheduler,
+        integrations=integrations,
         tools=tools,
         gate=gate,
         plans=plans,
         executor=executor,
     )
+
+
+async def _assemble_remote(  # noqa: PLR0917 - un assemblage, pas une logique
+    acts: _Actions,
+    http: httpx.AsyncClient,
+    secrets: SecretStore,
+    backend: SecretBackend,
+    bus: EventBus,
+    chat: ChatService,
+) -> tuple[GoogleAccount, TelegramService]:
+    """Ce qui relie Jarvis à tes comptes : Google (agenda) et Telegram (téléphone)."""
+    google = GoogleAccount(http=http, secret=secrets.get, backend=backend, bus=bus)
+    await anyio.to_thread.run_sync(google.load_into_redactor)
+
+    async def google_connected() -> None:
+        await attach_agenda(google, acts.integrations, http)
+
+    google.on_connected = google_connected
+    telegram = TelegramService(
+        http=http,
+        secret=secrets.get,
+        chat=chat,
+        plans=acts.plans,
+        executor=acts.executor,
+        notifier=acts.notifier,
+        bus=bus,
+        transcriber=GroqTranscriber(lambda: secrets.get("GROQ_API_KEY"), http),
+    )
+    return google, telegram
 
 
 @dataclass
@@ -247,6 +285,8 @@ class Services:
     workflows: WorkflowEngine
     scheduler: AutomationScheduler
     telegram: TelegramService
+    integrations: IntegrationManager
+    google: GoogleAccount
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
     @classmethod
@@ -302,16 +342,7 @@ class Services:
             learn=preferences.learn_from_conversations,
             agent=Agent(gate=gate, plans=plans, bus=bus, executor=executor),
         )
-        telegram = TelegramService(
-            http=http,
-            secret=secrets.get,
-            chat=chat,
-            plans=plans,
-            executor=executor,
-            notifier=acts.notifier,
-            bus=bus,
-            transcriber=GroqTranscriber(lambda: secrets.get("GROQ_API_KEY"), http),
-        )
+        google, telegram = await _assemble_remote(acts, http, secrets, backend, bus, chat)
 
         # Audio réel seulement pour un vrai lancement : jamais dans les tests ni en CI.
         # Tests de bout en bout : audio simulé (pas de micro, de haut-parleur ni de modèle).
@@ -369,6 +400,8 @@ class Services:
             workflows=acts.workflows,
             scheduler=acts.scheduler,
             telegram=telegram,
+            integrations=acts.integrations,
+            google=google,
         )
         services._holder = holder
         await executor.recover()
@@ -381,6 +414,10 @@ class Services:
         # répondre à tes messages à la place de l'app).
         if discover or os.environ.get("OJARVIS_TELEGRAM") == "1":
             await services.telegram.start()
+            # Les serveurs MCP configurés démarrent en arrière-plan (Docker, réseau).
+            services.spawn(acts.integrations.start_configured())
+            if google.connected:
+                services.spawn(services._attach_agenda())
         # OJARVIS_SKIP_WARMUP=1 : aucun accès réseau ni téléchargement au démarrage (tests).
         if discover and os.environ.get("OJARVIS_SKIP_WARMUP") != "1":
             services.spawn(services._warm_up())
@@ -420,6 +457,12 @@ class Services:
             log.info("local_model_preload", model=LOCAL_MODEL)
             await ollama.warm_up(self.http, LOCAL_MODEL)
 
+    async def _attach_agenda(self) -> None:
+        try:
+            await attach_agenda(self.google, self.integrations, self.http)
+        except Exception:
+            log.warning("agenda_attach_failed")
+
     def spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
         """Tâche de fond suivie (annulée proprement à l'arrêt)."""
         task = asyncio.create_task(coroutine)
@@ -458,6 +501,8 @@ class Services:
         await self.voice.close()
         await self.chat.close()
         await self.telegram.close()
+        await self.integrations.close()
+        await self.google.close()
         await self.scheduler.close()
         await self.workflows.close()
         await self.executor.close()
