@@ -32,8 +32,8 @@ class BrowserOpen(Tool[OpenArgs]):
     name: ClassVar[str] = "navigateur_ouvrir"
     description: ClassVar[str] = (
         "Ouvre une page dans le navigateur de Jarvis et rend son texte et ses éléments "
-        "(boutons, liens, champs). Sur un domaine où l'utilisateur est connecté, ses cookies "
-        "sont utilisés : niveau 2."
+        "(boutons, liens, champs). Sur un domaine autorisé dans les réglages, la session "
+        "enregistrée est utilisée : niveau 2."
     )
     Args: ClassVar[type[ToolArgs]] = OpenArgs
     level: ClassVar[Level] = Level.LIRE
@@ -74,7 +74,8 @@ class BrowserRead(Tool[ReadArgs]):
         self._session = session
 
     def describe(self, args: ReadArgs) -> str:
-        return f"Lire la page ouverte ({args.quoi})"
+        what = {"texte": "le texte", "liens": "les liens", "tableaux": "les tableaux"}[args.quoi]
+        return f"Lire {what} de la page ouverte"
 
     async def run(self, args: ReadArgs, ctx: ToolContext) -> ToolOutput:
         del ctx

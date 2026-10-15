@@ -68,7 +68,7 @@ class PermissionGate:
                 actor="jarvis",
                 action=f"outil.{name}",
                 level=int(level),
-                summary=summary,
+                summary=f"Lancé : {summary}",
                 details={"plan": approval.plan_id, "etape": approval.step, "arguments": raw_args},
             )
         try:
