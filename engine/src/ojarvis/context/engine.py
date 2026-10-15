@@ -15,6 +15,7 @@ from datetime import datetime, tzinfo
 from ojarvis.conversations.store import ConversationStore, MessageRecord
 from ojarvis.core.clock import local_timezone, utc_now
 from ojarvis.llm.types import Message
+from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryHit, MemoryRecord, MemoryStore
 
 #: Budget total du contexte (hors réponse), en jetons, par canal.
@@ -145,9 +146,11 @@ class ContextEngine:
         embedder_id: str,
         clock: Callable[[], datetime] = utc_now,
         timezone: Callable[[], tzinfo] = local_timezone,
+        graph: GraphStore | None = None,
     ) -> None:
         self._memory = memory
         self._conversations = conversations
+        self._graph = graph
         self._floor = RELEVANCE_FLOOR.get(embedder_id, 0.5)
         self._clock = clock
         self._timezone = timezone
@@ -215,7 +218,12 @@ class ContextEngine:
             if hit.via == "sens" and hit.score < self._floor:
                 item.reason = "trop peu pertinent"
             found[hit.record.id] = item
-        return list(found.values())
+        items = list(found.values())
+        if self._graph is not None:
+            # Les personnes et projets cités dans la question, avec ce qui les relie.
+            for line in await self._graph.about(user_text):
+                items.append(ContextItem("graphe", None, line, 0.9, estimate_tokens(line) + 3))
+        return items
 
     async def _recall_section(self, user_text: str, conversation_id: str) -> list[ContextItem]:
         """Échanges d'autres conversations, retrouvés par le sens."""

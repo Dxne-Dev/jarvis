@@ -352,3 +352,37 @@ class AgentRunRecord(Base):
     trace_id: Mapped[str | None] = mapped_column(String(32))
     started_at: Mapped[datetime]
     ended_at: Mapped[datetime | None]
+
+
+class GraphEntity(Base):
+    """Un nœud de la mémoire graphe : une personne, un projet, un événement, un lieu…"""
+
+    __tablename__ = "graph_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: moi | personne | projet | evenement | lieu | organisation | sujet
+    kind: Mapped[str] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(120))
+    #: Nom normalisé (minuscules, sans accents) : une seule entité par nom.
+    name_key: Mapped[str] = mapped_column(String(120), unique=True)
+    description: Mapped[str | None] = mapped_column(String(300))
+    source: Mapped[str] = mapped_column(String(16))  # conversation | utilisateur
+    mentions: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    last_seen_at: Mapped[datetime]
+
+
+class GraphRelation(Base):
+    """Un lien entre deux entités (« travaille sur », « connaît », « participe à »…)."""
+
+    __tablename__ = "graph_relations"
+    __table_args__ = (UniqueConstraint("source_id", "target_id", "label"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("graph_entities.id", ondelete="CASCADE"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("graph_entities.id", ondelete="CASCADE"))
+    label: Mapped[str] = mapped_column(String(80))
+    mentions: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime]
+    last_seen_at: Mapped[datetime]

@@ -49,6 +49,7 @@ from ojarvis.llm.providers.fake import FakeProvider, e2e_script
 from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
 from ojarvis.llm.router import ModelRouter
 from ojarvis.memory.embeddings import E5Embedder, Embedder
+from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
 from ojarvis.notifications import Notifier
 from ojarvis.permissions.gate import PermissionGate
@@ -249,6 +250,19 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     )
 
 
+async def _assemble_memory(
+    db: Database, bus: EventBus, embedder: Embedder
+) -> tuple[MemoryStore, ConversationStore, GraphStore, ContextEngine]:
+    """Mémoire (faits, conversations, graphe) et moteur de contexte qui y puise."""
+    memory = MemoryStore(db, embedder, bus)
+    await memory.start()
+    conversations = ConversationStore(db, embedder)
+    await conversations.start()
+    graph = GraphStore(db, bus)
+    context = ContextEngine(memory, conversations, embedder_id=embedder.model_id, graph=graph)
+    return memory, conversations, graph, context
+
+
 def _build_router(
     providers: dict[str, Provider],
     catalog: Catalog,
@@ -392,6 +406,7 @@ class Services:
     skills: SkillService
     mcp: McpRegistryService
     orchestrator: Orchestrator
+    graph: GraphStore
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -428,11 +443,7 @@ class Services:
         embedder = embedder or E5Embedder(
             config.paths.cache_dir / "models" / "multilingual-e5-small"
         )
-        memory = MemoryStore(db, embedder, bus)
-        await memory.start()
-        conversations = ConversationStore(db, embedder)
-        await conversations.start()
-        context = ContextEngine(memory, conversations, embedder_id=embedder.model_id)
+        memory, conversations, graph, context = await _assemble_memory(db, bus, embedder)
 
         acts = await _assemble_actions(
             config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
@@ -447,6 +458,7 @@ class Services:
             bus=bus,
             learn=preferences.learn_from_conversations,
             agent=core,
+            graph=graph,
         )
         orchestrator = await _assemble_agents(
             acts, core, router=router, db=db, bus=bus, tracer=tracer
@@ -515,6 +527,7 @@ class Services:
             skills=acts.skills,
             mcp=mcp,
             orchestrator=orchestrator,
+            graph=graph,
         )
         services._holder = holder
         await acts.executor.recover()
