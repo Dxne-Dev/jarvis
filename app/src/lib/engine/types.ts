@@ -472,3 +472,67 @@ export interface SkillDetail extends Skill {
   code: string;
   tests: string;
 }
+
+export interface McpSetting {
+  name: string;
+  description: string;
+  required: boolean;
+  secret: boolean;
+  default: string | null;
+}
+
+export interface McpRegistryEntry {
+  name: string;
+  title: string;
+  description: string;
+  version: string;
+  repository: string | null;
+  website: string | null;
+  option: {
+    kind: "npm" | "pypi" | "oci" | "remote";
+    label: string;
+    where: string;
+    settings: McpSetting[];
+  } | null;
+  why_not: string | null;
+  installed_id: string | null;
+}
+
+export interface McpTool {
+  name: string;
+  level: PermissionLevel;
+  description?: string;
+}
+
+export interface McpProbe {
+  ok: boolean;
+  tools: McpTool[];
+  error: string | null;
+  runner: string;
+  seconds: number;
+}
+
+export interface McpServerInfo {
+  id: string;
+  registry_name: string;
+  title: string;
+  description: string;
+  version: string;
+  kind: string;
+  label: string;
+  where: string;
+  enabled: boolean;
+  status: string;
+  error: string | null;
+  tools: McpTool[];
+  variables: Record<string, string>;
+  secret_names: string[];
+  installed_at: string;
+}
+
+export interface McpInstallRequest {
+  name: string;
+  version: string;
+  variables: Record<string, string>;
+  secrets: Record<string, string>;
+}

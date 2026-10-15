@@ -17,6 +17,7 @@ import {
 import { useEngineOnline } from "../../lib/engine/store";
 import type { Skill, SkillStatus } from "../../lib/engine/types";
 import { formatMoment } from "../../lib/format";
+import { McpSection } from "./McpSection";
 import styles from "./Skills.module.css";
 
 const STATUS: Record<SkillStatus, string> = {
@@ -246,13 +247,24 @@ export function SkillsScreen() {
     <div className={styles.page}>
       <PageHeader
         title="Skills et plugins"
-        description="Les capacités que Jarvis s'est construites. Leur code tourne dans le bac à sable, sans Internet ni tes fichiers, et rien ne s'active sans ta double confirmation."
+        description="Ce qui étend Jarvis : les skills qu'il s'écrit (code testé dans le bac à sable) et les serveurs MCP du registre. Rien ne s'active sans ta double confirmation."
       />
       <section className={styles.section} aria-labelledby="skills-titre">
         <h2 id="skills-titre" className={styles.sectionTitle}>
           Skills
         </h2>
         <SkillsSection />
+      </section>
+      <section className={styles.section} aria-labelledby="mcp-titre">
+        <h2 id="mcp-titre" className={styles.sectionTitle}>
+          Serveurs MCP
+        </h2>
+        <p className={styles.meta}>
+          Des outils publiés par d&apos;autres, trouvés dans le registre officiel. Chacun est essayé
+          isolé avant d&apos;être installé, et chaque action qu&apos;il propose attend ta
+          validation.
+        </p>
+        <McpSection />
       </section>
     </div>
   );

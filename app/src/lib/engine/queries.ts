@@ -15,6 +15,10 @@ import type {
   ConversationDetail,
   EngineStatus,
   Integration,
+  McpInstallRequest,
+  McpProbe,
+  McpRegistryEntry,
+  McpServerInfo,
   MemoryItem,
   MemoryKind,
   ModelInfo,
@@ -619,4 +623,74 @@ export function useDeleteSkill() {
   return useSkillAction((client, id) =>
     client.delete<undefined>(`/v1/skills/${encodeURIComponent(id)}?double_confirm=true`),
   );
+}
+
+// ---------------------------------------------------------------- serveurs MCP du registre
+
+export function useMcpServers() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["mcp"],
+    queryFn: () => requireClient(client).get<McpServerInfo[]>("/v1/mcp/servers"),
+    enabled: client !== null,
+  });
+}
+
+export function useMcpSearch(query: string) {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["mcp", "registre", query],
+    queryFn: () =>
+      requireClient(client).get<McpRegistryEntry[]>(
+        `/v1/mcp/registry?q=${encodeURIComponent(query)}`,
+      ),
+    enabled: client !== null && query.length >= 2,
+    staleTime: 300_000,
+  });
+}
+
+export function useProbeMcp() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: (request: McpInstallRequest) =>
+      requireClient(client).post<McpProbe>("/v1/mcp/probe", request),
+  });
+}
+
+/** Installer : l'écran a déjà demandé la seconde confirmation (niveau 3). */
+export function useInstallMcp() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: McpInstallRequest) =>
+      requireClient(client).post<McpServerInfo>("/v1/mcp/servers", {
+        ...request,
+        double_confirm: true,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["mcp"] }),
+  });
+}
+
+export function useToggleMcp() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      requireClient(client).patch<McpServerInfo>(`/v1/mcp/servers/${encodeURIComponent(id)}`, {
+        enabled,
+      }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["mcp"] }),
+  });
+}
+
+export function useUninstallMcp() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).delete<undefined>(
+        `/v1/mcp/servers/${encodeURIComponent(id)}?double_confirm=true`,
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["mcp"] }),
+  });
 }

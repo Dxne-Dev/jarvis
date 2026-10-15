@@ -33,6 +33,7 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["briefing.", "conversations"],
   ["skill.", "skills"],
   ["skill.", "tools"],
+  ["mcp.", "mcp"],
 ];
 
 /** Une seule annonce de session par lancement de l'app (le briefing du jour en dépend). */
