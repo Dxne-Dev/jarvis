@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import functools
 import io
 import os
@@ -14,14 +15,17 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from jeepney import HeaderFields
 from PIL import Image
 
-from ojarvis.core.errors import InvalidInputError, NotFoundError
+from ojarvis.core.errors import InvalidInputError, NotFoundError, UnavailableError
 from ojarvis.desktop import apps as applications
+from ojarvis.desktop import screen
 from ojarvis.desktop.screen import capture, shrink
 from ojarvis.llm.errors import RateLimitedError
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
@@ -296,6 +300,77 @@ async def test_the_x11_path_captures_the_screen(xvfb: str, monkeypatch: pytest.M
     png = await capture()
     with Image.open(io.BytesIO(png)) as image:
         assert image.size == (800, 600)
+
+
+class FakeBus:
+    """Le bus de session vu par le portail : la question, puis la réponse par un signal."""
+
+    unique_name = ":1.42"
+
+    def __init__(self, code: int, uri: str) -> None:
+        self.code, self.uri = code, uri
+        self.sent: list[Any] = []
+
+    def __enter__(self) -> FakeBus:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def send_and_get_reply(self, message: Any, timeout: float | None = None) -> None:
+        del timeout
+        self.sent.append(message)
+
+    def filter(self, rule: Any) -> Any:
+        self.rule = rule
+        return contextlib.nullcontext("réponses")
+
+    def recv_until_filtered(self, responses: Any, timeout: float) -> Any:
+        del responses, timeout
+        return SimpleNamespace(body=(self.code, {"uri": ("s", self.uri)}))
+
+
+def test_the_portal_capture_is_read_then_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shot = tmp_path / "Capture d'écran.png"
+    shot.write_bytes(b"png")
+    bus = FakeBus(0, shot.as_uri())
+    monkeypatch.setattr("jeepney.io.blocking.open_dbus_connection", lambda **_: bus)
+    assert screen._capture_portal() == b"png"
+    assert not shot.exists()  # le portail l'a écrite sur le disque : Jarvis ne la garde pas
+    call = bus.sent[-1]
+    assert call.header.fields[HeaderFields.member] == "Screenshot"
+    _, options = call.body
+    assert options["interactive"] == ("b", False)
+    token = options["handle_token"][1]
+    # La réponse est attendue sur le chemin que le portail dérive de notre nom et du jeton.
+    path = f"/org/freedesktop/portal/desktop/request/1_42/{token}"
+    assert f"path='{path}'" in bus.rule.serialise()
+
+
+def test_a_refused_portal_capture_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    bus = FakeBus(1, "")
+    monkeypatch.setattr("jeepney.io.blocking.open_dbus_connection", lambda **_: bus)
+    with pytest.raises(UnavailableError, match="refusée par le portail"):
+        screen._capture_portal()
+
+
+async def test_capture_follows_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in ("XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY"):
+        monkeypatch.delenv(variable, raising=False)
+    assert screen.session_type() == "aucun"
+    with pytest.raises(UnavailableError, match="Aucun écran"):
+        await capture()
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    assert screen.session_type() == "wayland"
+
+    def broken() -> bytes:
+        raise RuntimeError("bus fermé")
+
+    monkeypatch.setattr(screen, "_capture_portal", broken)
+    with pytest.raises(UnavailableError, match=r"Capture d'écran impossible \(RuntimeError\)"):
+        await capture()
 
 
 def budget_capture() -> bytes:
