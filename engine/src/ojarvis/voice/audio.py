@@ -228,6 +228,8 @@ class MicrophoneSource:
         except Exception:
             info = sd.query_devices(self._device, "input")
             rate = int(info["default_samplerate"])
+            # Import lent la première fois : fait ici, pas dans le rappel audio.
+            from scipy.signal import resample_poly  # noqa: F401, PLC0415
         block = int(rate * FRAME_S)
 
         def callback(indata: Any, frames: int, _time: Any, status: Any) -> None:
@@ -252,12 +254,15 @@ class MicrophoneSource:
 
     async def frames(self) -> AsyncGenerator[Frame]:
         self._open(asyncio.get_running_loop())
+        # La première trame peut tarder (ouverture du périphérique) : délai plus large.
+        wait = self._silent_after_s * 3
         try:
             while True:
                 try:
-                    frame = await asyncio.wait_for(self._queue.get(), self._silent_after_s)
+                    frame = await asyncio.wait_for(self._queue.get(), wait)
                 except TimeoutError as exc:
                     raise MicrophoneSilentError("le micro ne transmet plus rien") from exc
+                wait = self._silent_after_s
                 if frame is None:
                     return
                 yield frame
