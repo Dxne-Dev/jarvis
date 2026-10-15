@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,6 +45,20 @@ PLAN_PENDING = (
 )
 
 
+_URL = re.compile(r"https?://[^\s<>\"'()\[\]{}«»]+")
+
+
+def urls_in(value: Any) -> set[str]:
+    """Adresses web citées dans un texte (ou dans les valeurs d'un résultat structuré)."""
+    if isinstance(value, str):
+        return {u.rstrip(".,;:!?").rstrip("/") for u in _URL.findall(value)}
+    if isinstance(value, dict):
+        return set().union(*(urls_in(v) for v in value.values())) if value else set()
+    if isinstance(value, list | tuple):
+        return set().union(*(urls_in(v) for v in value)) if value else set()
+    return set()
+
+
 @dataclass
 class AgentTurn:
     """Ce qui s'est passé pendant un tour : outils utilisés, plans proposés."""
@@ -52,6 +67,11 @@ class AgentTurn:
     tainted: bool = False
     tools: list[dict[str, Any]] = field(default_factory=list)
     plans: list[str] = field(default_factory=list)
+    #: Adresses connues pendant ce tour : celles de ta demande et celles lues (liens, résultats).
+    known_urls: set[str] = field(default_factory=set)
+
+    def knows(self, url: str) -> bool:
+        return url.strip().rstrip("/") in self.known_urls
 
 
 @dataclass(frozen=True)
@@ -128,6 +148,24 @@ class Agent:
                 ],
             )
             return await self._propose(call, plan_in, turn, conversation_id, request)
+        url = call.arguments.get("url")
+        if turn.tainted and isinstance(url, str) and not turn.knows(url):
+            # Après une lecture externe, une adresse fabriquée (absente de ta demande et de ce
+            # qui a été lu) pourrait servir à faire fuir des données : tu valides d'abord.
+            plan_in = PlanIn(
+                titre=f"Ouvrir {url}"[:120],
+                etapes=[
+                    StepIn(
+                        outil=call.name,
+                        arguments=call.arguments,
+                        pourquoi=(
+                            "Adresse absente de ta demande et des pages lues : elle peut "
+                            "venir d'un contenu piégé."
+                        ),
+                    )
+                ],
+            )
+            return await self._propose(call, plan_in, turn, conversation_id, request)
         return await self._read(call, tool.describe(args), int(level), turn)
 
     async def _read(
@@ -150,6 +188,7 @@ class Agent:
             "source": output.source,
         }
         turn.tools.append(event)
+        turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:
             turn.tainted = True
             return CallOutcome(as_data(output.text, origin=output.source), event)

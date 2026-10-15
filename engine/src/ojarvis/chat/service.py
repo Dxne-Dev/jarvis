@@ -16,7 +16,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ojarvis.agent.loop import AGENT_RULES, MAX_TOOL_ROUNDS, Agent, AgentTurn, plan_summary
+from ojarvis.agent.loop import (
+    AGENT_RULES,
+    MAX_TOOL_ROUNDS,
+    Agent,
+    AgentTurn,
+    plan_summary,
+    urls_in,
+)
 from ojarvis.context.engine import BuiltContext, ContextEngine
 from ojarvis.conversations.store import DEFAULT_TITLE, ConversationStore, MessageRecord
 from ojarvis.core.errors import InvalidInputError
@@ -253,6 +260,7 @@ class ChatService:
         """Réponse du modèle ; s'il appelle des outils, on les traite et il reprend."""
         agent = self._agent
         if agent is not None:
+            turn.agent.known_urls |= urls_in(user_text)
             request.tools = agent.specs()
             system = request.messages[0]
             request.messages[0] = Message("system", f"{system.content}\n\n{AGENT_RULES}")

