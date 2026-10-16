@@ -52,6 +52,9 @@ fn app_quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// Argument passé par l'entrée de démarrage automatique : on reste dans la barre système.
+const AUTOSTART_ARG: &str = "--au-demarrage";
+
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -89,6 +92,12 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        // Démarrage à l'ouverture de session (désactivable dans Réglages) : discret, dans la
+        // barre système, prêt pour « Hey Jarvis ».
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_log::Builder::default()
@@ -107,6 +116,10 @@ pub fn run() {
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
+            // La fenêtre est créée cachée : visible tout de suite, sauf au démarrage de session.
+            if !std::env::args().any(|arg| arg == AUTOSTART_ARG) {
+                show_main_window(app.handle());
+            }
             shortcut::spawn(app.handle().clone());
             let handle = app.handle().clone();
             let manager = Arc::clone(&manager);
