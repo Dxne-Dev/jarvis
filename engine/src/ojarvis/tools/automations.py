@@ -65,7 +65,9 @@ class CreateAutomation(Tool[CreateArgs]):
         when = (
             f" Prochain passage : {record.next_run_at.isoformat()}." if record.next_run_at else ""
         )
-        return ToolOutput(f"Automatisation créée : {record.summary()}.{when}", {"id": record.id})
+        return ToolOutput(
+            f"Automatisation créée [{record.id[:8]}] : {record.summary()}.{when}", {"id": record.id}
+        )
 
 
 class NoArgs(ToolArgs):
@@ -96,7 +98,12 @@ class ListAutomations(Tool[NoArgs]):
 
 class TargetArgs(ToolArgs):
     id: str = Field(
-        min_length=4, max_length=32, description="Identifiant (ou son début) de l'automatisation."
+        min_length=4,
+        max_length=32,
+        description=(
+            "Identifiant (ou son début) de l'automatisation, tel que le donne "
+            "lister_automatisations, entre crochets."
+        ),
     )
 
 
