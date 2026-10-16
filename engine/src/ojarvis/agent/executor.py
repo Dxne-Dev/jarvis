@@ -162,11 +162,16 @@ class PlanExecutor:
             sections.append(f"Étape {step.position} ({step.description}) :\n{body}")
         status: PlanStatus = "failed" if failed else "done"
         synthesis = await self._synthesize(plan, sections)
-        await self._plans.set_result(plan_id, status, synthesis)
+        # Le compte rendu entre dans la conversation avant que le plan soit dit fini : une
+        # question posée juste après le voit déjà.
         if plan.conversation_id:
-            await self._conversations.add_message(
-                plan.conversation_id, "assistant", synthesis, meta={"plan": plan_id}
-            )
+            try:
+                await self._conversations.add_message(
+                    plan.conversation_id, "assistant", synthesis, meta={"plan": plan_id}
+                )
+            except Exception:
+                log.exception("plan_synthesis_not_saved", plan=plan_id)
+        await self._plans.set_result(plan_id, status, synthesis)
         await self._bus.publish(
             "plan.finished",
             {"id": plan_id, "status": status, "conversation_id": plan.conversation_id},
