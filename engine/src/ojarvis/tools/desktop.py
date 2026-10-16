@@ -26,7 +26,7 @@ from ojarvis.llm.errors import LLMError
 from ojarvis.llm.router import Constraints, ModelRouter
 from ojarvis.llm.types import ImagePart, LLMRequest, LLMResult, Message
 from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
-from ojarvis.tools.guards import resolve_user_path
+from ojarvis.tools.guards import resolve_user_path, shown
 
 SCREEN_RULES = (
     "Tu regardes une capture de l'écran de l'utilisateur. Décris précisément ce qui est "
@@ -285,7 +285,10 @@ class MoveFile(Tool[MoveArgs]):
             raise InvalidInputError(f"{args.destination} existe déjà : rien n'a été écrasé.")
         await anyio.Path(target.parent).mkdir(parents=True, exist_ok=True)
         await anyio.to_thread.run_sync(shutil.move, str(source), str(target))
-        return ToolOutput(f"Déplacé : {source} → {target}", {"destination": str(target)})
+        return ToolOutput(
+            f"Déplacé : {shown(source, ctx.home)} → {shown(target, ctx.home)}",
+            {"destination": str(target)},
+        )
 
 
 class CopyFile(Tool[MoveArgs]):
@@ -312,7 +315,10 @@ class CopyFile(Tool[MoveArgs]):
             await anyio.to_thread.run_sync(lambda: shutil.copytree(source, target, symlinks=True))
         else:
             await anyio.to_thread.run_sync(shutil.copy2, source, target)
-        return ToolOutput(f"Copié : {source} → {target}", {"destination": str(target)})
+        return ToolOutput(
+            f"Copié : {shown(source, ctx.home)} → {shown(target, ctx.home)}",
+            {"destination": str(target)},
+        )
 
 
 class DirArgs(ToolArgs):
@@ -332,7 +338,7 @@ class MakeDir(Tool[DirArgs]):
     async def run(self, args: DirArgs, ctx: ToolContext) -> ToolOutput:
         path = resolve_user_path(args.chemin, ctx.home)
         await anyio.Path(path).mkdir(parents=True, exist_ok=True)
-        return ToolOutput(f"Dossier prêt : {path}")
+        return ToolOutput(f"Dossier prêt : {shown(path, ctx.home)}")
 
 
 def desktop_tools(router: ModelRouter, screen_mode: Callable[[], ScreenMode]) -> list[Tool[Any]]:

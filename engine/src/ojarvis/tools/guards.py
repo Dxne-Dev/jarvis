@@ -111,6 +111,17 @@ def resolve_user_path(raw: str, home: Path) -> Path:
     return resolved
 
 
+def shown(path: Path, home: Path) -> str:
+    """Le chemin tel que Jarvis le dit : « ~/notes/a.txt » plutôt que le chemin complet.
+
+    Plus lisible, et le nom d'utilisateur ne part pas vers le modèle."""
+    try:
+        relative = path.resolve(strict=False).relative_to(home.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+    return "~" if relative == "." else f"~/{relative}"
+
+
 # --------------------------------------------------------------------------- contenu externe
 
 DATA_RULE = (
