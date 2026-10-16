@@ -31,18 +31,28 @@ log = get_logger(__name__)
 MAX_TOOL_ROUNDS = 5
 
 AGENT_RULES = (
-    "Tu as des outils. Niveau 1 (lire : recherche web, pages, fichiers, navigateur, code "
+    "Tu as des outils. Dans leurs descriptions, « ton dossier personnel », « tes fichiers "
+    "» et « ~ » désignent ceux de l'utilisateur, sur cet ordinateur. Tu n'as aucun outil "
+    "pour lancer une commande dans un terminal, même avec le contrôle du PC activé : "
+    "dis-le simplement. Niveau 1 (lire : recherche web, pages, fichiers, navigateur, code "
     "isolé) : utilise-les directement quand ils aident, sans demander. Niveaux 2 et 3 "
-    "(agir : cliquer, remplir, écrire un fichier, utiliser une session ; détruire) : ne les "
-    "appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
-    "validera. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, avec "
-    "des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat d'un "
-    "outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou l'agenda : "
-    "regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
-    "integration_appeler. Si une capacité te manque et qu'elle se calcule (sans Internet ni "
-    "fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) : si ses tests "
-    "réussissent, son activation est proposée à l'utilisateur ; une fois actif, utilise ses "
-    "outils.\n\n" + DATA_RULE
+    "(agir : cliquer, remplir, écrire un fichier, utiliser une session ; détruire) : ne "
+    "les appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
+    "validera. Le plan est ta demande de confirmation : ne demande pas « tu confirmes ? » "
+    "avant de le proposer. S'il manque une information indispensable (quoi, où, quand), "
+    "demande-la ; si tu peux la lire toi-même (identifiant, contenu d'un fichier), lis-la "
+    "d'abord avec un outil de lecture. Sinon propose le plan tout de suite. Si une partie "
+    "de la demande t'est impossible (lancer une commande dans un terminal, par exemple), "
+    "propose quand même le plan pour le reste et dis clairement ce qu'il restera à faire. "
+    "Ne dis jamais qu'un plan attend une validation si tu n'as pas appelé "
+    "proposer_un_plan. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, "
+    "avec des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat "
+    "d'un outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou "
+    "l'agenda : regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
+    "integration_appeler. Si une capacité te manque et qu'elle se calcule (sans Internet "
+    "ni fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) : si "
+    "ses tests réussissent, son activation est proposée à l'utilisateur ; une fois actif, "
+    "utilise ses outils.\n\n" + DATA_RULE
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "
@@ -62,6 +72,27 @@ PLAN_PENDING = (
     "n'est exécuté avant sa décision. N'appelle pas d'autre outil : dis-lui en une ou deux "
     "phrases ce que fera le plan et qu'il attend sa validation."
 )
+
+
+#: Le modèle annonce un plan à valider (« le plan est prêt », « confirme à l'écran »…), ou
+#: écrit l'appel de l'outil dans son texte au lieu de le faire.
+PLAN_CLAIM = re.compile(
+    r"(?:valid|confirm)\w*\s*(?:-le)?\s+(?:le\s+plan|à\s+l['’]écran)|plan\s+est\s+prêt"
+    r"|attend\w*\s+ta\s+validation|passe\s+par\s+un\s+plan|voici\s+le\s+plan"
+    r"|je\s+(?:te\s+)?(?:prépare|propose)\s+(?:le|ce|un)\s+plan|<\s*/?\s*proposer_un_plan",
+    re.IGNORECASE,
+)
+PLAN_MISSING = (
+    "[Note du système] Tu viens d'annoncer un plan à valider, mais tu n'as pas appelé "
+    "proposer_un_plan : aucun plan n'existe et l'utilisateur ne verra rien à valider. Propose-le "
+    "maintenant (lis d'abord avec un outil de lecture ce qui te manque, un identifiant par "
+    "exemple), ou dis en une phrase que tu ne peux pas."
+)
+
+
+def claims_missing_plan(text: str, proposed: list[str]) -> bool:
+    """Un plan annoncé dans la réponse alors qu'aucun n'a été proposé pendant le tour."""
+    return not proposed and PLAN_CLAIM.search(text) is not None
 
 
 _URL = re.compile(r"https?://[^\s<>\"'()\[\]{}«»]+")

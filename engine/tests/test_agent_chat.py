@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from ojarvis.agent.loop import PLAN_MISSING
 from ojarvis.agent.plans import PLAN_TOOL
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply, Script
 from ojarvis.llm.structured import TOOL_NAME
@@ -121,6 +122,85 @@ def test_an_action_called_directly_becomes_a_plan_that_waits(
     actions = [item["action"] for item in reversed(audit["items"])]
     assert actions == ["plan.approuve", "outil.agir", "outil.agir.fait"]
     assert client.post("/v1/audit/verify").json()["ok"] is True
+
+
+def announcing(final_round: list[ToolCall] | None, text: str) -> Script:
+    """Le modèle annonce un plan sans l'avoir proposé ; relancé, il le propose (ou pas)."""
+
+    def script(request: LLMRequest) -> FakeReply:
+        base = scripted([])(request)
+        if base.text in ("Conversation outillée", "Synthèse : le plan s'est déroulé.") or (
+            base.tool_calls and base.tool_calls[0].name == TOOL_NAME
+        ):
+            return base
+        reminded = any(m.role == "user" and m.content == PLAN_MISSING for m in request.messages)
+        acted = any(m.role == "assistant" and m.tool_calls for m in request.messages)
+        if reminded and final_round and not acted:
+            return FakeReply(tool_calls=final_round)
+        if reminded:
+            return FakeReply(text="C'est proposé.")
+        return FakeReply(text=text)
+
+    return script
+
+
+def test_a_plan_announced_but_not_proposed_is_proposed_after_one_reminder(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    _, act, _ = tools
+    llm["deepseek"]._script = announcing(
+        [ToolCall("c1", "agir", {"cible": "rappel"})], "Le plan est prêt : valide-le à l'écran."
+    )
+    events = chat(client, "Supprime ce rappel.")
+    plans = [d for e, d in events if e == "plan"]
+    assert len(plans) == 1
+    assert plans[0]["status"] == "proposed"
+    assert act.calls == []
+    reminders = [
+        m
+        for request, _ in llm["deepseek"].requests
+        for m in request.messages
+        if m.content == PLAN_MISSING
+    ]
+    assert len(reminders) >= 1
+    conversation_id = events[0][1]["conversation_id"]
+    stored = client.get(f"/v1/conversations/{conversation_id}").json()["messages"]
+    assert all(PLAN_MISSING not in m["content"] for m in stored)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Je te propose la suppression. Confirme à l'écran et je m'en occupe.",
+        "<proposer_un_plan> Titre : Supprimer le rappel </proposer_un_plan>",
+        "C'est une action de niveau 2 : elle passe par un plan.",
+    ],
+)
+def test_other_ways_of_announcing_a_missing_plan_are_caught(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy], said: str
+) -> None:
+    del tools
+    llm["deepseek"]._script = announcing([ToolCall("c1", "agir", {"cible": "rappel"})], said)
+    events = chat(client, "Supprime ce rappel.")
+    assert [d for e, d in events if e == "plan"]
+
+
+def test_the_reminder_is_sent_only_once_and_not_for_an_explanation(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    del tools
+    llm["deepseek"]._script = announcing(None, "Valide le plan à l'écran.")
+    events = chat(client, "Supprime ce rappel.")
+    assert not [d for e, d in events if e == "plan"]
+    calls = [r for r, _ in llm["deepseek"].requests if r.tools]
+    assert sum(1 for r in calls for m in r.messages if m.content == PLAN_MISSING) == 1
+
+    llm["deepseek"].requests.clear()
+    llm["deepseek"]._script = announcing(None, "Je te proposerai un plan que tu valideras.")
+    chat(client, "Comment marchent les plans ?")
+    assert not any(
+        m.content == PLAN_MISSING for r, _ in llm["deepseek"].requests for m in r.messages
+    )
 
 
 def test_refusing_is_as_simple_as_approving(
