@@ -11,6 +11,7 @@ import { ModelsSection } from "./ModelsSection";
 import { PermissionsSection } from "./PermissionsSection";
 import { Choice } from "./PreferenceControls";
 import { SecretRow } from "./SecretRow";
+import { StartupSection } from "./StartupSection";
 import { VoiceSection } from "./VoiceSection";
 import styles from "./SettingsScreen.module.css";
 
@@ -129,6 +130,12 @@ export function SettingsScreen() {
           Permissions
         </h2>
         <PermissionsSection />
+      </section>
+      <section className={styles.section} aria-labelledby="demarrage">
+        <h2 id="demarrage" className={styles.sectionTitle}>
+          Démarrage
+        </h2>
+        <StartupSection />
       </section>
       <section className={styles.section} aria-labelledby="apparence">
         <h2 id="apparence" className={styles.sectionTitle}>

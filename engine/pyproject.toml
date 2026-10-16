@@ -1,6 +1,6 @@
 [project]
 name = "ojarvis-engine"
-version = "0.1.0"
+version = "1.0.0"
 description = "Moteur d'O-jarvis : API locale, mémoire, voix et actions."
 authors = [{ name = "Octave BAHOUN-HOUTOUKPE", email = "octavebahoun@gmail.com" }]
 requires-python = ">=3.12,<3.13"
@@ -63,6 +63,9 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.17.0",
     "types-jsonschema>=4.23",
+]
+package = [
+    "pyinstaller>=6",
 ]
 
 [tool.ruff]

@@ -177,6 +177,18 @@ describe("Réglages", () => {
     });
   });
 
+  it("dit que le démarrage automatique se règle dans l'app installée", async () => {
+    const { client } = fakeEngine((_method, path) => {
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/status") return [200, STATUS];
+      return [200, []];
+    });
+    renderScreen(<SettingsScreen />, { client });
+    const section = await screen.findByRole("region", { name: "Démarrage" });
+    expect(within(section).getByText(/Réglable dans l'app installée/)).toBeInTheDocument();
+  });
+
   it("change la préférence d'animations", async () => {
     const user = userEvent.setup();
     const { client, calls } = fakeEngine((method, path, body) => {

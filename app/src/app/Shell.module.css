@@ -198,10 +198,11 @@
   }
 }
 
+/* En haut à droite : en bas, une bulle masquerait la zone de saisie de l'accueil. */
 .notices {
   position: fixed;
+  top: var(--space-6);
   right: var(--space-6);
-  bottom: var(--space-6);
   z-index: var(--z-toast);
   max-width: 24rem;
   pointer-events: none;
@@ -220,7 +221,7 @@
 @keyframes notice-in {
   from {
     opacity: 0;
-    transform: translateY(0.5rem);
+    transform: translateY(-0.5rem);
   }
 
   to {

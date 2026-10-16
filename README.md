@@ -14,7 +14,23 @@ Assistant personnel desktop pour Ubuntu. On lui parle à voix haute (« Hey Jarv
 - **Extension** : Jarvis s'écrit des skills (code testé dans le bac à sable, activé après ta double confirmation), installe des serveurs MCP du registre officiel (isolés), confie des tâches à ses agents (dev, recherche, coach), relie ta vie dans une mémoire graphe et te suggère d'automatiser ce que tu demandes souvent. Voir [`docs/creer-un-skill.md`](./docs/creer-un-skill.md).
 - **Données** : SQLite local ; les clés vivent dans le trousseau du système.
 
-Le projet est en construction, phase par phase. L'état du travail est dans [`PROGRESS.md`](./PROGRESS.md), les choix dans [`DECISIONS.md`](./DECISIONS.md), le journal dans [`docs/journal/`](./docs/journal/README.md), le schéma dans [`docs/architecture.md`](./docs/architecture.md).
+| Conversation et plan à valider | Agents | Mémoire graphe |
+|---|---|---|
+| ![Une conversation avec un plan à valider](docs/captures/plan.webp) | ![Les agents dev, recherche et coach](docs/captures/agents.webp) | ![La mémoire graphe](docs/captures/memoire-graphe.webp) |
+
+Le projet s'est construit phase par phase. L'état du travail est dans [`PROGRESS.md`](./PROGRESS.md), les choix dans [`DECISIONS.md`](./DECISIONS.md), le journal dans [`docs/journal/`](./docs/journal/README.md), le schéma dans [`docs/architecture.md`](./docs/architecture.md).
+
+## Installer
+
+Ubuntu 24.04 ou plus récent (glibc 2.39 ; vérifié sur Ubuntu 26.04). Récupère les paquets de la [dernière version](https://github.com/octavebahoun/O-jarvis/releases/latest) ou construis-les (`scripts/build-release.sh`, ~15 min ; ils arrivent dans `app/src-tauri/target/release/bundle/`), puis :
+
+```bash
+sudo apt install ./O-jarvis_1.0.0_amd64.deb      # paquet Debian/Ubuntu
+# ou, sans installation :
+chmod +x O-jarvis_1.0.0_amd64.AppImage && ./O-jarvis_1.0.0_amd64.AppImage
+```
+
+Au premier lancement : renseigne tes clés dans Réglages (ou dépose un `.env` dans `~/.config/o-jarvis/` : l'app importe ses clés dans le trousseau), puis attends la voix (modèles téléchargés une fois, ~350 Mo). Réglages → Démarrage : lancer O-jarvis à l'ouverture de session.
 
 ## Installer pour le développement
 

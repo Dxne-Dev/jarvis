@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from keyring.backends import null
 
+from ojarvis import __version__
 from ojarvis.app import create_app
 from ojarvis.config import EngineConfig
 from ojarvis.security.redaction import REDACTOR
@@ -63,7 +64,7 @@ def test_correlation_id_round_trip(client: TestClient) -> None:
 
 def test_status(client: TestClient) -> None:
     body = client.get("/v1/status").json()
-    assert body["version"] == "0.1.0"
+    assert body["version"] == __version__
     assert body["keyring"] == "memoire"
     assert body["keyring_error"] is None
     assert body["secrets_total"] == 13

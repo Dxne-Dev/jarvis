@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import {
   isPermissionGranted,
   requestPermission,
@@ -57,4 +58,20 @@ export async function notifyDesktop(title: string, body: string): Promise<void> 
   } catch (error) {
     uiLog("warn", `notification impossible : ${String(error)}`);
   }
+}
+
+/** Démarrage à l'ouverture de session : seulement dans l'app installée (sinon `null`). */
+export async function autostartEnabled(): Promise<boolean | null> {
+  if (runtime !== "tauri") return null;
+  try {
+    return await isEnabled();
+  } catch (error) {
+    uiLog("warn", `démarrage automatique illisible : ${String(error)}`);
+    return null;
+  }
+}
+
+export async function setAutostart(on: boolean): Promise<void> {
+  if (runtime !== "tauri") return;
+  await (on ? enable() : disable());
 }

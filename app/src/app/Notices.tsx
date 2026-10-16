@@ -18,13 +18,18 @@ export function Notices() {
     if (seen.current === key) return;
     seen.current = key;
     setNotice({ key, text: noticeFor(latest) ?? "" });
+  }, [events]);
+
+  // Le minuteur suit la bulle, pas le flux : un autre événement ne doit pas le relancer.
+  useEffect(() => {
+    if (!notice) return;
     const timer = setTimeout(() => {
       setNotice(null);
     }, VISIBLE_MS);
     return () => {
       clearTimeout(timer);
     };
-  }, [events]);
+  }, [notice]);
 
   return (
     <div className={styles.notices} role="status" aria-live="polite">

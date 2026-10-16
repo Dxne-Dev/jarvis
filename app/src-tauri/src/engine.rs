@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{ChildStdin, Command};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, oneshot, watch};
 
 const READY_PREFIX: &str = "OJARVIS_READY ";
@@ -53,6 +53,33 @@ impl EngineInfo {
             perf_probe,
         }
     }
+
+    fn ready(port: u16, token: String, perf_probe: bool) -> Self {
+        Self {
+            status: EngineStatus::Ready,
+            base_url: Some(format!("http://127.0.0.1:{port}")),
+            token: Some(token),
+            error: None,
+            perf_probe,
+        }
+    }
+}
+
+type StdoutLines = Lines<BufReader<ChildStdout>>;
+
+/// Lit la sortie du moteur jusqu'à sa poignée de main ; `None` s'il s'arrête avant.
+async fn wait_ready(lines: &mut StdoutLines) -> Option<u16> {
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(port) = parse_ready(&line) {
+            return Some(port);
+        }
+    }
+    None
+}
+
+/// Vide la sortie du moteur : un tuyau plein le bloquerait.
+async fn drain(mut lines: StdoutLines) {
+    while let Ok(Some(_)) = lines.next_line().await {}
 }
 
 #[derive(Deserialize)]
@@ -187,16 +214,7 @@ impl EngineManager {
             Ok(port_token) => {
                 let (port, token) = port_token;
                 log::info!("moteur prêt sur 127.0.0.1:{port}");
-                self.publish(
-                    &app,
-                    EngineInfo {
-                        status: EngineStatus::Ready,
-                        base_url: Some(format!("http://127.0.0.1:{port}")),
-                        token: Some(token),
-                        error: None,
-                        perf_probe: self.perf_probe,
-                    },
-                );
+                self.publish(&app, EngineInfo::ready(port, token, self.perf_probe));
             }
             Err(error) => {
                 log::error!("le moteur n'a pas démarré : {error}");
@@ -282,22 +300,36 @@ impl EngineManager {
         });
 
         let mut lines = BufReader::new(stdout).lines();
-        let port = tokio::time::timeout(READY_TIMEOUT, async {
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(port) = parse_ready(&line) {
-                    return Some(port);
-                }
+        match tokio::time::timeout(READY_TIMEOUT, wait_ready(&mut lines)).await {
+            Ok(Some(port)) => {
+                tokio::spawn(drain(lines));
+                Ok((port, token))
             }
-            None
-        })
-        .await
-        .map_err(|_| "le moteur n'a pas répondu à temps".to_string())?
-        .ok_or_else(|| {
-            "le moteur s'est arrêté pendant son démarrage (voir les logs)".to_string()
-        })?;
-
-        tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
-        Ok((port, token))
+            Ok(None) => {
+                Err("le moteur s'est arrêté pendant son démarrage (voir les logs)".to_string())
+            }
+            Err(_) => {
+                // Démarrage lent (trousseau à déverrouiller, machine chargée) : l'app le
+                // signale, mais garde l'oreille tendue et se connecte dès que le moteur est prêt.
+                let manager = Arc::clone(self);
+                let app = app.clone();
+                tokio::spawn(async move {
+                    let Some(port) = wait_ready(&mut lines).await else {
+                        return;
+                    };
+                    if manager.generation.load(Ordering::SeqCst) == generation {
+                        log::info!("moteur prêt (en retard) sur 127.0.0.1:{port}");
+                        manager.publish(&app, EngineInfo::ready(port, token, manager.perf_probe));
+                    }
+                    drain(lines).await;
+                });
+                Err(
+                    "il tarde à répondre (trousseau à déverrouiller ?) ; l'app s'y connectera dès \
+                     qu'il sera prêt"
+                        .to_string(),
+                )
+            }
+        }
     }
 
     async fn on_exit(self: Arc<Self>, app: AppHandle, generation: u64, code: Option<i32>) {
@@ -417,5 +449,37 @@ mod tests {
     fn missing_engine_is_a_clear_error() {
         let error = resolve_command(None, Some("/chemin/inexistant"), false).unwrap_err();
         assert!(error.contains("moteur introuvable"));
+    }
+
+    #[tokio::test]
+    async fn late_handshake_is_still_read_after_a_timeout() {
+        let mut child = Command::new("sh")
+            .args([
+                "-c",
+                "echo démarrage; sleep 0.3; echo 'OJARVIS_READY {\"port\": 4321}'; echo suite",
+            ])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        // Le délai expire d'abord…
+        let early = tokio::time::timeout(Duration::from_millis(50), wait_ready(&mut lines)).await;
+        assert!(early.is_err());
+        // …puis la poignée de main arrive : rien n'a été perdu entre-temps.
+        assert_eq!(wait_ready(&mut lines).await, Some(4321));
+        drain(lines).await;
+        child.wait().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn engine_exiting_before_handshake_is_reported() {
+        let mut child = Command::new("sh")
+            .args(["-c", "echo erreur"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        assert_eq!(wait_ready(&mut lines).await, None);
+        child.wait().await.unwrap();
     }
 }

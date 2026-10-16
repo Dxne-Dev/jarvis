@@ -1,6 +1,6 @@
 [package]
 name = "o-jarvis"
-version = "0.1.0"
+version = "1.0.0"
 description = "O-jarvis, assistant personnel desktop"
 authors = ["Octave BAHOUN-HOUTOUKPE <octavebahoun@gmail.com>"]
 edition = "2024"
@@ -28,8 +28,12 @@ log = "0.4"
 tokio = { version = "1", features = ["process", "io-util", "time", "sync", "macros"] }
 getrandom = "0.3"
 libc = "0.2"
+tauri-plugin-autostart = "2"
 
 [profile.release]
 codegen-units = 1
 lto = true
 strip = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
