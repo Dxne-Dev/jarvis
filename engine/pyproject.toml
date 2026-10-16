@@ -64,6 +64,9 @@ dev = [
     "ruff>=0.17.0",
     "types-jsonschema>=4.23",
 ]
+package = [
+    "pyinstaller>=6",
+]
 
 [tool.ruff]
 line-length = 100
