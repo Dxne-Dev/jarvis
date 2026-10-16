@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. Les commits des phases 6 et 7 sont dans la PR #5 (`dev → main`). Prochaine : la suite de tests par niveaux de complexité.
+**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. La phase 6 est fusionnée (PR #5) ; la phase 7 est dans la PR #6 (`dev → main`). Prochaine : la suite de tests par niveaux de complexité.
 
 ## Fait
 
