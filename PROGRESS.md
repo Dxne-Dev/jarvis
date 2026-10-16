@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. La phase 6 est fusionnée (PR #5) ; la phase 7 est dans la PR #6 (`dev → main`). Depuis : la suite de scénarios par niveaux (41 réussis sur 42 joués) et les corrections de Jarvis qu'elle a provoquées. Prochaine : le mode shell.
+**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. Phases 6 et 7 fusionnées (PR #5 et #6). La suite de scénarios et ses corrections sont dans leur propre PR (`dev → main`). Depuis : la suite de scénarios par niveaux (41 réussis sur 42 joués) et les corrections de Jarvis qu'elle a provoquées. Prochaine : le mode shell.
 
 ## Fait
 
