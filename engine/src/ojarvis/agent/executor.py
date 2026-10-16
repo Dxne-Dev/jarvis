@@ -27,8 +27,11 @@ from ojarvis.tools.guards import DATA_RULE, as_data
 log = get_logger(__name__)
 
 SYNTHESIS_RULES = (
-    "Tu viens d'exécuter un plan validé par l'utilisateur. Résume en français, en quelques "
-    "phrases, ce qui a été fait et ce qui a été trouvé ; dis clairement si une étape a échoué."
+    "Tu viens d'exécuter un plan validé par l'utilisateur : les résultats ci-dessous sont ceux "
+    "de tes propres outils, et ils sont réels. Résume en français, en deux à quatre phrases, ce "
+    "qui a été fait et ce qui a été trouvé ; dis clairement si une étape a échoué. Une étape "
+    "« faite » a vraiment eu lieu : ne la mets jamais en doute. Ne salue pas et ne pose pas de "
+    "question, sauf pour proposer la suite quand une étape a échoué."
 )
 
 
@@ -153,13 +156,13 @@ class PlanExecutor:
                 message = exc.message if isinstance(exc, EngineError) else type(exc).__name__
                 await self._plans.set_step(plan_id, step.position, status="failed", error=message)
                 await self._publish(plan_id, step=step.position, step_status="failed")
-                sections.append(f"Étape {step.position} ({step.description}) : échec — {message}")
+                sections.append(f"Étape {step.position}, échec ({step.description}) : {message}")
                 continue
             results[step.position] = output.text
             await self._plans.set_step(plan_id, step.position, status="done", result=output.text)
             await self._publish(plan_id, step=step.position, step_status="done")
             body = as_data(output.text, origin=output.source) if output.external else output.text
-            sections.append(f"Étape {step.position} ({step.description}) :\n{body}")
+            sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
         status: PlanStatus = "failed" if failed else "done"
         synthesis = await self._synthesize(plan, sections)
         # Le compte rendu entre dans la conversation avant que le plan soit dit fini : une
@@ -183,8 +186,9 @@ class PlanExecutor:
                 Message("system", f"{PERSONA}\n\n{DATA_RULE}\n\n{SYNTHESIS_RULES}"),
                 Message(
                     "user",
-                    f"Ma demande : {plan.request}\n\nPlan : {plan.title}\n\n"
-                    + "\n\n".join(sections),
+                    "Compte rendu à écrire pour l'utilisateur.\n"
+                    f"Sa demande : {plan.request}\nPlan exécuté : {plan.title}\n\n"
+                    "Résultats de tes outils :\n\n" + "\n\n".join(sections),
                 ),
             ],
             max_tokens=700,

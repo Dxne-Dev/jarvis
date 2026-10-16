@@ -5,7 +5,7 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 ## Non publié
 
 ### Ajouté
-- Suite de 43 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
+- Suite de 44 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
 
 ### Corrigé
 - Jarvis ne demande plus « tu confirmes ? » avant de proposer un plan : le plan est la confirmation.
@@ -14,6 +14,10 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 - Le compte rendu d'un plan est dans la conversation dès que le plan est fini.
 - L'identifiant d'une automatisation est donné dès sa création.
 - Lister un dossier qui n'existe pas encore n'arrête plus un plan.
+- Le compte rendu d'un plan ne met plus en doute ce que Jarvis vient de faire, et il ne s'affiche plus deux fois.
+- À chaque tour, Jarvis lit l'état réel des plans de la conversation : il ne nie plus une action faite.
+- Lancé depuis le dépôt, le moteur lit le `.env` du dépôt : une clé ajoutée après coup (Groq) arrive au trousseau.
+- Sur Telegram, un vocal sans clé Groq dit où l'ajouter ; un refus de capture d'écran dit qu'il vient de GNOME.
 
 ## 1.0.0 — 16 octobre 2026
 

@@ -93,6 +93,8 @@ pub struct EngineCommand {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
+    /// Variables d'environnement données en plus au moteur.
+    pub env: Vec<(String, String)>,
 }
 
 /// Ordre de recherche : moteur empaqueté, dossier imposé, puis sources du dépôt.
@@ -112,6 +114,7 @@ pub fn resolve_command(
                 program: bundled,
                 args,
                 cwd: None,
+                env: Vec::new(),
             });
         }
     }
@@ -123,10 +126,18 @@ pub fn resolve_command(
     if python.is_file() {
         let mut full = vec!["-m".to_string(), "ojarvis".to_string()];
         full.extend(args);
+        // Depuis les sources (développement, lanceur « un clic ») : le `.env` du dépôt, que le
+        // moteur ne lirait sinon qu'en mode développement. Une variable déjà posée gagne.
+        let mut env = Vec::new();
+        let dotenv = source_dir.join("..").join(".env");
+        if std::env::var_os("OJARVIS_DOTENV").is_none() && dotenv.is_file() {
+            env.push(("OJARVIS_DOTENV".to_string(), dotenv.display().to_string()));
+        }
         return Ok(EngineCommand {
             program: python,
             args: full,
             cwd: Some(source_dir),
+            env,
         });
     }
     Err(format!(
@@ -246,6 +257,9 @@ impl EngineManager {
             .stderr(Stdio::piped())
             .env_remove("OJARVIS_TOKEN")
             .kill_on_drop(true);
+        for (key, value) in &command.env {
+            cmd.env(key, value);
+        }
         if let Some(cwd) = &command.cwd {
             cmd.current_dir(cwd);
         }
@@ -443,6 +457,25 @@ mod tests {
         assert_eq!(cmd.args, vec!["-m", "ojarvis", "--dev"]);
         assert_eq!(cmd.cwd.as_deref(), Some(dir.as_path()));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn engine_from_sources_reads_the_repository_dotenv() {
+        let root = std::env::temp_dir().join(format!("ojarvis-depot-{}", std::process::id()));
+        let engine = root.join("engine");
+        let bin = engine.join(".venv").join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("python"), b"").unwrap();
+        let without = resolve_command(None, engine.to_str(), false).unwrap();
+        assert!(without.env.is_empty());
+        std::fs::write(root.join(".env"), b"GROQ_API_KEY=\n").unwrap();
+        let with = resolve_command(None, engine.to_str(), false).unwrap();
+        if std::env::var_os("OJARVIS_DOTENV").is_none() {
+            let (key, value) = &with.env[0];
+            assert_eq!(key, "OJARVIS_DOTENV");
+            assert!(std::path::Path::new(value).is_file());
+        }
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

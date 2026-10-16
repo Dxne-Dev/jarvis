@@ -551,6 +551,39 @@ async def follow_up(ctx: Ctx) -> Verdict:
     return Verdict(ok, f"suite : plans {statuses} ; contenu {content!r} ; {second.text[:120]!r}")
 
 
+DOUBT_WORDS = (
+    "simulation",
+    "pas la preuve",
+    "n'ai execute aucune",
+    "je n'ai pas execute",
+    "pas reellement",
+    "aucun fichier n'a ete cree",
+    "n'a pas ete cree",
+)
+
+
+@scenario("n3-assumer", 3, "Assumer ce qu'il a fait", "compte rendu sûr de lui, fichier confirmé")
+async def owns_its_actions(ctx: Ctx) -> Verdict:
+    """Vu chez Octave : après un plan réussi, Jarvis doutait de ses propres outils, puis niait
+    avoir créé le fichier."""
+    target = ctx.path("Téléchargements/rapport-audio.txt")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    await ctx.os_control(True)
+    first = await ctx.ask("Je viens d'activer le contrôle du PC.")
+    turn = await ctx.ask(
+        "Écris un rapport d'incident dans ~/Téléchargements/rapport-audio.txt : la clé Groq est "
+        "présente mais les messages vocaux ne sont pas transcrits.",
+        conversation=first.conversation,
+    )
+    statuses = await ctx.approve_all(turn)
+    summaries = [(await ctx.services.plans.get(p)).result or "" for p in turn.plans]
+    check = await ctx.ask("Le fichier est bien créé ?", conversation=first.conversation)
+    doubtful = [w for w in DOUBT_WORDS if any(w in fold(t) for t in [*summaries, check.text])]
+    ok = target.exists() and "done" in statuses and not doubtful and says(check, "oui", "cree")
+    detail = f"plans {statuses} ; doutes {doubtful} ; réponse {check.text[:120]!r}"
+    return Verdict(ok, detail)
+
+
 @scenario("n3-dependance", 3, "Lire, extraire, écrire", "la valeur de « port » recopiée")
 async def dependency(ctx: Ctx) -> Verdict:
     ctx.write("notes/config.json", json.dumps({"nom": "atelier", "port": 8421}))

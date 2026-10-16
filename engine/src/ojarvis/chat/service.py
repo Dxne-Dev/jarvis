@@ -286,7 +286,11 @@ class ChatService:
             turn.agent.known_urls |= urls_in(user_text)
             request.tools = agent.specs()
             system = request.messages[0]
-            request.messages[0] = Message("system", f"{system.content}\n\n{agent.rules()}")
+            # Ce qui a vraiment été exécuté, refusé ou attend encore : Jarvis le lit, sans
+            # se fier à sa mémoire de la conversation.
+            states = await agent.plan_states(conversation_id)
+            extra = f"\n\n{states}" if states else ""
+            request.messages[0] = Message("system", f"{system.content}\n\n{agent.rules()}{extra}")
         reminded = False
         for rounds in range(MAX_TOOL_ROUNDS + 1):
             step = _Round()

@@ -124,6 +124,17 @@ def test_a_voice_message_is_transcribed_then_answered(
     assert ("getFile", {"file_id": "abc"}) in telegram.calls
 
 
+def test_a_voice_message_without_groq_key_says_where_to_add_it(
+    client: TestClient, services: Services, telegram: FakeTelegram, llm: dict[str, FakeProvider]
+) -> None:
+    assert client.delete("/v1/secrets/GROQ_API_KEY").status_code == 204
+    handle(client, services, message(ME, voice={"file_id": "abc", "mime_type": "audio/ogg"}))
+    [answer] = [m["text"] for m in telegram.sent()]
+    assert "GROQ_API_KEY" in answer
+    assert "Réglages" in answer
+    assert llm["deepseek"].requests == []
+
+
 def test_a_level_two_plan_can_be_approved_from_the_phone(
     client: TestClient, services: Services, telegram: FakeTelegram, llm: dict[str, FakeProvider]
 ) -> None:

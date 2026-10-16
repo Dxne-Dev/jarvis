@@ -446,6 +446,11 @@ class GroqTranscriber:
     def available(self) -> bool:
         return bool(self._api_key()) and time.monotonic() >= self._blocked_until
 
+    @property
+    def missing_key(self) -> bool:
+        """Indisponible faute de clé (et non parce que Groq demande une pause)."""
+        return not self._api_key()
+
     async def transcribe_file(self, data: bytes, filename: str, mime: str) -> str:
         """Un fichier audio entier (ex. un message vocal Telegram en OGG/Opus)."""
         import httpx  # noqa: PLC0415

@@ -90,7 +90,12 @@ def _capture_portal() -> bytes:
             signal = connection.recv_until_filtered(responses, timeout=PORTAL_TIMEOUT_S)
     code, results = signal.body
     if code != 0:
-        raise UnavailableError("Capture refusée par le portail (accès à l'écran non autorisé).")
+        raise UnavailableError(
+            "Capture refusée par le bureau (GNOME), pas par Jarvis : la première fois, GNOME "
+            "demande ton accord sur l'écran du PC, et personne n'a répondu ou c'est refusé. "
+            "Depuis Telegram, il faut l'avoir accepté une fois devant le PC ; l'autorisation se "
+            "règle dans les Paramètres de GNOME, section Applications, O-jarvis."
+        )
     uri = results.get("uri", ("s", ""))[1]
     path = Path(unquote(urlsplit(uri).path))
     try:

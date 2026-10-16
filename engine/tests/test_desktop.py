@@ -352,8 +352,10 @@ def test_the_portal_capture_is_read_then_deleted(
 def test_a_refused_portal_capture_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
     bus = FakeBus(1, "")
     monkeypatch.setattr("jeepney.io.blocking.open_dbus_connection", lambda **_: bus)
-    with pytest.raises(UnavailableError, match="refusée par le portail"):
+    # Le refus vient de GNOME, pas d'un réglage de Jarvis : le message le dit, et où le changer.
+    with pytest.raises(UnavailableError, match="refusée par le bureau") as refused:
         screen._capture_portal()
+    assert "pas par Jarvis" in refused.value.message
 
 
 async def test_capture_follows_the_session(monkeypatch: pytest.MonkeyPatch) -> None:

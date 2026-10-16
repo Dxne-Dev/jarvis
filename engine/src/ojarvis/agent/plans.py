@@ -200,11 +200,19 @@ class PlanStore:
 
         return await self._db.run(read)
 
-    async def list(self, statuses: tuple[str, ...] = (), *, limit: int = 50) -> list[PlanRecord]:
+    async def list(
+        self,
+        statuses: tuple[str, ...] = (),
+        *,
+        limit: int = 50,
+        conversation_id: str | None = None,
+    ) -> list[PlanRecord]:
         def read(session: Session) -> list[PlanRecord]:
             query = select(Plan).order_by(Plan.created_at.desc()).limit(limit)
             if statuses:
                 query = query.where(Plan.status.in_(statuses))
+            if conversation_id is not None:
+                query = query.where(Plan.conversation_id == conversation_id)
             rows = list(session.scalars(query))
             ids = [r.id for r in rows]
             steps = list(session.scalars(select(PlanStep).where(PlanStep.plan_id.in_(ids))))

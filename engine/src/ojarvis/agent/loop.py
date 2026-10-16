@@ -74,6 +74,16 @@ PLAN_PENDING = (
 )
 
 
+#: L'état d'un plan, tel que Jarvis le lit à chaque tour (il ne le devine jamais).
+PLAN_STATES = {
+    "proposed": "attend la validation de l'utilisateur",
+    "approved": "validé, en cours",
+    "running": "en cours",
+    "done": "exécuté",
+    "failed": "échoué",
+    "refused": "refusé",
+}
+
 #: Le modèle annonce un plan à valider (« le plan est prêt », « confirme à l'écran »…), ou
 #: écrit l'appel de l'outil dans son texte au lieu de le faire.
 PLAN_CLAIM = re.compile(
@@ -159,6 +169,19 @@ class Agent:
         self._plans = plans
         self._bus = bus
         self._executor = executor
+
+    async def plan_states(self, conversation_id: str) -> str:
+        """L'état réel des plans de la conversation, du plus ancien au plus récent."""
+        plans = await self._plans.list(limit=8, conversation_id=conversation_id)
+        if not plans:
+            return ""
+        lines = [
+            f"- « {' '.join(p.title.split())[:80]} » : {PLAN_STATES.get(p.status, p.status)}"
+            for p in reversed(plans)
+        ]
+        return "État réel des plans de cette conversation (du plus ancien au plus récent) :\n" + (
+            "\n".join(lines)
+        )
 
     def rules(self) -> str:
         """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""

@@ -171,6 +171,9 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Le plan est la demande de confirmation** — Jarvis ne demande plus « tu confirmes ? » avant de le proposer ; ce qu'il peut lire lui-même (identifiant, contenu d'un fichier), il le lit d'abord ; une demande en partie impossible : il fait le reste et dit ce qui manque.
 - **Un plan annoncé sans être proposé est relancé une fois** (`PLAN_CLAIM`, sur toute la réponse du tour) — « valide-le à l'écran », « passe par un plan », ou l'appel de l'outil écrit en texte (`<proposer_un_plan>`, vu avec DeepSeek) : sinon tu cherches en vain quoi valider ; la relance n'est jamais enregistrée dans la conversation.
 - **Le compte rendu d'un plan entre dans la conversation avant que le plan soit dit fini** — une question posée juste après le voit déjà.
+- **Le compte rendu d'un plan présente les résultats comme ceux de ses propres outils** — rédigé à partir de « Ma demande : <ta dernière phrase> », il a cru te répondre et a douté d'un fichier bien créé (vu chez Octave le 16/10).
+- **L'état réel des plans de la conversation entre dans chaque tour** (`Agent.plan_states`) — Jarvis le lit au lieu de se fier à sa mémoire de l'échange.
+- **La coque donne le `.env` du dépôt au moteur lancé depuis les sources** (`OJARVIS_DOTENV`) — le lanceur « un clic » n'est pas en mode développement et ne lisait que `~/.config/o-jarvis/.env` ; le moteur empaqueté garde ce dernier. La règle n'est pas changée côté moteur : les tests liraient sinon le vrai `.env`.
 - **« Ton dossier personnel » dans les descriptions d'outils** reste tel quel (l'écran Réglages s'adresse à toi) ; c'est la règle de Jarvis qui précise qu'il s'agit du tien.
 
 ## Interface

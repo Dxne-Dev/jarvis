@@ -203,6 +203,27 @@ def test_the_reminder_is_sent_only_once_and_not_for_an_explanation(
     )
 
 
+def test_the_next_turn_knows_the_real_state_of_its_plans(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    """Vu chez Octave : après un plan réussi, Jarvis niait avoir agi. Il lit maintenant l'état."""
+    del tools
+    llm["deepseek"]._script = scripted([[ToolCall("c1", "agir", {"cible": "formulaire"})]])
+    events = chat(client, "Remplis le formulaire.")
+    plan = next(d for e, d in events if e == "plan")
+    assert client.post(f"/v1/plans/{plan['id']}/approve", json={}).status_code == 200
+    assert wait_plan(client, plan["id"])["status"] == "done"
+    conversation_id = events[0][1]["conversation_id"]
+    llm["deepseek"].requests.clear()
+    llm["deepseek"]._script = scripted([], final="Oui, c'est fait.")
+    response = client.post(
+        "/v1/chat", json={"text": "C'est fait ?", "conversation_id": conversation_id}
+    )
+    assert response.status_code == 200
+    systems = [r.messages[0].content for r, _ in llm["deepseek"].requests if r.tools]
+    assert any("État réel des plans" in s and ": exécuté" in s for s in systems)
+
+
 def test_refusing_is_as_simple_as_approving(
     client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
 ) -> None:

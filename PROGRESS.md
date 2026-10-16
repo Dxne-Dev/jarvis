@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. Phases 6 et 7 fusionnées (PR #5 et #6). La suite de scénarios et ses corrections sont dans leur propre PR (`dev → main`). Depuis : la suite de scénarios par niveaux (41 réussis sur 42 joués) et les corrections de Jarvis qu'elle a provoquées. Prochaine : le mode shell.
+**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. Phases 6 et 7 et la suite de scénarios fusionnées (PR #5, #6 et #30). Les corrections de tes premiers retours d'usage sont dans leur propre PR (`dev → main`). Depuis : la suite de scénarios par niveaux (43 réussis sur 43 joués à la dernière série) et les corrections de Jarvis qu'elle a provoquées. Prochaine : le mode shell.
 
 ## Fait
 
@@ -68,7 +68,7 @@
 - Docs : `CHANGELOG.md`, `RELEASE_NOTES.md`, `docs/ajouter-un-fournisseur.md`, `docs/journal/07-release.md`, README (installation, captures).
 
 ### Après la 1.0 — suite de scénarios (16/10/2026)
-- 43 scénarios en cinq niveaux, vrai modèle, résultat vérifié et sécurité contrôlée à chaque fois (`engine/tools/scenarios.py`, `docs/scenarios.md`) ; un Jarvis neuf et plafonné par scénario.
+- 44 scénarios en cinq niveaux, vrai modèle, résultat vérifié et sécurité contrôlée à chaque fois (`engine/tools/scenarios.py`, `docs/scenarios.md`) ; un Jarvis neuf et plafonné par scénario.
 - Corrigé dans Jarvis : chemins montrés en `~/` ; le plan est la demande de confirmation ; un plan annoncé mais pas proposé est relancé ; compte rendu d'un plan enregistré avant qu'il soit dit fini ; identifiant d'une automatisation donné à sa création ; un dossier absent n'arrête plus un plan ; règles plus claires (ton dossier, demande en partie impossible, pas de terminal).
 - 23 issues ouvertes pour la suite (#7 à #29).
 
@@ -172,5 +172,6 @@
 | 16/10 | Moteur retardé de 100 s | l'app annonce le retard à 91 s (« il tarde à répondre… »), puis se connecte seule dès que le moteur est prêt (107 s) |
 | 16/10 | Bout en bout Playwright + vrai moteur + axe | 20/20 ; aucune violation sérieuse |
 | 16/10 | Revue de sécurité (section 7) | permissions de la fenêtre au minimum (démarrage automatique seul) ; aucun script exécuté à l'installation du `.deb` ; aucun secret ni bibliothèque système dans les paquets ; Piper sous GPL-3.0 noté pour le choix de licence |
-| 16/10 | Suite de scénarios (vrai DeepSeek, un Jarvis neuf par scénario) | 41/42 (39 à 41 selon les séries) ; aucune action de niveau 2 ou 3 sans validation ; journaux intègres |
+| 16/10 | Suite de scénarios (vrai DeepSeek, un Jarvis neuf par scénario) | 43/43 à la dernière série (39 à 43 selon les séries) ; aucune action de niveau 2 ou 3 sans validation ; journaux intègres |
 | 16/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 569 tests ; couverture 89 % |
+| 16/10 | Tes retours d'usage (compte rendu qui doutait, vocaux Telegram, capture refusée, double affichage) | corrigés ; moteur 571 tests, interface 68, coque 9 |

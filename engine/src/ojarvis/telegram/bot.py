@@ -184,8 +184,14 @@ class TelegramService:
 
     async def _transcribe(self, voice: dict[str, Any], chat_id: int) -> str:
         if self._transcriber is None or not self._transcriber.available:
+            missing = self._transcriber is None or self._transcriber.missing_key
+            log.warning("telegram_voice_unavailable", reason="clé absente" if missing else "pause")
             await self._send(
-                chat_id, "Je ne peux pas écouter les messages vocaux : clé Groq absente."
+                chat_id,
+                "Je ne peux pas écouter les messages vocaux : la clé Groq (GROQ_API_KEY) n'est pas "
+                "dans mon trousseau. Ajoute-la dans Réglages, section « Fournisseurs et clés »."
+                if missing
+                else "Groq me demande une courte pause : renvoie ton vocal dans une minute.",
             )
             return ""
         try:
