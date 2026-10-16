@@ -151,6 +151,17 @@ async def test_file_tools_read_list_write(tmp_path: Path) -> None:
     out = await writer.run(args, ctx)
     assert out.data["cree"] is True
     assert (home / "notes" / "nouveau" / "plan.md").read_text(encoding="utf-8") == "# Plan\nÉtape 1"
+    # Le modèle lit « ~/… » : ni le chemin complet, ni le nom d'utilisateur qu'il contient.
+    assert out.text == "Fichier créé : ~/notes/nouveau/plan.md"
+    assert read.source == "~/notes/courses.txt"
+    assert str(home) not in out.text + (read.source or "")
+
+
+def test_shown_path_is_relative_to_home(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    assert guards.shown(home / "notes" / "a.txt", home) == "~/notes/a.txt"
+    assert guards.shown(home, home) == "~"
+    assert guards.shown(tmp_path / "ailleurs.txt", home) == str(tmp_path / "ailleurs.txt")
 
 
 async def test_file_tools_refuse_binary_missing_and_unknown_arguments(tmp_path: Path) -> None:
@@ -162,6 +173,12 @@ async def test_file_tools_refuse_binary_missing_and_unknown_arguments(tmp_path: 
         await ReadFile().run(ReadFile().parse({"chemin": "image.bin"}), ctx)
     with pytest.raises(NotFoundError):
         await ReadFile().run(ReadFile().parse({"chemin": "absent.txt"}), ctx)
+    # Un dossier absent n'est pas une erreur : un plan qui va le créer continue.
+    missing = await ListDirectory().run(ListDirectory().parse({"chemin": "projets/neuf"}), ctx)
+    assert missing.text == "Ce dossier n'existe pas encore : ~/projets/neuf."
+    assert missing.data["existe"] is False
+    with pytest.raises(NotFoundError, match="pas un dossier"):
+        await ListDirectory().run(ListDirectory().parse({"chemin": "image.bin"}), ctx)
     with pytest.raises(InvalidInputError, match="Arguments invalides"):
         ReadFile().parse({"chemin": "a.txt", "sudo": True})
 

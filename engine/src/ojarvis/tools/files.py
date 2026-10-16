@@ -15,7 +15,7 @@ from pydantic import Field
 
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
 from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
-from ojarvis.tools.guards import resolve_user_path
+from ojarvis.tools.guards import resolve_user_path, shown
 
 MAX_READ_BYTES = 200_000
 MAX_WRITE_CHARS = 1_000_000
@@ -46,7 +46,7 @@ class ReadFile(Tool[PathArgs]):
         text = raw[:MAX_READ_BYTES].decode("utf-8", "replace")
         if len(raw) > MAX_READ_BYTES:
             text += "\n[…fichier tronqué]"
-        return ToolOutput(text, {"chemin": str(path)}, external=True, source=str(path))
+        return ToolOutput(text, {"chemin": str(path)}, external=True, source=shown(path, ctx.home))
 
 
 class ListArgs(PathArgs):
@@ -64,8 +64,15 @@ class ListDirectory(Tool[ListArgs]):
 
     async def run(self, args: ListArgs, ctx: ToolContext) -> ToolOutput:
         path = resolve_user_path(args.chemin, ctx.home)
-        if not await anyio.Path(path).is_dir():
-            raise NotFoundError(f"Dossier introuvable : {args.chemin}.")
+        apath = anyio.Path(path)
+        if not await apath.exists():
+            # Une réponse, pas une erreur : un plan qui va créer ce dossier ne s'arrête pas là.
+            return ToolOutput(
+                f"Ce dossier n'existe pas encore : {shown(path, ctx.home)}.",
+                {"chemin": str(path), "existe": False},
+            )
+        if not await apath.is_dir():
+            raise NotFoundError(f"Ce n'est pas un dossier : {args.chemin}.")
 
         def scan() -> list[str]:
             lines = []
@@ -89,7 +96,10 @@ class WriteArgs(PathArgs):
 
 class WriteFile(Tool[WriteArgs]):
     name: ClassVar[str] = "ecrire_fichier"
-    description: ClassVar[str] = "Crée ou remplace un fichier texte dans ton dossier personnel."
+    description: ClassVar[str] = (
+        "Crée ou remplace un fichier texte dans ton dossier personnel. Pour ajouter du texte "
+        "à un fichier existant, lis-le d'abord, puis écris son contenu complet."
+    )
     Args: ClassVar[type[ToolArgs]] = WriteArgs
     level: ClassVar[Level] = Level.AGIR
     dynamic_fields: ClassVar[tuple[str, ...]] = ("contenu",)
@@ -106,7 +116,9 @@ class WriteFile(Tool[WriteArgs]):
         await apath.parent.mkdir(parents=True, exist_ok=True)
         await apath.write_text(args.contenu, encoding="utf-8")
         verb = "remplacé" if existed else "créé"
-        return ToolOutput(f"Fichier {verb} : {path}", {"chemin": str(path), "cree": not existed})
+        return ToolOutput(
+            f"Fichier {verb} : {shown(path, ctx.home)}", {"chemin": str(path), "cree": not existed}
+        )
 
 
 class DeleteFile(Tool[PathArgs]):
@@ -131,4 +143,4 @@ class DeleteFile(Tool[PathArgs]):
         _, error = await process.communicate()
         if process.returncode != 0:
             raise UpstreamError(f"Mise à la corbeille impossible : {error.decode()[:200]}")
-        return ToolOutput(f"Mis à la corbeille : {path}", {"chemin": str(path)})
+        return ToolOutput(f"Mis à la corbeille : {shown(path, ctx.home)}", {"chemin": str(path)})

@@ -18,8 +18,10 @@ from pydantic import BaseModel, Field
 
 from ojarvis.agent.loop import (
     MAX_TOOL_ROUNDS,
+    PLAN_MISSING,
     Agent,
     AgentTurn,
+    claims_missing_plan,
     plan_summary,
     urls_in,
 )
@@ -285,12 +287,26 @@ class ChatService:
             request.tools = agent.specs()
             system = request.messages[0]
             request.messages[0] = Message("system", f"{system.content}\n\n{agent.rules()}")
+        reminded = False
         for rounds in range(MAX_TOOL_ROUNDS + 1):
             step = _Round()
             async for event in self._stream_round(task, request, turn, step):
                 yield event
-            if not step.calls or agent is None:
+            if agent is None:
                 return
+            said = "".join(step.said)
+            if not step.calls:
+                # Un plan annoncé sans être proposé : l'utilisateur chercherait en vain quoi
+                # valider. Le modèle est relancé une fois (la relance n'est pas enregistrée).
+                if reminded or rounds == MAX_TOOL_ROUNDS:
+                    return
+                if not claims_missing_plan("".join(turn.parts), turn.agent.plans):
+                    return
+                reminded = True
+                log.warning("plan_announced_not_proposed")
+                request.messages.append(Message("assistant", said))
+                request.messages.append(Message("user", PLAN_MISSING))
+                continue
             if rounds == MAX_TOOL_ROUNDS:
                 log.warning("tool_rounds_exhausted", rounds=rounds)
                 return

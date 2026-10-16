@@ -20,6 +20,10 @@ Assistant personnel desktop pour Ubuntu. On lui parle à voix haute (« Hey Jarv
 
 Le projet s'est construit phase par phase. L'état du travail est dans [`PROGRESS.md`](./PROGRESS.md), les choix dans [`DECISIONS.md`](./DECISIONS.md), le journal dans [`docs/journal/`](./docs/journal/README.md), le schéma dans [`docs/architecture.md`](./docs/architecture.md).
 
+## Ce que Jarvis sait faire
+
+Une suite de 43 scénarios, joués avec le vrai modèle, le vérifie du plus simple au plus difficile : comprendre une question pleine de fautes, écrire un fichier seulement après ta validation, ignorer une page piégée, réparer un petit projet Python. Dernière série : **41 réussis sur 42 joués** (le 43ᵉ agit sur ton bureau et ne se joue qu'à la demande), sans aucune action exécutée sans validation. Le tableau complet est dans [`docs/scenarios.md`](./docs/scenarios.md).
+
 ## Installer
 
 Ubuntu 24.04 ou plus récent (glibc 2.39 ; vérifié sur Ubuntu 26.04). Récupère les paquets de la [dernière version](https://github.com/octavebahoun/O-jarvis/releases/latest) ou construis-les (`scripts/build-release.sh`, ~15 min ; ils arrivent dans `app/src-tauri/target/release/bundle/`), puis :
