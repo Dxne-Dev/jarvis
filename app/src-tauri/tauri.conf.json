@@ -52,6 +52,16 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libportaudio2", "pulseaudio-utils", "libgtk-3-bin"],
+        "recommends": ["bubblewrap", "xdg-desktop-portal-gnome"],
+        "files": {
+          "/usr/share/applications/io.github.octavebahoun.ojarvis.desktop": "packaging/io.github.octavebahoun.ojarvis.desktop"
+        },
+        "desktopTemplate": "packaging/generated.desktop"
+      }
+    }
   }
 }

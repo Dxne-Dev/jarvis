@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=O-jarvis
+Comment=Assistant personnel : on lui parle, il se souvient, il agit sous ton contrôle
+Exec=o-jarvis
+Icon=o-jarvis
+Terminal=false
+Categories=Utility;
+StartupWMClass=o-jarvis
