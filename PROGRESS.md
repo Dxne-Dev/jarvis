@@ -2,7 +2,7 @@
 
 ## Phase en cours
 
-**6 — Jarvis s'étend.** Terminée : sur demande, Jarvis crée un skill, le teste, demande ta confirmation, puis l'utilise ; un serveur MCP installé depuis le registre fonctionne (vrai modèle, vrai registre). Les commits s'ajoutent à la PR #4 (`dev → main`). Prochaine : phase 7 (release).
+**7 — Release (version 1.0.0).** Terminée : l'app du `.deb` marche entièrement dans une session neuve (dossier personnel, D-Bus, trousseau, affichage et son neufs) : premier lancement, conversation, briefing, voix de bout en bout, démarrage automatique, arrêt propre. Paquets publiés dans la version GitHub `v1.0.0`. Les commits des phases 6 et 7 sont dans la PR #5 (`dev → main`). Prochaine : la suite de tests par niveaux de complexité.
 
 ## Fait
 
@@ -60,13 +60,21 @@
 - Apprentissage (demandes répétées → automatisation ou skill) et anticipation (projet délaissé), avec score de confiance ; jamais d'action seule.
 - Docs : `docs/journal/06-jarvis-s-etend.md`, `docs/creer-un-skill.md`, sécurité, architecture, checklist.
 
+### Phase 7 — Release (16/10/2026)
+- Moteur embarqué (PyInstaller, dossier de 796 Mo), sans aucune bibliothèque du système ; Chromium téléchargé au premier usage du navigateur.
+- Paquets `.deb` (216 Mo) et AppImage (353 Mo) en une commande (`scripts/build-release.sh`) ; le moteur y est ajouté tel quel après Tauri.
+- Démarrage automatique à l'ouverture de session (Réglages → Démarrage), discret dans la barre système.
+- Corrigé grâce aux tests en session neuve : bulles d'information qui ne disparaissaient pas et cachaient la saisie ; démarrage de plus de 90 s qui n'aboutissait jamais.
+- Docs : `CHANGELOG.md`, `RELEASE_NOTES.md`, `docs/ajouter-un-fournisseur.md`, `docs/journal/07-release.md`, README (installation, captures).
+
 ## Ensuite
 
-1. Phase 7 — Release : paquets `.deb` et AppImage (moteur empaqueté), démarrage automatique à l'ouverture de session (désactivable), audits, docs (ajout d'un fournisseur LLM), `CHANGELOG.md`, `RELEASE_NOTES.md`, installation sur une session propre.
+1. Suite de tests par niveaux de complexité (N1 fondamentaux → N5 scénarios réels), vrai modèle, résultats vérifiés automatiquement, tableau dans le README.
+2. Mode shell (Jarvis dans un terminal, agents de code), voix au terminal ; autonomie orientée résultats (moteur de missions). Détail : les issues GitHub.
+3. Passage du dépôt en public : choisir une licence d'abord (Piper, embarqué, est sous GPL-3.0), puis ton feu vert.
 
 ## Problèmes ouverts
 
-- Deux moteurs orphelins d'une ancienne tentative tournent encore (PID 53438 et 56076, ports 8765 et 40227) : sans effet, à arrêter avec `kill 53438 56076`.
 - `braces` (outil de lint) a une faille « haute » sans correctif : accepté, voir `DECISIONS.md`.
 - Mot de réveil prononcé avec l'accent français d'espeak-ng : non détecté (0/4) ; les voix naturelles le sont. À confirmer au vrai micro (checklist).
 - OpenRouter gratuit renvoie souvent 429 : il ne sert que de second repli ; pour l'écran « en ligne », la lecture repasse en local.
@@ -76,6 +84,9 @@
 - Docker est arrêté sur la machine depuis le 15/10 au soir (`sudo systemctl start docker` pour le relancer) : le bac à sable passe par bubblewrap, les serveurs MCP du registre aussi ; GitHub (serveur en conteneur) attend Docker.
 - Serveurs MCP lancés par bubblewrap : ils gardent le réseau, réseau local compris (Docker les en isole mieux).
 - Repérage des demandes répétées : le modèle de sens (e5) rapproche fort des demandes « mêmes mots, autre sujet » ; garde-fou par les noms propres, à affiner avec l'usage.
+- Paquets vérifiés sur Ubuntu 26.04 seulement (ils demandent glibc ≥ 2.39 et WebKitGTK 4.1).
+- AppImage : pas de raccourci global `Ctrl+Alt+J` (le portail ne trouve pas son lanceur, que seul le `.deb` installe).
+- Transcription locale (sans clé Groq) : la fin du mot de réveil reste parfois dans le texte (« Parvice, … ») ; la réponse reste juste.
 
 ## Vérifications
 
@@ -146,3 +157,14 @@
 | 16/10 | Bout en bout Playwright + vrai moteur + axe | 20/20 ; aucune violation sérieuse |
 | 16/10 | `pip-audit` / `pnpm audit --prod` | aucune faille |
 | 16/10 | Revue de sécurité (section 7) | liste des outils d'un serveur MCP non encadrée, schéma d'un skill sans limite de taille : corrigés |
+| 16/10 | Moteur : ruff, mypy strict, pytest | 0 erreur ; 563 tests ; couverture 89 % |
+| 16/10 | Interface : tsc -b, ESLint, Stylelint, Prettier, Vitest | 0 erreur ; 66 tests |
+| 16/10 | Coque : fmt, clippy `-D warnings`, cargo test | 0 erreur ; 8 tests |
+| 16/10 | `pip-audit` / `pnpm audit --prod` / `cargo audit` | aucune faille ; les 2 avertissements GTK déjà acceptés |
+| 16/10 | Contenu des paquets | `.deb` 216 Mo (sommes justes, fichiers à root, 57 liens conservés), AppImage 353 Mo ; même moteur ; aucune des 32 valeurs du `.env` ; glibc ≥ 2.39 |
+| 16/10 | Session neuve, app du `.deb` | clé importée au trousseau ; modèles téléchargés (335 Mo) ; briefing joué ; réponses en 1,1 à 1,8 s ; démarrage automatique créé puis retiré ; moteur arrêté 0,65 s après l'app |
+| 16/10 | Voix dans la session neuve (PipeWire privé, sans matériel) | « combien font douze fois huit ? » → « 96 » dit à voix haute ~3,7 s après la question (voix 100 % locale) ; annulation d'écho en place |
+| 16/10 | AppImage lancée comme au démarrage de session | aucune fenêtre, moteur prêt en 11 s, micro ouvert ; second lancement → fenêtre ; démarrage automatique vers l'AppImage |
+| 16/10 | Moteur retardé de 100 s | l'app annonce le retard à 91 s (« il tarde à répondre… »), puis se connecte seule dès que le moteur est prêt (107 s) |
+| 16/10 | Bout en bout Playwright + vrai moteur + axe | 20/20 ; aucune violation sérieuse |
+| 16/10 | Revue de sécurité (section 7) | permissions de la fenêtre au minimum (démarrage automatique seul) ; aucun script exécuté à l'installation du `.deb` ; aucun secret ni bibliothèque système dans les paquets ; Piper sous GPL-3.0 noté pour le choix de licence |

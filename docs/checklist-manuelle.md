@@ -64,3 +64,12 @@ Ce que je ne peux pas vérifier seul. Coche au fur et à mesure.
 - [ ] Parler de tes projets et de tes proches pendant quelques jours : Mémoire → Graphe les relie ; corriger ou oublier une entité.
 - [ ] Après avoir posé la même question trois jours différents, une suggestion apparaît à l'accueil ; « En faire une automatisation » ouvre une conversation avec un plan à valider.
 
+## Phase 7 — Release
+
+- [ ] `sudo apt install ./O-jarvis_1.0.0_amd64.deb` (version GitHub `v1.0.0`, ou `app/src-tauri/target/release/bundle/deb/`) : O-jarvis apparaît dans le menu des applications ; un clic l'ouvre, la sphère respire, « Moteur connecté ».
+- [ ] Sur une session neuve (un autre compte Ubuntu, ou après avoir renommé `~/.local/share/o-jarvis`) : renseigner une clé DeepSeek dans Réglages, poser une question : la réponse arrive ; la voix se prépare (téléchargement des modèles), puis « Hey Jarvis » répond.
+- [ ] Réglages → Démarrage → activer « Lancer O-jarvis à l'ouverture de session », se déconnecter puis se reconnecter : l'icône est dans la barre système, sans fenêtre ; « Hey Jarvis » répond ; le briefing se joue si c'est la première session du jour.
+- [ ] Désactiver le démarrage automatique : `~/.config/autostart/O-jarvis.desktop` disparaît.
+- [ ] L'AppImage (même version GitHub) se lance d'un double clic après `chmod +x`.
+- [ ] Demander une action dans le navigateur de Jarvis la première fois : Chromium se télécharge (une minute environ), puis l'action se fait.
+- [ ] `sudo apt remove o-jarvis` : l'app disparaît du menu ; tes données restent dans `~/.local/share/o-jarvis` (à effacer à la main si tu le veux).

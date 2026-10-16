@@ -154,6 +154,16 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Demandes répétées : index des seules demandes** — les réponses varient trop. Mesuré avec e5 : paraphrases 0,97-0,98 ; demandes sans rapport jusqu'à 0,88 ; « mêmes mots, autre projet » 0,96-0,97. Seuil 0,95 **et** mêmes noms propres ; trois jours différents en un mois ; heure habituelle si l'écart est de deux heures au plus.
 - **Anticipation en lecture seule** — elle ne reçoit qu'une vue `GraphView` (lire) ; règle de départ : projet ou sujet cité au moins 3 fois, délaissé 5 jours ; confiance de 0,4 à 0,9 selon les mentions et la durée. Toutes les 6 heures. Une suggestion n'agit jamais : l'accepter ouvre une conversation, où l'action passe par un plan.
 
+## Release (phase 7, 16/10/2026)
+
+- **Moteur embarqué par PyInstaller, en dossier (« onedir »)** — démarrage rapide (rien à décompresser à chaque lancement), placé dans `usr/lib/O-jarvis/engine/` des paquets ; la coque le lance en priorité (puis `OJARVIS_ENGINE_DIR`, puis les sources). Recette : `engine/packaging/ojarvis-engine.spec` ; `mcp.cli` exclu (il quitte sans `typer`). Environ 800 Mo, surtout Whisper (ctranslate2), ONNX, PyAV, Playwright et Piper.
+- **Le moteur n'emporte aucune bibliothèque du système** (`SYSTEM_LIBS` dans la recette) — son (PulseAudio, ALSA, JACK, PortAudio et les codecs de libsndfile), D-Bus, systemd, affichage, et la base (glibc, libstdc++, libgcc, zlib) : ce sont celles de la machine, à leur version et à jour. Restent les copies renommées des roues Python (`libgomp-e985bcbb.so`…), que leurs modules chargent par ce nom. Le moteur demande ainsi glibc ≥ 2.34 (une copie de `libmvec` exigeait la 2.43).
+- **Le moteur ajouté aux paquets après Tauri, tel quel** (`scripts/build-release.sh`) — Tauri recopiait ses 57 liens symboliques en fichiers (+300 Mo) et `linuxdeploy` (AppImage) échouait sur les bibliothèques renommées des roues Python. Le `.deb` est rouvert, complété (sommes de contrôle, taille) et recompressé en xz ; l'AppImage est extraite, complétée et refermée.
+- **Chromium téléchargé au premier usage du navigateur** — par le pilote de Playwright embarqué (~170 Mo, dans `~/.cache/ms-playwright`), une seule fois ; rien n'est téléchargé tant que le navigateur ne sert pas.
+- **Dépendances du `.deb`** : `libportaudio2` (micro et haut-parleur), `pulseaudio-utils` (`pactl`, annulation d'écho), `libgtk-3-bin` (`gtk-launch`) ; recommandées : `bubblewrap` (bac à sable sans Docker), `xdg-desktop-portal-gnome` (capture d'écran).
+- **Démarrage automatique : greffon officiel `tauri-plugin-autostart`** — une entrée XDG dans `~/.config/autostart`, qui pointe vers l'AppImage elle-même si l'app en vient ; réglable dans Réglages → Démarrage. Lancée ainsi, l'app reste discrète dans la barre système (fenêtre créée cachée) : « Hey Jarvis » et le briefing du matin sont prêts.
+- **Paquets publiés dans une version GitHub (`v1.0.0`), à ta demande** — construits en une commande (`scripts/build-release.sh`, ~15 min) sur cette machine, pas par la CI : ils pèsent plusieurs centaines de Mo et leur vérification (session propre) se fait ici.
+
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.
