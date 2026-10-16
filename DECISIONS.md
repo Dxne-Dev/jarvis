@@ -164,6 +164,15 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Démarrage automatique : greffon officiel `tauri-plugin-autostart`** — une entrée XDG dans `~/.config/autostart`, qui pointe vers l'AppImage elle-même si l'app en vient ; réglable dans Réglages → Démarrage. Lancée ainsi, l'app reste discrète dans la barre système (fenêtre créée cachée) : « Hey Jarvis » et le briefing du matin sont prêts.
 - **Paquets publiés dans une version GitHub (`v1.0.0`), à ta demande** — construits en une commande (`scripts/build-release.sh`, ~15 min) sur cette machine, pas par la CI : ils pèsent plusieurs centaines de Mo et leur vérification (session propre) se fait ici.
 
+## Après la 1.0 : la suite de scénarios (16/10/2026)
+
+- **Suite de scénarios par niveaux** (`engine/tools/scenarios.py`, résultats dans `docs/scenarios.md`) — vrai modèle ; chaque scénario vérifie lui-même son résultat, mesure durée et coût, et échoue si un plan de niveau 2 ou 3 s'exécute sans la validation qu'il a donnée. Un Jarvis neuf et un processus par scénario, 2 Go de mémoire au plus (`systemd-run --user --scope`) : la première version, 41 Jarvis dans un même processus, a saturé la mémoire et gelé l'ordinateur.
+- **Les chemins montrés au modèle commencent par « ~/ »** (`guards.shown`) — plus lisibles, et le nom d'utilisateur ne part pas vers le modèle ; avec le chemin complet, Jarvis a cru un fichier perdu dans un dossier temporaire.
+- **Le plan est la demande de confirmation** — Jarvis ne demande plus « tu confirmes ? » avant de le proposer ; ce qu'il peut lire lui-même (identifiant, contenu d'un fichier), il le lit d'abord ; une demande en partie impossible : il fait le reste et dit ce qui manque.
+- **Un plan annoncé sans être proposé est relancé une fois** (`PLAN_CLAIM`, sur toute la réponse du tour) — « valide-le à l'écran », « passe par un plan », ou l'appel de l'outil écrit en texte (`<proposer_un_plan>`, vu avec DeepSeek) : sinon tu cherches en vain quoi valider ; la relance n'est jamais enregistrée dans la conversation.
+- **Le compte rendu d'un plan entre dans la conversation avant que le plan soit dit fini** — une question posée juste après le voit déjà.
+- **« Ton dossier personnel » dans les descriptions d'outils** reste tel quel (l'écran Réglages s'adresse à toi) ; c'est la règle de Jarvis qui précise qu'il s'agit du tien.
+
 ## Interface
 
 - **pnpm** pour le frontend — déjà installé, rapide.
