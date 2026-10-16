@@ -146,7 +146,7 @@ export const ChatMessage = memo(function ChatMessage({ item }: { item: ChatItem 
         </p>
       )}
       {item.plans.map((id) => (
-        <PlanCard key={id} id={id} />
+        <PlanCard key={id} id={id} showSynthesis={false} />
       ))}
       <ContextDisclosure item={item} />
       {details.length > 0 && <p className={styles.meta}>{details.join(" · ")}</p>}

@@ -137,7 +137,16 @@ function DestructiveApprove({ plan, onConfirm }: { plan: Plan; onConfirm: () => 
   );
 }
 
-export function PlanView({ plan, compact = false }: { plan: Plan; compact?: boolean }) {
+export function PlanView({
+  plan,
+  compact = false,
+  showSynthesis = true,
+}: {
+  plan: Plan;
+  compact?: boolean;
+  /** Dans une conversation, le compte rendu suit en message : la carte ne le répète pas. */
+  showSynthesis?: boolean;
+}) {
   const decide = useDecidePlan();
   const titleId = useId();
   const proposed = plan.status === "proposed";
@@ -171,7 +180,7 @@ export function PlanView({ plan, compact = false }: { plan: Plan; compact?: bool
           <StepItem key={step.position} step={step} />
         ))}
       </ol>
-      {plan.result && (plan.status === "done" || plan.status === "failed") && (
+      {showSynthesis && plan.result && (plan.status === "done" || plan.status === "failed") && (
         <p className={styles.synthesis}>{plan.result}</p>
       )}
       {decide.isError && (
@@ -216,7 +225,7 @@ export function PlanView({ plan, compact = false }: { plan: Plan; compact?: bool
 }
 
 /** Carte d'un plan dans la conversation : se met à jour à chaque étape. */
-export function PlanCard({ id }: { id: string }) {
+export function PlanCard({ id, showSynthesis = true }: { id: string; showSynthesis?: boolean }) {
   const plan = usePlan(id);
   if (plan.isPending)
     return (
@@ -230,5 +239,5 @@ export function PlanCard({ id }: { id: string }) {
         Plan illisible : {describeError(plan.error)}
       </p>
     );
-  return <PlanView plan={plan.data} compact />;
+  return <PlanView plan={plan.data} compact showSynthesis={showSynthesis} />;
 }
