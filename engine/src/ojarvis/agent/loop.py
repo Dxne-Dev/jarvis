@@ -27,8 +27,9 @@ from ojarvis.tools.guards import DATA_RULE, as_data
 
 log = get_logger(__name__)
 
-#: Tours d'outils au plus dans une réponse (ensuite, le modèle doit conclure).
-MAX_TOOL_ROUNDS = 5
+#: Tours d'outils au plus dans une réponse (ensuite, le modèle doit conclure). Une PR
+#: GitHub en demande souvent 6 ou 7 : lister les outils, lire le dépôt, puis le plan.
+MAX_TOOL_ROUNDS = 8
 
 AGENT_RULES = (
     "Tu as des outils. Dans leurs descriptions, « ton dossier personnel », « tes fichiers "
