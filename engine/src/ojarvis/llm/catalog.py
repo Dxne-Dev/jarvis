@@ -61,6 +61,15 @@ STATIC_CATALOG: tuple[ModelSpec, ...] = (
         context=1_000_000,
         price=Price(input=0.66, output=1.98, cached_input=0.022),
     ),
+    # Expérimental (août 2026) : absent de GET /models, mais il répond ; pas de prix publié.
+    ModelSpec(
+        "deepseek",
+        "deepseek-v4-flash-vision-exp",
+        "DeepSeek V4 Flash Vision (expérimental)",
+        vision=True,
+        thinking_toggle=True,
+        context=128_000,
+    ),
     ModelSpec(
         "anthropic",
         "claude-opus-5-5",

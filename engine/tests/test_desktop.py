@@ -444,18 +444,35 @@ def test_reading_the_screen_stays_local_by_default(
     llm["ollama"]._script = vision_script
     llm["openrouter"]._configured = True
     llm["openrouter"]._script = vision_script
+    llm["deepseek"]._script = vision_script
     assert client.get("/v1/settings").json()["screen_vision"] == "local"
     assert client.portal is not None
     text, data = client.portal.call(_look, services, "local")
     assert "1 045 €" in text
     assert data["mode"] == "local"
     assert llm["openrouter"].requests == []  # l'image n'est pas partie en ligne
+    assert llm["deepseek"].requests == []
     request, _ = llm["ollama"].requests[-1]
     assert request.messages[1].images[0].media_type == "image/jpeg"
 
     text, data = client.portal.call(_look, services, "en_ligne")
     assert data["mode"] == "en_ligne"
-    assert llm["openrouter"].requests  # en ligne : seulement si tu l'as choisi
+    # En ligne, seulement si tu l'as choisi : la vision de DeepSeek d'abord.
+    assert data["modele"] == "deepseek-v4-flash-vision-exp"
+    assert llm["openrouter"].requests == []
+
+
+def test_deepseek_down_the_screen_is_read_by_openrouter(
+    client: TestClient, services: Services, llm: dict[str, FakeProvider]
+) -> None:
+    llm["deepseek"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
+    llm["openrouter"]._configured = True
+    llm["openrouter"]._script = vision_script
+    assert client.portal is not None
+    text, data = client.portal.call(_look, services, "en_ligne")
+    assert "1 045 €" in text
+    assert data["mode"] == "en_ligne"
+    assert llm["openrouter"].requests
 
 
 def test_a_saturated_online_model_falls_back_to_a_local_reading(
@@ -466,6 +483,7 @@ def test_a_saturated_online_model_falls_back_to_a_local_reading(
     llm["ollama"]._script = vision_script
     llm["openrouter"]._configured = True
     llm["openrouter"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
+    llm["deepseek"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
     assert client.portal is not None
     text, data = client.portal.call(_look, services, "en_ligne")
     assert "1 045 €" in text

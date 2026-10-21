@@ -103,6 +103,8 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
         Route("ollama", "ministral-3:3b"),
     ),
     "vision": (
+        # Réflexion coupée : 1,5 s au lieu de 2,3 s à l'essai, pour la même lecture.
+        Route("deepseek", "deepseek-v4-flash-vision-exp"),
         Route("openrouter", ANY_MODEL),
         Route("anthropic", "claude-opus-5-5"),
         Route("openai", "gpt-5"),
