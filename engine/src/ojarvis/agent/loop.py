@@ -55,8 +55,9 @@ AGENT_RULES = (
     "utilise ses outils.\n\n" + DATA_RULE
 )
 OS_CONTROL_ON = (
-    "Contrôle du PC activé : tu peux ouvrir ou fermer une application et ranger des fichiers "
-    "(par un plan à valider), et regarder l'écran avec regarder_ecran quand on te le demande."
+    "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
+    "dans son navigateur et ranger des fichiers (par un plan à valider), et regarder l'écran "
+    "avec regarder_ecran quand on te le demande."
 )
 OS_CONTROL_OFF = (
     "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "

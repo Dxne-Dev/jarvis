@@ -34,7 +34,14 @@ from ojarvis.llm.types import LLMRequest, ToolCall
 from ojarvis.permissions.gate import OsControlDisabledError
 from ojarvis.services import Services
 from ojarvis.tools.base import Level
-from ojarvis.tools.desktop import AppCatalog, CloseApp, LookAtScreen, RunningApps
+from ojarvis.tools.desktop import (
+    AppCatalog,
+    CloseApp,
+    LookAtScreen,
+    OpenUrl,
+    RunningApps,
+    UrlArgs,
+)
 from tests.test_chat import read_sse
 
 ENTRY = """[Desktop Entry]
@@ -262,6 +269,38 @@ async def test_apps_are_launched_by_id_without_a_shell(
     assert calls.read_text() == "--\norg.gnome.Calculator\n"
 
 
+async def test_an_address_opens_in_your_browser_without_a_shell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = tmp_path / "calls"
+    fake = tmp_path / "xdg-open"
+    fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {calls}\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "xdg-open" else None)
+    tool = OpenUrl()
+    args = UrlArgs(adresse=" https://github.com/octavebahoun/gouvra/pull/6 ")
+    assert tool.describe(args).endswith("gouvra/pull/6 dans ton navigateur")
+    out = await tool.run(args, SimpleNamespace())  # type: ignore[arg-type]
+    assert calls.read_text() == "https://github.com/octavebahoun/gouvra/pull/6\n"
+    assert "Ouvert dans ton navigateur" in out.text
+
+
+@pytest.mark.parametrize(
+    "raw", ["file:///etc/passwd", "javascript:alert(1)", "--help", "https://", "ftp://exemple.fr"]
+)
+async def test_only_web_addresses_reach_the_browser(
+    raw: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = tmp_path / "calls"
+    fake = tmp_path / "xdg-open"
+    fake.write_text(f"#!/bin/sh\ntouch {calls}\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "xdg-open" else None)
+    with pytest.raises(InvalidInputError, match="http et https"):
+        await OpenUrl().run(UrlArgs(adresse=raw), SimpleNamespace())  # type: ignore[arg-type]
+    assert not calls.exists()
+
+
 # ---------------------------------------------------------------------- écran
 
 
@@ -452,8 +491,11 @@ def test_os_control_is_off_by_default_and_gated(client: TestClient, services: Se
     names = {s.name for s in services.tools.specs(max_level=Level.DETRUIRE, os_control=False)}
     assert "ouvrir_application" not in names
     assert "regarder_ecran" not in names
+    assert "ouvrir_adresse" not in names
     catalog = {t["name"]: t for t in client.get("/v1/tools").json()}
     assert catalog["ouvrir_application"]["level"] == 2
+    assert catalog["ouvrir_adresse"]["level"] == 2
+    assert catalog["ouvrir_adresse"]["os_control"] is True
     assert catalog["regarder_ecran"]["level"] == 1
     assert catalog["ouvrir_application"]["os_control"] is True
 

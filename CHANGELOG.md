@@ -6,6 +6,7 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 
 ### Ajouté
 - Suite de 44 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
+- Avec le contrôle du PC, Jarvis ouvre une adresse web dans ton navigateur (une pull request, par exemple), après ta validation. Seules les adresses http et https passent.
 
 ### Corrigé
 - Jarvis ne demande plus « tu confirmes ? » avant de proposer un plan : le plan est la confirmation.
