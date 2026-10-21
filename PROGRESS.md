@@ -7,7 +7,7 @@
 ## Fait
 
 ### Phase 0 — Démarrage (14/02/2026)
-- Brief lu ; ancien Jarvis lu en entier dans `legacy/` (non versionné).
+- Brief lu ; ancien Jarvis lu en entier dans `legacy/` ( https://github.com/octavebahoun/jarvis ).
 - Dépôt privé https://github.com/octavebahoun/O-jarvis, historique propre, hooks git locaux contre les fuites.
 - Machine et clés vérifiées par de vrais appels.
 
