@@ -1,13 +1,5 @@
 # Décisions
 
-Chaque choix technique ou produit, avec sa raison. Le brief gagne sur l'ancien repo.
-Format : **choix** — raison. Date entre parenthèses quand c'est utile.
-
-## Dépôt et traçabilité
-
-- **Historique neuf (14/10/2026)** — l'ancien dépôt GitHub a été supprimé et les deux commits locaux ne respectaient pas les règles de traçabilité du projet. Le nouvel historique part d'une racine propre. Les anciens commits restent en local sur des branches `archive-v0-*`, jamais poussées (un hook `pre-push` le garantit), avec une sauvegarde `git bundle` dans `~/.cache/o-jarvis/`.
-- **Hooks git locaux** (`.git/hooks`, non versionnés) — ils refusent un commit qui contient une valeur du `.env`, un motif de clé connu, un fichier interdit ou une mention interdite par les règles de traçabilité. Le `.env` contient aussi des clés d'autres projets : le risque de fuite est réel.
-- **Branches** — travail sur `dev`, PR `dev → main` à la fin de chaque phase. Octave merge.
 
 ## Machine (vérifiée le 14/10/2026)
 
@@ -87,7 +79,7 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Journal immuable** — table en ajout seul (triggers SQLite qui refusent UPDATE et DELETE), chaînée par SHA-256, vérifiée au démarrage. Chaque action y est écrite avant (« Lancé : ») et après (« Fait : » ou « Échec : ») ; chaque décision sur un plan aussi.
 - **Sandbox : Docker sans réseau, limites CPU, mémoire, PID et durée, nettoyage garanti** ; bubblewrap en repli.
 
-## Jarvis agit (phase 3, 15/10/2026)
+## Jarvis agit 
 
 - **Une seule porte d'exécution des outils** (`permissions/gate.py`) — niveau calculé avec les vrais arguments ; niveau 2 sur validation d'une étape de plan, niveau 3 sur double confirmation ; une étape ne dépasse jamais le niveau que tu as vu (ex. une adresse reprise d'une étape qui mène à un site où tu es connecté).
 - **Un appel direct à une action devient un plan d'une étape** — plutôt que de le refuser : la porte tient même si le modèle se trompe ou est manipulé.
@@ -107,7 +99,7 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Suppression = corbeille** (`gio trash`) — récupérable ; sans `gio`, rien n'est supprimé.
 - **Les outils sont proposés aussi à la voix** — ~2 000 jetons de plus par requête ; latence vocale mesurée : médiane 1,93 s (1,9 s avant).
 
-## Jarvis s'organise (phase 4, 15/10/2026)
+## Jarvis s'organise 
 
 - **Horaires calculés en heure locale (zoneinfo), rangés en UTC** — « 8 h » reste 8 h après chaque changement d'heure ; testé sur les nuits du 29 mars et du 25 octobre 2026 (heure inexistante → une heure plus tard ; heure doublée → une seule exécution). Pas de cron : chaque jour / certains jours / une fois / intervalle / chaque mois suffisent et se décrivent simplement.
 - **Moteur de workflows maison, en base** — chaque étape enregistrée avec le contexte produit ; reprise à l'étape coupée ; trois essais espacés sur erreur. Pas de file externe (brief : pas de microservices).
@@ -124,7 +116,7 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Briefing à la première session du jour = première ouverture de l'app** (annoncée par l'interface) ; date notée tout de suite (deux fenêtres → un seul briefing) ; c'est un workflow (rassembler, rédiger, dire) ; la voix sait dire un texte d'elle-même, interruptible.
 - **Interface : relecture complète à chaque reconnexion du flux d'événements** — une coupure faisait manquer des événements (un test a échoué une fois en CI).
 
-## Jarvis contrôle le PC (phase 5, 15/10/2026)
+## Jarvis contrôle le PC 
 
 - **Désactivé par défaut, une seule marque sur les outils** (`os_control`) — tant que le réglage est éteint, la porte refuse ces outils et le modèle ne les voit pas ; il sait dire où l'activer. L'activer demande une confirmation dans Réglages ; chaque changement est journalisé (niveau 3, par toi).
 - **Capture : portail `org.freedesktop.portal.Screenshot` sous Wayland (jeepney), `mss` sous X11** — GNOME 50 n'a plus de session X11 et Wayland interdit la lecture directe de l'écran. Mesuré : 1366 × 768 en 4,1 s, sans boîte de dialogue. Le fichier écrit par le portail est effacé dès sa lecture.
@@ -164,7 +156,7 @@ Format : **choix** — raison. Date entre parenthèses quand c'est utile.
 - **Démarrage automatique : greffon officiel `tauri-plugin-autostart`** — une entrée XDG dans `~/.config/autostart`, qui pointe vers l'AppImage elle-même si l'app en vient ; réglable dans Réglages → Démarrage. Lancée ainsi, l'app reste discrète dans la barre système (fenêtre créée cachée) : « Hey Jarvis » et le briefing du matin sont prêts.
 - **Paquets publiés dans une version GitHub (`v1.0.0`), à ta demande** — construits en une commande (`scripts/build-release.sh`, ~15 min) sur cette machine, pas par la CI : ils pèsent plusieurs centaines de Mo et leur vérification (session propre) se fait ici.
 
-## Après la 1.0 : la suite de scénarios (16/10/2026)
+## Après la 1.0 : 
 
 - **Suite de scénarios par niveaux** (`engine/tools/scenarios.py`, résultats dans `docs/scenarios.md`) — vrai modèle ; chaque scénario vérifie lui-même son résultat, mesure durée et coût, et échoue si un plan de niveau 2 ou 3 s'exécute sans la validation qu'il a donnée. Un Jarvis neuf et un processus par scénario, 2 Go de mémoire au plus (`systemd-run --user --scope`) : la première version, 41 Jarvis dans un même processus, a saturé la mémoire et gelé l'ordinateur.
 - **Les chemins montrés au modèle commencent par « ~/ »** (`guards.shown`) — plus lisibles, et le nom d'utilisateur ne part pas vers le modèle ; avec le chemin complet, Jarvis a cru un fichier perdu dans un dossier temporaire.
