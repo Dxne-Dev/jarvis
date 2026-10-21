@@ -143,6 +143,13 @@ class CallIntegration(Tool[CallArgs]):
         args: CallArgs = super().parse(raw)
         _known(self._manager, args.serveur)
         tool = self._manager.known_tool(args.serveur, args.outil)
+        names = self._manager.ready_tools(args.serveur)
+        if tool is None and names is not None:
+            # Un nom inventé est refusé avant d'entrer dans un plan qui échouerait à coup sûr.
+            raise InvalidToolArgumentsError(
+                f"{self._manager.label(args.serveur)} n'a pas d'outil « {args.outil} ». "
+                f"Outils existants : {', '.join(names)}."
+            )
         if tool is not None:
             try:
                 jsonschema.validate(args.arguments, tool.input_schema)

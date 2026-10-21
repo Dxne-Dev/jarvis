@@ -96,6 +96,10 @@ async def test_meta_tools_validate_arguments_and_compute_levels() -> None:
                     "arguments": {"owner": "o", "repo": "r"},
                 }
             )
+        # Serveur prêt : un nom inventé est refusé, avec les vrais noms pour se reprendre.
+        with pytest.raises(InvalidToolArgumentsError, match="list_issues") as refused:
+            caller.parse({"serveur": "github", "outil": "get_repository", "arguments": {}})
+        assert "pas d'outil « get_repository »" in str(refused.value)
         # Outil inconnu tant que le serveur n'a pas répondu : traité comme une action.
         unknown = caller.parse({"serveur": "notion", "outil": "search", "arguments": {}})
         assert caller.level_for(unknown) == Level.AGIR
