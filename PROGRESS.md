@@ -6,18 +6,18 @@
 
 ## Fait
 
-### Phase 0 — Démarrage (14/10/2026)
+### Phase 0 — Démarrage (14/02/2026)
 - Brief lu ; ancien Jarvis lu en entier dans `legacy/` (non versionné).
 - Dépôt privé https://github.com/octavebahoun/O-jarvis, historique propre, hooks git locaux contre les fuites.
 - Machine et clés vérifiées par de vrais appels.
 
-### Phase 1 — Fondations (14/10/2026)
+### Phase 1 — Fondations (24/09/2026)
 - Moteur Python : API locale protégée par jeton, trousseau, bus d'événements, traces, logs filtrés, migrations, erreurs normalisées.
 - App Tauri : lancement et arrêt du moteur, barre système, `Ctrl+Q`, une seule instance.
 - Interface : tokens de design, sphère WebGL2 (6 états), Accueil, Journal et traces, Réglages.
 - CI GitHub Actions ; scripts `install-dev.sh` et `install-launcher.sh`. PR #1 ouverte.
 
-### Phase 2 — Parler à Jarvis (15/10/2026)
+### Phase 2 — Parler à Jarvis (15/08/2026)
 - Routeur de modèles : DeepSeek, OpenRouter, OpenAI, Anthropic, Ollama, modèle de test ; politique par tâche, disjoncteur, bascule signalée, modèle imposé depuis Réglages, délai maximal avant le premier mot, modèle local préchargé en cas de panne.
 - Conversation en flux (SSE), markdown, historique cherchable, renommer, supprimer.
 - Mémoire (faits, préférences, profil) visible et modifiable ; embeddings e5 locaux, sqlite-vec et FTS5 ; extraction automatique désactivable.
@@ -27,7 +27,7 @@
 - Écrans : Accueil (sphère + conversation + voix), Historique, Mémoire, Réglages (modèles, voix).
 - Docs : `docs/journal/02-parler-a-jarvis.md`, décisions, checklist manuelle.
 
-### Phase 3 — Jarvis agit (15/10/2026)
+### Phase 3 — Jarvis agit (15/09/2026)
 - Outils à schéma strict et niveau de permission : recherche web (Tavily), lecture de page, fichiers, code en bac à sable, navigateur, capacités.
 - Porte unique des permissions ; plans vérifiés, validés ou refusés (un plan de lecture seule part sans attendre), exécutés étape par étape avec synthèse ; plans interrompus jamais relancés.
 - Journal des actions immuable (ajout seul, chaîne SHA-256, vérifié au démarrage), en lecture seule dans l'interface.
@@ -36,7 +36,7 @@
 - Interface : Actions à valider, plan dans la conversation, outils utilisés, journal des actions, Réglages → Navigateur et Permissions, notifications.
 - Docs : `docs/journal/03-jarvis-agit.md`, `docs/securite.md`, architecture, checklist manuelle.
 
-### Phase 4 — Jarvis s'organise (15/10/2026)
+### Phase 4 — Jarvis s'organise (15/09/2026)
 - Automatisations : horaire en heure locale (changements d'heure testés) ou événement ; rappel ou consigne ; création depuis le chat ou la voix (validée) ; CRUD complet dans l'écran Automatisations ; rattrapage après un arrêt ; ponctuelles désactivées après leur passage.
 - Moteur de workflows persistant : reprise à l'étape coupée après un plantage ou un redémarrage.
 - Notifications dans l'app, sur le bureau et sur Telegram.
@@ -60,7 +60,7 @@
 - Apprentissage (demandes répétées → automatisation ou skill) et anticipation (projet délaissé), avec score de confiance ; jamais d'action seule.
 - Docs : `docs/journal/06-jarvis-s-etend.md`, `docs/creer-un-skill.md`, sécurité, architecture, checklist.
 
-### Phase 7 — Release (16/10/2026)
+### Phase 7 — Release (18/10/2026)
 - Moteur embarqué (PyInstaller, dossier de 796 Mo), sans aucune bibliothèque du système ; Chromium téléchargé au premier usage du navigateur.
 - Paquets `.deb` (216 Mo) et AppImage (353 Mo) en une commande (`scripts/build-release.sh`) ; le moteur y est ajouté tel quel après Tauri.
 - Démarrage automatique à l'ouverture de session (Réglages → Démarrage), discret dans la barre système.
