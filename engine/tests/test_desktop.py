@@ -576,7 +576,10 @@ def test_an_app_opens_only_after_validation(
         plan["steps"][0]["description"]
         == "Ouvrir l'application Calculatrice (org.gnome.Calculator)"
     )
-    system = [r for r, _ in llm["deepseek"].requests if r.tools][-1].messages[0].content
+    # La dernière requête de la conversation : l'extraction des souvenirs, qui a aussi un
+    # outil, peut arriver après elle.
+    chats = [r for r, _ in llm["deepseek"].requests if r.tools and r.tools[0].name != TOOL_NAME]
+    system = chats[-1].messages[0].content
     assert "Contrôle du PC activé" in system
     assert not calls.exists()  # rien avant ta validation
     client.post(f"/v1/plans/{plan['id']}/approve", json={})
