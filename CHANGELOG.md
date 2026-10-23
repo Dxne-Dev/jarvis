@@ -6,6 +6,8 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 
 ### Ajouté
 - Suite de 44 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
+- Avec le contrôle du PC, Jarvis ouvre une adresse web dans ton navigateur (une pull request, par exemple), après ta validation. Seules les adresses http et https passent.
+- En ligne, l'écran est lu par la vision de DeepSeek (`deepseek-v4-flash-vision-exp`, environ 1 s), avant OpenRouter ; la lecture locale reste le choix par défaut.
 
 ### Corrigé
 - Jarvis ne demande plus « tu confirmes ? » avant de proposer un plan : le plan est la confirmation.
@@ -18,6 +20,7 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 - À chaque tour, Jarvis lit l'état réel des plans de la conversation : il ne nie plus une action faite.
 - Lancé depuis le dépôt, le moteur lit le `.env` du dépôt : une clé ajoutée après coup (Groq) arrive au trousseau.
 - Sur Telegram, un vocal sans clé Groq dit où l'ajouter ; un refus de capture d'écran dit qu'il vient de GNOME.
+- Un outil d'intégration au nom inventé (GitHub, Notion…) est refusé tout de suite, avec la liste des vrais noms, au lieu d'entrer dans un plan qui échoue.
 
 ## 1.0.0 — 16 octobre 2026
 

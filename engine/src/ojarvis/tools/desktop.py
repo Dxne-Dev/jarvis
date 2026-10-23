@@ -14,6 +14,7 @@ import shutil
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, ClassVar, Literal
+from urllib.parse import urlsplit
 
 import anyio
 from pydantic import Field
@@ -184,6 +185,40 @@ class CloseApp(Tool[AppArgs]):
         return ToolOutput(f"Application fermée : {entry.name}.")
 
 
+class UrlArgs(ToolArgs):
+    adresse: str = Field(
+        min_length=1, max_length=2000, description="Adresse web complète (http ou https)."
+    )
+
+
+def web_address(raw: str) -> str:
+    """Seules les adresses http(s) avec un nom : jamais file:, javascript: ni une commande."""
+    parts = urlsplit(raw.strip())
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise InvalidInputError("Seules les adresses http et https s'ouvrent dans ton navigateur.")
+    return parts.geturl()
+
+
+class OpenUrl(Tool[UrlArgs]):
+    name: ClassVar[str] = "ouvrir_adresse"
+    description: ClassVar[str] = (
+        "Ouvre une adresse web dans le navigateur de l'utilisateur, à l'écran "
+        "(une pull request, une page à lui montrer)."
+    )
+    Args: ClassVar[type[ToolArgs]] = UrlArgs
+    level: ClassVar[Level] = Level.AGIR
+    os_control: ClassVar[bool] = True
+
+    def describe(self, args: UrlArgs) -> str:
+        return f"Ouvrir {args.adresse.strip()} dans ton navigateur"
+
+    async def run(self, args: UrlArgs, ctx: ToolContext) -> ToolOutput:
+        del ctx
+        url = web_address(args.adresse)
+        await applications.open_url(url)
+        return ToolOutput(f"Ouvert dans ton navigateur : {url}")
+
+
 class ScreenArgs(ToolArgs):
     question: str = Field(
         default="Décris ce qu'il y a à l'écran.",
@@ -348,6 +383,7 @@ def desktop_tools(router: ModelRouter, screen_mode: Callable[[], ScreenMode]) ->
         RunningApps(catalog),
         OpenApp(catalog),
         CloseApp(catalog),
+        OpenUrl(),
         LookAtScreen(router, screen_mode),
         MoveFile(),
         CopyFile(),

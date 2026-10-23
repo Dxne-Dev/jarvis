@@ -34,7 +34,14 @@ from ojarvis.llm.types import LLMRequest, ToolCall
 from ojarvis.permissions.gate import OsControlDisabledError
 from ojarvis.services import Services
 from ojarvis.tools.base import Level
-from ojarvis.tools.desktop import AppCatalog, CloseApp, LookAtScreen, RunningApps
+from ojarvis.tools.desktop import (
+    AppCatalog,
+    CloseApp,
+    LookAtScreen,
+    OpenUrl,
+    RunningApps,
+    UrlArgs,
+)
 from tests.test_chat import read_sse
 
 ENTRY = """[Desktop Entry]
@@ -262,6 +269,38 @@ async def test_apps_are_launched_by_id_without_a_shell(
     assert calls.read_text() == "--\norg.gnome.Calculator\n"
 
 
+async def test_an_address_opens_in_your_browser_without_a_shell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = tmp_path / "calls"
+    fake = tmp_path / "xdg-open"
+    fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {calls}\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "xdg-open" else None)
+    tool = OpenUrl()
+    args = UrlArgs(adresse=" https://github.com/octavebahoun/gouvra/pull/6 ")
+    assert tool.describe(args).endswith("gouvra/pull/6 dans ton navigateur")
+    out = await tool.run(args, SimpleNamespace())  # type: ignore[arg-type]
+    assert calls.read_text() == "https://github.com/octavebahoun/gouvra/pull/6\n"
+    assert "Ouvert dans ton navigateur" in out.text
+
+
+@pytest.mark.parametrize(
+    "raw", ["file:///etc/passwd", "javascript:alert(1)", "--help", "https://", "ftp://exemple.fr"]
+)
+async def test_only_web_addresses_reach_the_browser(
+    raw: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = tmp_path / "calls"
+    fake = tmp_path / "xdg-open"
+    fake.write_text(f"#!/bin/sh\ntouch {calls}\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(fake) if name == "xdg-open" else None)
+    with pytest.raises(InvalidInputError, match="http et https"):
+        await OpenUrl().run(UrlArgs(adresse=raw), SimpleNamespace())  # type: ignore[arg-type]
+    assert not calls.exists()
+
+
 # ---------------------------------------------------------------------- écran
 
 
@@ -405,18 +444,35 @@ def test_reading_the_screen_stays_local_by_default(
     llm["ollama"]._script = vision_script
     llm["openrouter"]._configured = True
     llm["openrouter"]._script = vision_script
+    llm["deepseek"]._script = vision_script
     assert client.get("/v1/settings").json()["screen_vision"] == "local"
     assert client.portal is not None
     text, data = client.portal.call(_look, services, "local")
     assert "1 045 €" in text
     assert data["mode"] == "local"
     assert llm["openrouter"].requests == []  # l'image n'est pas partie en ligne
+    assert llm["deepseek"].requests == []
     request, _ = llm["ollama"].requests[-1]
     assert request.messages[1].images[0].media_type == "image/jpeg"
 
     text, data = client.portal.call(_look, services, "en_ligne")
     assert data["mode"] == "en_ligne"
-    assert llm["openrouter"].requests  # en ligne : seulement si tu l'as choisi
+    # En ligne, seulement si tu l'as choisi : la vision de DeepSeek d'abord.
+    assert data["modele"] == "deepseek-v4-flash-vision-exp"
+    assert llm["openrouter"].requests == []
+
+
+def test_deepseek_down_the_screen_is_read_by_openrouter(
+    client: TestClient, services: Services, llm: dict[str, FakeProvider]
+) -> None:
+    llm["deepseek"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
+    llm["openrouter"]._configured = True
+    llm["openrouter"]._script = vision_script
+    assert client.portal is not None
+    text, data = client.portal.call(_look, services, "en_ligne")
+    assert "1 045 €" in text
+    assert data["mode"] == "en_ligne"
+    assert llm["openrouter"].requests
 
 
 def test_a_saturated_online_model_falls_back_to_a_local_reading(
@@ -427,6 +483,7 @@ def test_a_saturated_online_model_falls_back_to_a_local_reading(
     llm["ollama"]._script = vision_script
     llm["openrouter"]._configured = True
     llm["openrouter"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
+    llm["deepseek"]._script = lambda _: FakeReply(error=RateLimitedError("429"))
     assert client.portal is not None
     text, data = client.portal.call(_look, services, "en_ligne")
     assert "1 045 €" in text
@@ -452,8 +509,11 @@ def test_os_control_is_off_by_default_and_gated(client: TestClient, services: Se
     names = {s.name for s in services.tools.specs(max_level=Level.DETRUIRE, os_control=False)}
     assert "ouvrir_application" not in names
     assert "regarder_ecran" not in names
+    assert "ouvrir_adresse" not in names
     catalog = {t["name"]: t for t in client.get("/v1/tools").json()}
     assert catalog["ouvrir_application"]["level"] == 2
+    assert catalog["ouvrir_adresse"]["level"] == 2
+    assert catalog["ouvrir_adresse"]["os_control"] is True
     assert catalog["regarder_ecran"]["level"] == 1
     assert catalog["ouvrir_application"]["os_control"] is True
 
@@ -516,7 +576,10 @@ def test_an_app_opens_only_after_validation(
         plan["steps"][0]["description"]
         == "Ouvrir l'application Calculatrice (org.gnome.Calculator)"
     )
-    system = [r for r, _ in llm["deepseek"].requests if r.tools][-1].messages[0].content
+    # La dernière requête de la conversation : l'extraction des souvenirs, qui a aussi un
+    # outil, peut arriver après elle.
+    chats = [r for r, _ in llm["deepseek"].requests if r.tools and r.tools[0].name != TOOL_NAME]
+    system = chats[-1].messages[0].content
     assert "Contrôle du PC activé" in system
     assert not calls.exists()  # rien avant ta validation
     client.post(f"/v1/plans/{plan['id']}/approve", json={})

@@ -279,6 +279,24 @@ async def launch(entry: AppEntry) -> int:
     return process.pid
 
 
+async def open_url(url: str) -> None:
+    """Ouvre l'adresse dans ton navigateur par défaut (détaché de Jarvis)."""
+    opener = shutil.which("xdg-open")
+    if opener is None:
+        raise UnavailableError("xdg-open absent : impossible d'ouvrir ton navigateur.")
+    process = await asyncio.create_subprocess_exec(
+        opener,
+        url,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    code = await asyncio.wait_for(process.wait(), 15)
+    if code != 0:
+        raise UnavailableError("Ton navigateur ne s'est pas ouvert.")
+
+
 def app_root(entry: AppEntry) -> Path | None:
     """Le dossier propre à l'application, quand elle démarre par un script.
 
