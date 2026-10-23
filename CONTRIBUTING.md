@@ -34,4 +34,4 @@ Chaque PR montre ce qu'elle change, qu'il s'agisse de l'interface ou du moteur :
 - **Moteur** : la sortie qui prouve que ça marche (réponse de Jarvis, extrait de trace du Journal, sortie d'un test ou d'une commande).
 - **Nouvelle fonctionnalité** : une démonstration du parcours complet, de la demande au résultat.
 
-**Exception, la sécurité** : pas de capture qui montrerait comment exploiter une faille. À la place, justifie le changement par écrit : le risque corrigé, pourquoi cette solution, et comment tu l'as testée. Pour une faille encore ouverte, contacte d'abord le mainteneur en privé, jamais dans une issue publique. Le modèle de sécurité de Jarvis est décrit dans [`docs/securite.md`](./docs/securite.md).
+**Exception, la sécurité** : pas de capture qui montrerait comment exploiter une faille. À la place, justifie le changement par écrit : le risque corrigé, pourquoi cette solution, et comment tu l'as testée. Pour une faille encore ouverte, signale-la en privé depuis l'onglet **Security › Report a vulnerability** du dépôt, jamais dans une issue publique. Le modèle de sécurité de Jarvis est décrit dans [`docs/securite.md`](./docs/securite.md).
