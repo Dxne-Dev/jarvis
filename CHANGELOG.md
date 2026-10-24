@@ -4,12 +4,17 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 
 ## Non publié
 
+## 1.1.0 — 24 octobre 2026
+
 ### Ajouté
 - Suite de 44 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
 - Avec le contrôle du PC, Jarvis ouvre une adresse web dans ton navigateur (une pull request, par exemple), après ta validation. Seules les adresses http et https passent.
+- Réglages › Modèles locaux : pour une connexion faible, chaque modèle se télécharge à la main dans le navigateur puis s'importe ; Jarvis reconnaît chaque fichier à son empreinte, même renommé (#43).
 - En ligne, l'écran est lu par la vision de DeepSeek (`deepseek-v4-flash-vision-exp`, environ 1 s), avant OpenRouter ; la lecture locale reste le choix par défaut.
 
 ### Corrigé
+- Un téléchargement de modèle coupé reprend là où il s'était arrêté, avec plusieurs essais, au lieu de repartir de zéro (#43).
+- Sur Ubuntu 24.04, la voix démarre : si PortAudio ne voit pas le micro anti-écho ou le micro choisi, Jarvis prend le micro par défaut au lieu de planter. L'erreur de la voix dit aussi sa vraie cause.
 - Jarvis ne demande plus « tu confirmes ? » avant de proposer un plan : le plan est la confirmation.
 - Un plan annoncé mais jamais proposé est maintenant proposé pour de vrai.
 - Les chemins que Jarvis lit commencent par `~/` : plus de confusion, et ton nom d'utilisateur ne part plus vers le modèle.

@@ -281,12 +281,21 @@ async def launch(entry: AppEntry) -> int:
 
 async def open_url(url: str) -> None:
     """Ouvre l'adresse dans ton navigateur par défaut (détaché de Jarvis)."""
+    await _xdg_open(url, "ton navigateur", "Ton navigateur ne s'est pas ouvert.")
+
+
+async def open_folder(folder: Path) -> None:
+    """Ouvre le dossier dans le gestionnaire de fichiers."""
+    await _xdg_open(str(folder), "le dossier", "Le dossier ne s'est pas ouvert.")
+
+
+async def _xdg_open(target: str, what: str, failure: str) -> None:
     opener = shutil.which("xdg-open")
     if opener is None:
-        raise UnavailableError("xdg-open absent : impossible d'ouvrir ton navigateur.")
+        raise UnavailableError(f"xdg-open absent : impossible d'ouvrir {what}.")
     process = await asyncio.create_subprocess_exec(
         opener,
-        url,
+        target,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
@@ -294,7 +303,7 @@ async def open_url(url: str) -> None:
     )
     code = await asyncio.wait_for(process.wait(), 15)
     if code != 0:
-        raise UnavailableError("Ton navigateur ne s'est pas ouvert.")
+        raise UnavailableError(failure)
 
 
 def app_root(entry: AppEntry) -> Path | None:

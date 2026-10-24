@@ -53,6 +53,7 @@ function common(path: string): [number, unknown] | null {
   if (path === "/v1/llm/status") return [200, []];
   if (path === "/v1/llm/models") return [200, []];
   if (path === "/v1/voice/status") return [200, VOICE];
+  if (path === "/v1/local-models") return [200, []];
   if (path === "/v1/voice/devices")
     return [200, { inputs: [{ name: "alsa_input", label: "Micro interne" }], outputs: [] }];
   if (path === "/v1/voice/voices")

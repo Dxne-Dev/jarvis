@@ -565,3 +565,31 @@
 .integrationStatus[data-tone="down"] {
   color: var(--color-danger);
 }
+
+.manual {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.manual summary {
+  cursor: pointer;
+  font-weight: var(--weight-medium);
+}
+
+.manualModel {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.manualFiles {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

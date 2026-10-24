@@ -16,7 +16,8 @@ export function fakeEngine(handler: Handler) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace("http://moteur", "");
-    const body: unknown = init?.body ? JSON.parse(init.body as string) : undefined;
+    const raw = init?.body;
+    const body: unknown = raw instanceof Blob ? raw : raw ? JSON.parse(raw as string) : undefined;
     const method = init?.method ?? "GET";
     calls.push({ method, path, body });
     const [status, payload] = handler(method, path, body);
