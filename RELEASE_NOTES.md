@@ -1,7 +1,5 @@
 # O-jarvis 1.0.0 — notes de version
 
-## Ce qui est livré
-
 O-jarvis est un assistant personnel pour Ubuntu, en français : on lui parle (« Hey Jarvis »), il se souvient, agit sous ton contrôle et sait s'étendre. Tout ce que décrit le brief est présent :
 
 - **Parler** : sphère animée, conversation en flux, voix complète (réveil local, transcription, voix naturelle avec relais local, interruption), mémoire visible et modifiable, moteur de contexte, routeur de modèles (DeepSeek, OpenRouter, Ollama, OpenAI, Anthropic).
