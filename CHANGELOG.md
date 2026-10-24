@@ -4,6 +4,8 @@ Format inspiré de « Keep a Changelog ». Le détail de chaque évolution est d
 
 ## Non publié
 
+## 1.1.0 — 24 octobre 2026
+
 ### Ajouté
 - Suite de 44 scénarios par niveaux (`engine/tools/scenarios.py`), joués avec le vrai modèle ; résultats dans `docs/scenarios.md`.
 - Avec le contrôle du PC, Jarvis ouvre une adresse web dans ton navigateur (une pull request, par exemple), après ta validation. Seules les adresses http et https passent.
