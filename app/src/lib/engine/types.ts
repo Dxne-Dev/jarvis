@@ -76,6 +76,33 @@ export interface VoiceStatus {
   last_turn_at: number | null;
 }
 
+export interface LocalModelFile {
+  name: string;
+  url: string;
+  sha256: string;
+  size: number | null;
+  present: boolean;
+  /** Octets déjà reçus d'un téléchargement interrompu. */
+  partial: number;
+}
+
+export interface LocalModel {
+  key: string;
+  label: string;
+  folder: string;
+  ready: boolean;
+  /** « prêt », « absent », « téléchargement 42 % », « erreur »… */
+  state: string;
+  files: LocalModelFile[];
+}
+
+export interface ImportedModelFile {
+  key: string;
+  label: string;
+  file: string;
+  ready: boolean;
+}
+
 export interface VoiceDevices {
   inputs: { name: string; label: string }[];
   outputs: { name: string; label: string }[];

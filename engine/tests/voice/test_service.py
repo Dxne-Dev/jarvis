@@ -208,6 +208,21 @@ async def test_service_runs_a_turn_and_follows_settings() -> None:
     await service.close()
 
 
+async def test_an_echo_micro_invisible_to_portaudio_falls_back_to_the_default() -> None:
+    """Ubuntu 24.04 : PortAudio sans PulseAudio ne voit pas les micros virtuels de PipeWire."""
+    prefs = {"value": Preferences(voice_input_device="alsa_input.usb")}
+    echo = FakeEcho(available=True)
+    sources: list[str | None] = []
+    service, _bus, _chat = make_service(prefs, echo=echo, sources=sources)
+    service._sees = lambda name, _kind: name not in {"ojarvis_micro", "alsa_input.usb"}
+    await service.start()
+    assert service.status.echo_cancel is False
+    assert echo.unloads == 1
+    assert sources == [None]  # micro par défaut du système, pas d'erreur
+    assert service.status.error is None
+    await service.close()
+
+
 async def test_without_echo_cancel_only_hey_jarvis_interrupts() -> None:
     prefs = {"value": Preferences()}
     service, _bus, _chat = make_service(prefs, echo=FakeEcho(available=False), sources=[])

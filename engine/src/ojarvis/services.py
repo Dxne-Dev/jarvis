@@ -659,15 +659,45 @@ class Services:
         if self.providers.get("openrouter") is not None:
             count = await discover_openrouter_free(self.catalog, self.http)
             log.info("openrouter_free_models", count=count)
-        if isinstance(self.embedder, E5Embedder):
-            try:
-                await self.embedder.ensure(self.http)
-            except Exception:
-                log.exception("embedding_model_unavailable")
-                return
-            await self.memory.start()
-            await self.conversations.start()
+        if not await self._start_memory():
+            return
         await self.bus.publish("engine.ready", {"embeddings": self.embedder.status}, persist=False)
+
+    async def _start_memory(self) -> bool:
+        """Charge le modèle d'embeddings (téléchargé s'il manque) puis démarre la mémoire."""
+        if not isinstance(self.embedder, E5Embedder) or self.embedder.status == "prêt":
+            return True
+        try:
+            await self.embedder.ensure(self.http)
+        except Exception:
+            log.exception("embedding_model_unavailable")
+            return False
+        await self.memory.start()
+        await self.conversations.start()
+        return True
+
+    @property
+    def models_dir(self) -> Path:
+        return self.config.paths.cache_dir / "models"
+
+    def model_states(self) -> dict[str, str]:
+        """État vivant de chaque modèle local (téléchargement en cours, erreur…)."""
+        states = dict(self.voice.status.models)
+        states["memoire"] = self.embedder.status
+        return states
+
+    def retry_local_models(self) -> None:
+        """Relance, en tâche de fond, ce qui manque : la voix si elle est activée, la mémoire."""
+        if self.preferences.voice_enabled and self.voice.status.state == "error":
+            self.spawn(self.voice.apply(self.preferences))
+        if self.embedder.status != "prêt":
+            self.spawn(self._start_memory_and_announce())
+
+    async def _start_memory_and_announce(self) -> None:
+        if await self._start_memory():
+            await self.bus.publish(
+                "engine.ready", {"embeddings": self.embedder.status}, persist=False
+            )
 
     async def stop(self) -> None:
         await self.bus.publish("engine.stopping", {})

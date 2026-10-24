@@ -19,7 +19,9 @@ import type {
   GraphEntity,
   GraphKind,
   GraphRelation,
+  ImportedModelFile,
   Integration,
+  LocalModel,
   McpInstallRequest,
   McpProbe,
   McpRegistryEntry,
@@ -278,6 +280,49 @@ export function useVoiceStatus() {
     queryKey: ["voice", "status"],
     queryFn: () => requireClient(client).get<VoiceStatus>("/v1/voice/status"),
     enabled: client !== null,
+  });
+}
+
+export function useLocalModels() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["local-models"],
+    queryFn: () => requireClient(client).get<LocalModel[]>("/v1/local-models"),
+    enabled: client !== null,
+    // Tant qu'un modèle manque, on suit le téléchargement.
+    refetchInterval: (query) => (query.state.data?.some((m) => !m.ready) ? 2000 : false),
+  });
+}
+
+export function useRetryLocalModels() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/local-models/retry"),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["local-models"] });
+      void queryClient.invalidateQueries({ queryKey: ["voice", "status"] });
+    },
+  });
+}
+
+export function useImportModelFile() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) =>
+      requireClient(client).upload<ImportedModelFile>("/v1/local-models/import", file),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["local-models"] });
+      void queryClient.invalidateQueries({ queryKey: ["voice", "status"] });
+    },
+  });
+}
+
+export function useOpenModelsFolder() {
+  const client = useEngineStore((s) => s.client);
+  return useMutation({
+    mutationFn: () => requireClient(client).post<undefined>("/v1/local-models/open-folder"),
   });
 }
 

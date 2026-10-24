@@ -41,10 +41,12 @@ PIPER_FILES: dict[str, PinnedFile] = {
     f"{PIPER_VOICE}.onnx": PinnedFile(
         f"{PIPER_BASE}/{PIPER_VOICE}.onnx",
         "bf65074ccdeeeeaa832e75edb1c0a513c01c9a972bdf085ff8a6e71ea234fd41",
+        63_511_038,
     ),
     f"{PIPER_VOICE}.onnx.json": PinnedFile(
         f"{PIPER_BASE}/{PIPER_VOICE}.onnx.json",
         "2f7f885ad5a0aad802e3cc24e4f57239febdcb142b4876de5d238094674361cc",
+        4_959,
     ),
 }
 

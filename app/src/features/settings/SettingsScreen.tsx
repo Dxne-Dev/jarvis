@@ -7,6 +7,7 @@ import type { SecretGroup, SecretStatus } from "../../lib/engine/types";
 import { BrowserSection } from "./BrowserSection";
 import { DesktopSection } from "./DesktopSection";
 import { IntegrationsSection } from "./IntegrationsSection";
+import { LocalModelsSection } from "./LocalModelsSection";
 import { ModelsSection } from "./ModelsSection";
 import { PermissionsSection } from "./PermissionsSection";
 import { Choice } from "./PreferenceControls";
@@ -106,6 +107,12 @@ export function SettingsScreen() {
           Voix
         </h2>
         <VoiceSection />
+      </section>
+      <section className={styles.section} aria-labelledby="modeles-locaux">
+        <h2 id="modeles-locaux" className={styles.sectionTitle}>
+          Modèles locaux
+        </h2>
+        <LocalModelsSection />
       </section>
       <section className={styles.section} aria-labelledby="integrations">
         <h2 id="integrations" className={styles.sectionTitle}>

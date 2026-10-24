@@ -22,9 +22,10 @@ import anyio.to_thread
 import httpx
 
 from ojarvis.chat.service import ChatService
-from ojarvis.core.downloads import PinnedFile, fetch_pinned, files_present
+from ojarvis.core.downloads import ChecksumError, PinnedFile, fetch_pinned, files_present
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import SecretStore
 from ojarvis.settings_store import Preferences
 from ojarvis.tracing.tracer import Tracer
@@ -165,6 +166,17 @@ def _refresh_devices() -> None:
         sd._initialize()
 
 
+def _portaudio_sees(name: str, kind: str) -> bool:
+    """Vrai si PortAudio trouve ce micro (`input`) ou cette sortie (`output`) par son nom."""
+    try:
+        import sounddevice as sd  # noqa: PLC0415
+
+        sd.query_devices(name, kind)
+    except Exception:
+        return False
+    return True
+
+
 def _pactl_devices(kind: str) -> list[dict[str, str]]:
     """Micros (`sources`) ou sorties (`sinks`) vus par PipeWire, avec un nom lisible."""
     pactl = shutil.which("pactl")
@@ -216,6 +228,10 @@ class VoiceService:
     ) -> None:
         self._on_listen = on_listen
         self._source_factory = source_factory
+        #: Le micro ou la sortie est-il visible de PortAudio ? (toujours, hors vrai micro)
+        self._sees: Callable[[str, str], bool] = (
+            _portaudio_sees if source_factory is MicrophoneSource else lambda _name, _kind: True
+        )
         self._sink_factory = sink_factory
         self._clock = clock
         self._models = models_dir
@@ -365,13 +381,32 @@ class VoiceService:
         )
         if echo and self._source_factory is MicrophoneSource:
             await anyio.to_thread.run_sync(_refresh_devices)
+        if echo:
+            seen = await anyio.to_thread.run_sync(
+                lambda: self._sees(EC_SOURCE, "input") and self._sees(EC_SINK, "output")
+            )
+            if not seen:
+                # PortAudio sans accès à PulseAudio (Ubuntu 24.04) : le micro virtuel
+                # existe mais reste invisible. On s'en passe plutôt que de planter.
+                log.warning("echo_cancel_invisible")
+                await anyio.to_thread.run_sync(self._echo.unload)
+                echo = False
         self.status.echo_cancel = echo
-        sink = self._sink_factory(EC_SINK if echo else prefs.voice_output_device)
+
+        def device(name: str | None, kind: str) -> str | None:
+            if name is None or self._sees(name, kind):
+                return name
+            log.warning("audio_device_invisible", kind=kind)
+            return None  # périphérique par défaut du système
+
+        sink = self._sink_factory(EC_SINK if echo else device(prefs.voice_output_device, "output"))
 
         def make_pipeline() -> VoicePipeline:
             current = self._preferences()
             return VoicePipeline(
-                source=self._source_factory(EC_SOURCE if echo else current.voice_input_device),
+                source=self._source_factory(
+                    EC_SOURCE if echo else device(current.voice_input_device, "input")
+                ),
                 sink=sink,
                 wake=self._parts["wake"],
                 vad=self._parts["vad"],
@@ -551,12 +586,43 @@ def _device_prefs(prefs: Preferences) -> dict[str, Any]:
     return {"input": prefs.voice_input_device, "output": prefs.voice_output_device}
 
 
+#: Erreurs audio reconnues à leur texte, la plus précise d'abord.
+_AUDIO_ERRORS: tuple[tuple[str, str], ...] = (
+    (
+        "PortAudio library not found",
+        "La bibliothèque audio manque : installe-la avec « sudo apt install libportaudio2 ».",
+    ),
+    ("PortAudio", "Micro ou haut-parleur introuvable."),
+    ("Invalid device", "Micro ou haut-parleur introuvable."),
+    ("No Default", "Micro ou haut-parleur introuvable."),
+)
+
+
 def _describe(exc: Exception) -> str:
     if isinstance(exc, MicrophoneSilentError):
         return "Le micro ne transmet plus rien. Nouvel essai en cours…"
     text = str(exc)
-    if "PortAudio" in text or "Invalid device" in text or "No Default" in text:
-        return "Micro ou haut-parleur introuvable."
+    for needle, message in _AUDIO_ERRORS:
+        if needle in text:
+            return message
     if isinstance(exc, httpx.HTTPError):
-        return "Téléchargement d'un modèle vocal impossible (réseau)."
-    return "Le pipeline vocal n'a pas pu démarrer."
+        return (
+            "Téléchargement d'un modèle vocal impossible (réseau). "
+            "Réessaie ou télécharge-le à la main : Réglages › Modèles locaux."
+        )
+    if isinstance(exc, ChecksumError):
+        return "Un modèle vocal reçu était abîmé : il a été supprimé. Réessaie."
+    if isinstance(exc, ImportError):
+        missing = exc.name or _cause(exc)
+        return f"Une bibliothèque de la voix manque ({missing}) : réinstalle O-jarvis."
+    return f"Le pipeline vocal n'a pas pu démarrer ({_cause(exc)})."
+
+
+def _cause(exc: Exception) -> str:
+    """Première ligne de l'erreur, sans dossier personnel ni secret, assez courte pour l'écran."""
+    lines = str(exc).strip().splitlines()
+    text = lines[0] if lines else ""
+    text = REDACTOR.redact(text.replace(str(Path.home()), "~"))
+    if len(text) > 160:
+        text = text[:159] + "…"
+    return f"{type(exc).__name__} : {text}" if text else type(exc).__name__
