@@ -57,7 +57,7 @@ function faceHalfWidth(y: number): number {
  * Traits sombres du masque (demi-visage droit, x >= 0 ; le gauche est symétrique).
  * [ax, ay, bx, by, rayon au départ, rayon à l'arrivée]
  */
-const INK: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
+const INK: readonly (readonly [number, number, number, number, number, number])[] = [
   // sourcil épais, oblique, plus bas vers le nez
   [0.34, 0.46, 0.07, 0.36, 0.03, 0.046],
   // moustache relevée

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useEngineStore } from "../lib/engine/store";
 import type { EngineEvent } from "../lib/engine/types";
-import { Notices } from "./Notices.tsx";
+import { Notices } from "./Notices";
 
 function event(id: number, type: string, payload: Record<string, unknown> = {}): EngineEvent {
   return {

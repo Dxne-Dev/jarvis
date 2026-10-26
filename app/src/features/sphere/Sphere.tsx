@@ -20,12 +20,13 @@ export interface SphereProps {
   onFrame?: (intervalMs: number) => void;
 }
 
-const POINTS: Record<SphereQuality, number> = { auto: 14000, high: 20000, low: 6000 };
+const SPHERE_POINTS: Record<SphereQuality, number> = { auto: 3400, high: 5200, low: 1600 };
+const MASK_POINTS: Record<SphereQuality, number> = { auto: 8000, high: 14000, low: 3500 };
 const MAX_DPR: Record<SphereQuality, number> = { auto: 2, high: 2, low: 1 };
 
 export function Sphere({
   state,
-  avatarModel = "cyberMask",
+  avatarModel = "sphere",
   level,
   quality = "auto",
   reducedMotion = false,
@@ -56,8 +57,9 @@ export function Sphere({
     const wrapper = wrapperRef.current;
     if (!canvas || !wrapper) return;
 
+    const pointCount = avatarModel === "cyberMask" ? MASK_POINTS[quality] : SPHERE_POINTS[quality];
     const renderer = SphereRenderer.create(canvas, {
-      pointCount: POINTS[quality],
+      pointCount,
       avatarModel,
     });
     if (!renderer) {
@@ -65,7 +67,7 @@ export function Sphere({
       setWebgl(false);
       return;
     }
-    uiLog("info", `sphère : WebGL2 prêt (${POINTS[quality]} points)`);
+    uiLog("info", `sphère : WebGL2 prêt (${pointCount} points, modèle ${avatarModel})`);
     setWebgl(true);
     const animator = animatorRef.current ?? new SphereAnimator(readPalette());
     animator.setState(state);
@@ -127,6 +129,7 @@ export function Sphere({
       role="img"
       aria-label={`Sphère de Jarvis : ${STATE_LABELS[state]}`}
       data-state={state}
+      data-model={avatarModel}
     >
       <canvas ref={canvasRef} className={styles.canvas} aria-hidden="true" />
       {!webgl && <div className={styles.fallback} data-state={state} />}

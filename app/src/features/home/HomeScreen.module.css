@@ -8,16 +8,22 @@
   overflow: hidden;
 }
 
-/* Accueil vide : le masque en toile de fond pleine page */
+/* Accueil vide : la sphère au centre par défaut, ou le masque en toile de fond */
 .stage {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   width: 100%;
 }
 
 .sphere {
+  --sphere-size: min(56vh, 32rem);
+
+  width: 100%;
+}
+
+.sphere[data-model="cyberMask"] {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -29,8 +35,12 @@
 .heading {
   position: relative;
   z-index: 1;
-  margin-top: var(--space-4);
+  margin-top: calc(var(--sphere-size, 32rem) * -0.08);
   text-align: center;
+}
+
+.home:has(.sphere[data-model="cyberMask"]) .heading {
+  margin-top: var(--space-4);
 }
 
 .title {

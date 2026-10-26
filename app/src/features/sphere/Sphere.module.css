@@ -1,16 +1,28 @@
 .wrapper {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: var(--sphere-size, 26rem);
+  margin-inline: auto;
+  pointer-events: none;
+}
+
+.wrapper[data-model="cyberMask"] {
   position: absolute;
   inset: 0;
-  width: 100%;
+  max-width: none;
   height: 100%;
+  aspect-ratio: auto;
   overflow: hidden;
-  pointer-events: none;
 }
 
 .canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.wrapper[data-model="cyberMask"] .canvas {
   transform: translateY(-3%);
 }
 
