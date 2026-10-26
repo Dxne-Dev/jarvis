@@ -9,7 +9,7 @@ import {
   useUpdatePreferences,
 } from "../../lib/engine/queries";
 import type { ModelInfo, ProviderStatus } from "../../lib/engine/types";
-import { PreferenceSwitch } from "./PreferenceControls";
+import { Choice, PreferenceSwitch } from "./PreferenceControls";
 import styles from "./SettingsScreen.module.css";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -113,6 +113,23 @@ export function ModelsSection() {
           );
         })}
       </ul>
+      <Choice
+        name="model_profile"
+        label="Profil de modèles"
+        disabled={!configured.has("meta")}
+        options={[
+          {
+            value: "auto",
+            label: "Automatique",
+            hint: "Le meilleur modèle disponible pour chaque tâche.",
+          },
+          {
+            value: "meta",
+            label: "Tout Meta",
+            hint: "Muse Spark pour chaque tâche, vision comprise ; les autres en secours. Clé Meta requise.",
+          },
+        ]}
+      />
       <TaskRouting models={models.data.filter((m) => configured.has(m.provider))} />
       <PreferenceSwitch
         name="learn_from_conversations"

@@ -43,6 +43,7 @@ export interface Preferences {
   reduced_motion: "system" | "reduce" | "full";
   sphere_quality: "auto" | "high" | "low";
   routing: Record<string, string>;
+  model_profile: "auto" | "meta";
   learn_from_conversations: boolean;
   voice_enabled: boolean;
   voice_input_device: string | null;

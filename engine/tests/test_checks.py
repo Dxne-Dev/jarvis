@@ -44,6 +44,11 @@ OK_RESPONSES: dict[str, tuple[str, dict[str, object], str]] = {
     "OPENROUTER_API_KEY": ("openrouter.ai", {"data": {"is_free_tier": True}}, "gratuite"),
     "OPENAI_API_KEY": ("api.openai.com", {"data": []}, "acceptée"),
     "ANTHROPIC_API_KEY": ("api.anthropic.com", {"data": []}, "acceptée"),
+    "MODEL_API_KEY": (
+        "api.meta.ai",
+        {"data": [{"id": "muse-spark-1.3"}, {"id": "muse-spark-1.3-contributor"}]},
+        "Modèles : muse-spark-1.3.",
+    ),
     "CARTESIA_API_KEY": ("api.cartesia.ai", {"data": [{"id": "v1"}, {"id": "v2"}]}, "2 voix"),
     "TAVILY_API_KEY": (
         "api.tavily.com",

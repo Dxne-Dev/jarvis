@@ -29,6 +29,9 @@ class Preferences(BaseModel):
     sphere_quality: Literal["auto", "high", "low"] = "auto"
     #: Modèle imposé par type de tâche, sous la forme « fournisseur/modèle » (absent = auto).
     routing: dict[str, str] = Field(default_factory=dict)
+    #: Profil de modèles : « meta » met Muse Spark en tête de chaque tâche (les autres
+    #: fournisseurs restent en secours). Désactivé par défaut.
+    model_profile: Literal["auto", "meta"] = "auto"
     #: Apprendre de la conversation (faits et préférences extraits automatiquement).
     learn_from_conversations: bool = True
     #: Voix : « Hey Jarvis », écoute, réponse parlée. Désactivable sans toucher au chat.

@@ -58,8 +58,10 @@ def make_router(
     deepseek: FakeProvider | None = None,
     openrouter: FakeProvider | None = None,
     ollama: FakeProvider | None = None,
+    meta: FakeProvider | None = None,
     bus: EventBus | None = None,
     overrides: dict[str, str] | None = None,
+    profile: str = "auto",
     clock: Clock | None = None,
     tracer: Tracer | None = None,
 ) -> ModelRouter:
@@ -67,6 +69,7 @@ def make_router(
         "deepseek": deepseek or FakeProvider("deepseek"),
         "openrouter": openrouter or FakeProvider("openrouter"),
         "ollama": ollama or FakeProvider("ollama", local=True),
+        "meta": meta or FakeProvider("meta"),
     }
     return ModelRouter(
         providers,
@@ -74,6 +77,7 @@ def make_router(
         bus=bus,
         tracer=tracer,
         overrides=lambda: overrides or {},
+        profile=lambda: profile,
         policy=POLICY,
         clock=clock or Clock(),
     )
@@ -102,6 +106,30 @@ def test_override_comes_first() -> None:
         0
     ]
     assert reasoning.thinking  # la tâche de réflexion garde sa réflexion
+
+
+def test_meta_profile_puts_muse_spark_first_and_keeps_the_rest_as_fallback() -> None:
+    router = make_router(profile="meta")
+    assert [r.key for r in router.routes("chat")] == [
+        "meta/muse-spark-1.3",
+        "deepseek/deepseek-flash",
+        "openrouter/google/gemma-4-26b-a4b-it:free",
+        "ollama/ministral-3:3b",
+    ]
+    assert router.routes("reasoning")[0] == Route("meta", "muse-spark-1.3", thinking=True)
+    # Muse Spark voit les images : il passe aussi en tête pour la vision.
+    assert router.routes("vision", Constraints(needs_vision=True))[0].provider == "meta"
+    # Sans le profil, Meta n'apparaît nulle part.
+    assert "meta" not in [r.provider for r in make_router().routes("chat")]
+
+
+def test_meta_profile_needs_the_key_and_never_beats_privacy_or_a_forced_model() -> None:
+    no_key = make_router(profile="meta", meta=FakeProvider("meta", configured=False))
+    assert no_key.routes("chat")[0].provider == "deepseek"
+    router = make_router(profile="meta")
+    assert [r.provider for r in router.routes("chat", Constraints(sensitive=True))] == ["ollama"]
+    forced = make_router(profile="meta", overrides={"chat": "ollama/ministral-3:3b"})
+    assert forced.routes("chat")[0].provider == "ollama"
 
 
 async def test_fallback_before_first_token_publishes_event() -> None:

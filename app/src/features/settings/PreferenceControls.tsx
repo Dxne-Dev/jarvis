@@ -7,6 +7,7 @@ import type { Preferences } from "../../lib/engine/types";
 import styles from "./SettingsScreen.module.css";
 
 type ChoiceKey =
+  | "model_profile"
   | "reduced_motion"
   | "sphere_quality"
   | "wake_sensitivity"

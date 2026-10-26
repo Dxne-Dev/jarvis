@@ -89,6 +89,17 @@ async def check_anthropic(client: httpx.AsyncClient, get: Getter) -> CheckResult
     return CheckResult(True, "Clé acceptée.")
 
 
+async def check_meta(client: httpx.AsyncClient, get: Getter) -> CheckResult:
+    key = get("MODEL_API_KEY") or ""
+    response = await _bearer_get(client, "https://api.meta.ai/v1/models", key)
+    if response.status_code != 200:
+        return CheckResult(False, _status_detail(response))
+    models = [m.get("id") for m in _json(response).get("data", []) if isinstance(m, dict)]
+    # Les modèles « contributor » (Meta s'entraîne sur les requêtes) ne sont jamais utilisés.
+    usable = [str(m) for m in models if not str(m).endswith("-contributor")]
+    return CheckResult(True, f"Modèles : {', '.join(usable) or 'aucun'}.")
+
+
 async def check_cartesia(client: httpx.AsyncClient, get: Getter) -> CheckResult:
     key = get("CARTESIA_API_KEY") or ""
     response = await _bearer_get(
@@ -201,6 +212,7 @@ CHECKS: dict[str, Check] = {
     "OPENROUTER_API_KEY": check_openrouter,
     "OPENAI_API_KEY": check_openai,
     "ANTHROPIC_API_KEY": check_anthropic,
+    "MODEL_API_KEY": check_meta,
     "CARTESIA_API_KEY": check_cartesia,
     "GROQ_API_KEY": check_groq,
     "TAVILY_API_KEY": check_tavily,

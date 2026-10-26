@@ -113,6 +113,19 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
 }
 
 
+#: Profil « Tout Meta » (Réglages) : ces routes passent avant la politique par défaut, qui
+#: reste en secours ; un modèle imposé à la main garde la priorité.
+META_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
+    "voice": (Route("meta", "muse-spark-1.3"),),
+    "chat": (Route("meta", "muse-spark-1.3"),),
+    "reasoning": (Route("meta", "muse-spark-1.3", thinking=True),),
+    "extract": (Route("meta", "muse-spark-1.3"),),
+    "title": (Route("meta", "muse-spark-1.3"),),
+    "vision": (Route("meta", "muse-spark-1.3"),),
+}
+PROFILES: Mapping[str, Mapping[TaskType, tuple[Route, ...]]] = {"meta": META_POLICY}
+
+
 #: Délai maximal avant le premier morceau de réponse, par tâche (fournisseurs en ligne).
 #: Au-delà, on bascule : à la voix, attendre 30 s un premier mot n'a pas de sens.
 FIRST_EVENT_TIMEOUT_S: Mapping[TaskType, float] = {
@@ -156,6 +169,8 @@ class RoutedStream:
 
 
 Overrides = Callable[[], Mapping[str, str]]
+#: Nom du profil choisi dans Réglages (« auto » : la politique par défaut seule).
+Profile = Callable[[], str]
 
 
 class ModelRouter:
@@ -167,6 +182,7 @@ class ModelRouter:
         bus: EventBus | None = None,
         tracer: Tracer | None = None,
         overrides: Overrides | None = None,
+        profile: Profile | None = None,
         policy: Mapping[TaskType, tuple[Route, ...]] = DEFAULT_POLICY,
         clock: Callable[[], float] = time.monotonic,
         first_event_timeout: Mapping[TaskType, float] = FIRST_EVENT_TIMEOUT_S,
@@ -182,6 +198,7 @@ class ModelRouter:
         self._bus = bus
         self._tracer = tracer
         self._overrides = overrides or dict
+        self._profile = profile or (lambda: "auto")
         self._clock = clock
         self.health: dict[str, ProviderHealth] = {name: ProviderHealth() for name in providers}
 
@@ -214,6 +231,7 @@ class ModelRouter:
             provider, model = override.split("/", 1)
             default_thinking = any(r.thinking for r in self.policy.get(task, ()))
             candidates.append(Route(provider, model, thinking=default_thinking))
+        candidates.extend(PROFILES.get(self._profile(), {}).get(task, ()))
         candidates.extend(self.policy.get(task, ()))
         if constraints.sensitive or constraints.offline:
             candidates.extend(

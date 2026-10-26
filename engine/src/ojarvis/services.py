@@ -306,6 +306,7 @@ def _build_router(
         bus=bus,
         tracer=tracer,
         overrides=lambda: holder["value"].routing,
+        profile=lambda: holder["value"].model_profile,
         # Avant une demande « locale seulement », au plus une fois par minute.
         refresh_local=(
             functools.partial(ollama.refresh, http) if isinstance(ollama, OllamaProvider) else None
