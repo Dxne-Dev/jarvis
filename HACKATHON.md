@@ -24,7 +24,7 @@ Each feature has an issue labeled `hackathon`.
 - **"All Meta" profile in Settings**: Muse Spark answers every task first (chat, voice, reasoning, screen reading), and the other providers stay as fallback. It is off by default and needs a Meta key, and the key has its own "Test" button. A model forced by hand, or a privacy rule (sensitive data stays on a local model), still wins.
 - **Speech to text with Muse Voice Transcribe**: with the profile on, each spoken sentence is transcribed by Meta, with a French hint and the keyword "Jarvis". "Local Whisper only" stays local.
 
-### Shell mode: Jarvis in your terminal ([#7](https://github.com/octavebahoun/O-jarvis/issues/7)), in progress
+### Shell mode: Jarvis in your terminal ([#7](https://github.com/octavebahoun/O-jarvis/issues/7)), done
 
 - **`ojarvis-shell`**: run it in any folder of your home. Jarvis works in that folder: it runs commands, reads their output, fixes and runs again, and shows you each command with the end of its output.
 - **Every command is classified before it runs** (`engine/src/ojarvis/shell/commands.py`, 90 tested cases): reading (`ls`, `git status`, `df`) runs at once; any other action waits for your "o"; a destruction (`rm`, `docker prune`, `git reset --hard`) needs "oui" typed in full. Pipes, `;`, `&&`, `$(…)`, heredocs and `xargs` are split and each part is classified; the riskiest one wins.
