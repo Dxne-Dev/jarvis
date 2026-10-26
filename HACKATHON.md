@@ -33,6 +33,8 @@ Each feature has an issue labeled `hackathon`.
 - **Validate, then continue**: after you approve a plan, Jarvis reads the results and carries on until the task is done. In shell mode it can chain up to 16 steps per answer; actions still wait for you.
 - **Same Jarvis as the app**: the terminal joins the engine the app already runs (same memory, same audit log) through a private connection file (readable by your account only, removed when the engine stops). If the app is closed, the terminal starts its own engine and stops it on exit.
 - The command tool exists only in shell mode: the app chat can neither call it nor slip it into a plan.
+- **"Passe en mode shell"**: said to the app (or by voice), it opens your own terminal (the system default first, Ptyxis on Ubuntu 26.04) on `ojarvis-shell`, in the folder you asked for, joined to the same Jarvis.
+- **No secret leaves through a command**: commands that print a token (`gcloud auth print-access-token`, `gh auth token`, `pass`…) are refused unless used inside a substitution such as `-H "Authorization: Bearer $(…)"`; and Google tokens (even truncated), JWTs, private keys and more are masked before anything reaches the model. Found during a real test on October 26, fixed the same night.
 
 ## Already there before (not part of the submission)
 
