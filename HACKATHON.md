@@ -15,7 +15,14 @@ To see exactly what was built during the hackathon:
 
 Each feature has an issue labeled `hackathon`.
 
-_Nothing yet: the build period starts on October 27._
+### All-Meta profile ([#47](https://github.com/octavebahoun/O-jarvis/issues/47)), in progress
+
+- **Meta provider**: Muse Spark 1.3 and Muse Wonder 1.0 through the Meta Model API, with their prices so every call shows its cost.
+  - Muse Spark always reasons before answering. Jarvis asks for `minimal` effort on quick tasks (first word in 0.8 s instead of 1.6 s, measured on October 26), and `high` effort on reasoning tasks.
+  - The hidden reasoning counts toward the token limit. Jarvis adds headroom, so a short answer (a 30-token title) never comes back empty.
+  - Contributor model IDs (`-contributor`), where Meta trains on your requests, are refused.
+- **"All Meta" profile in Settings**: Muse Spark answers every task first (chat, voice, reasoning, screen reading), and the other providers stay as fallback. It is off by default and needs a Meta key, and the key has its own "Test" button. A model forced by hand, or a privacy rule (sensitive data stays on a local model), still wins.
+- **Speech to text with Muse Voice Transcribe**: with the profile on, each spoken sentence is transcribed by Meta, with a French hint and the keyword "Jarvis". "Local Whisper only" stays local.
 
 ## Already there before (not part of the submission)
 
