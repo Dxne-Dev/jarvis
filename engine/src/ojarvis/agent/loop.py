@@ -22,11 +22,14 @@ from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
 from ojarvis.permissions.gate import PermissionGate
+from ojarvis.security.redaction import REDACTOR
 from ojarvis.tools.base import LEVEL_LABELS, Level
 from ojarvis.tools.guards import DATA_RULE, as_data
 
 log = get_logger(__name__)
 
+#: Fin de la sortie d'une commande montrée dans le terminal (le modèle lit tout).
+OUTPUT_PREVIEW_CHARS = 2000
 #: Tours d'outils au plus dans une réponse (ensuite, le modèle doit conclure). Une PR
 #: GitHub en demande souvent 6 ou 7 : lister les outils, lire le dépôt, puis le plan.
 MAX_TOOL_ROUNDS = 8
@@ -354,6 +357,9 @@ class Agent:
             "status": "done",
             "source": output.source,
         }
+        if self._gate.registry.get(call.name).shell_only:
+            # Le terminal montre la fin de la sortie ; le modèle, lui, la lit en entier.
+            event["output"] = REDACTOR.redact(output.text[-OUTPUT_PREVIEW_CHARS:])
         turn.tools.append(event)
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:

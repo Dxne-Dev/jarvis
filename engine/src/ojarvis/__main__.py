@@ -5,6 +5,9 @@ Poignée de main avec l'app :
 2. le moteur choisit un port libre sur 127.0.0.1, prépare la base, puis écrit sur
    la sortie standard : `OJARVIS_READY {"port": ..., "pid": ..., "version": ...}` ;
 3. quand l'entrée standard se ferme (l'app quitte ou meurt), le moteur s'arrête.
+
+Il publie aussi sa connexion pour le mode shell (`ojarvis.shell.connection`), effacée à
+l'arrêt.
 """
 
 from __future__ import annotations
@@ -26,10 +29,15 @@ from ojarvis import __version__
 from ojarvis.app import create_app
 from ojarvis.config import load_config
 from ojarvis.core.logs import configure_logging, get_logger
-
-READY_PREFIX = "OJARVIS_READY "
-EXIT_LOCKED = 3
-EXIT_BAD_TOKEN = 4
+from ojarvis.shell.connection import (
+    EXIT_BAD_TOKEN,
+    EXIT_LOCKED,
+    READY_PREFIX,
+    EngineInfo,
+    info_path,
+    remove_info,
+    write_info,
+)
 
 log = get_logger("ojarvis.main")
 
@@ -125,8 +133,15 @@ def main(argv: list[str] | None = None) -> int:
 
     sock = bind_socket(args.port)
     port = int(sock.getsockname()[1])
+    connection = info_path(config.paths)
 
     def announce() -> None:
+        if connection is not None:
+            # Le mode shell rejoint ce moteur (choix validé le 26/10 : voir shell/connection).
+            try:
+                write_info(connection, EngineInfo(port, os.getpid(), token, __version__))
+            except OSError:
+                log.warning("shell_connection_not_written")
         info = {"port": port, "pid": os.getpid(), "version": __version__}
         sys.stdout.write(READY_PREFIX + json.dumps(info) + "\n")
         sys.stdout.flush()
@@ -148,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server.run(sockets=[sock])
     finally:
+        if connection is not None:
+            remove_info(connection, os.getpid())
         sock.close()
         lock.close()
     return 0
