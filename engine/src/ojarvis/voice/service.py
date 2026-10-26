@@ -42,6 +42,7 @@ from ojarvis.voice.stt import (
     CartesiaSTT,
     CloudTranscriber,
     GroqTranscriber,
+    MetaTranscriber,
     StreamingTranscriber,
     WhisperTranscriber,
 )
@@ -355,6 +356,7 @@ class VoiceService:
             "stt": stt,
             "tts": tts,
             "cloud_stt": GroqTranscriber(lambda: self._secrets.get("GROQ_API_KEY"), self._http),
+            "meta_stt": MetaTranscriber(lambda: self._secrets.get("MODEL_API_KEY"), self._http),
             "streaming_stt": CartesiaSTT(lambda: self._secrets.get("CARTESIA_API_KEY")),
         }
 
@@ -468,10 +470,18 @@ class VoiceService:
         return engine
 
     def _cloud_for(self, prefs: Preferences) -> CloudTranscriber | None:
-        """Groq (Whisper large-v3) par phrase ; Whisper local reste le dernier secours."""
+        """Par phrase : Muse Voice Transcribe (profil « Tout Meta ») ou Groq (Whisper
+        large-v3). « Whisper local seulement » reste local, profil ou non ; Whisper local
+        reste aussi le dernier secours."""
+        if prefs.voice_stt == "local":
+            return None
+        engine: CloudTranscriber | None
+        if prefs.model_profile == "meta":
+            engine = self._parts.get("meta_stt")
+            return engine
         if prefs.voice_stt != "groq":
             return None
-        engine: CloudTranscriber | None = self._parts.get("cloud_stt")
+        engine = self._parts.get("cloud_stt")
         return engine
 
     def _on_turn(self, report: TurnReport) -> None:

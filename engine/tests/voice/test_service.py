@@ -208,6 +208,18 @@ async def test_service_runs_a_turn_and_follows_settings() -> None:
     await service.close()
 
 
+def test_the_meta_profile_transcribes_with_meta_but_local_stays_local() -> None:
+    prefs = {"value": Preferences()}
+    service, _bus, _chat = make_service(prefs, echo=FakeEcho(available=True), sources=[])
+    groq, meta = object(), object()
+    service._parts.update({"cloud_stt": groq, "meta_stt": meta})
+    assert service._cloud_for(Preferences()) is groq
+    assert service._cloud_for(Preferences(model_profile="meta")) is meta
+    assert service._cloud_for(Preferences(model_profile="meta", voice_stt="cartesia")) is meta
+    # « Whisper local seulement » est un choix de confidentialité : le profil ne le change pas.
+    assert service._cloud_for(Preferences(model_profile="meta", voice_stt="local")) is None
+
+
 async def test_an_echo_micro_invisible_to_portaudio_falls_back_to_the_default() -> None:
     """Ubuntu 24.04 : PortAudio sans PulseAudio ne voit pas les micros virtuels de PipeWire."""
     prefs = {"value": Preferences(voice_input_device="alsa_input.usb")}

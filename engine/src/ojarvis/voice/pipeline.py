@@ -43,7 +43,11 @@ from ojarvis.voice.wake import WakeDetector, mentions_jarvis, strip_wake_words
 log = get_logger(__name__)
 
 #: Modèle de transcription noté dans la trace, selon le moteur utilisé.
-STT_MODELS = {"cartesia": "cartesia-ink-2", "groq": "groq-whisper-large-v3"}
+STT_MODELS = {
+    "cartesia": "cartesia-ink-2",
+    "groq": "groq-whisper-large-v3",
+    "meta": "muse-voice-transcribe-1.0",
+}
 
 SPOKEN_LLM_ERROR = "Je n'arrive pas à joindre le modèle pour l'instant. Réessaie dans un moment."
 
