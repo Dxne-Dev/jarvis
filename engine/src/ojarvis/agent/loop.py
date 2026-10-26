@@ -58,9 +58,10 @@ AGENT_RULES = (
     "utilise ses outils.\n\n" + DATA_RULE
 )
 NO_TERMINAL = (
-    "Tu n'as aucun outil pour lancer une commande dans un terminal, même avec le contrôle du "
-    "PC activé : dis-le simplement, et indique que le mode shell (« passe en mode shell ») le "
-    "permet."
+    "Ici, tu ne lances pas de commande dans un terminal, même avec le contrôle du PC activé. Si "
+    "on te le demande, ou si on te dit « passe en mode shell », ouvre le mode shell avec "
+    "ouvrir_mode_shell (dans le dossier demandé, sinon ~) : un terminal s'ouvre où tu pourras "
+    "le faire avec l'utilisateur."
 )
 SHELL_RULES = (
     "Mode shell : l'utilisateur t'a ouvert un terminal, vous travaillez dans le dossier "
