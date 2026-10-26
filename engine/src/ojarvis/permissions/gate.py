@@ -66,6 +66,9 @@ class PermissionGate:
     ) -> ToolOutput:
         tool, args, level = self.check(name, raw_args)
         summary = tool.describe(args)
+        # Toute commande du mode shell va au journal, lectures comprises : elle touche ta machine.
+        journaled = level >= Level.AGIR or tool.shell_only
+        plan_id = approval.plan_id if approval else None
         if level >= Level.AGIR:
             if approval is None:
                 raise ApprovalRequiredError(f"« {summary} » demande ta validation.")
@@ -77,37 +80,36 @@ class PermissionGate:
                 )
             if level >= Level.DETRUIRE and not approval.double_confirmed:
                 raise ApprovalRequiredError(f"« {summary} » demande une double confirmation.")
+        if journaled:
             await self._journal.append(
                 actor="jarvis",
                 action=f"outil.{name}",
                 level=int(level),
                 summary=f"Lancé : {summary}",
-                details={"plan": approval.plan_id, "etape": approval.step, "arguments": raw_args},
+                details={
+                    "plan": plan_id,
+                    "etape": approval.step if approval else None,
+                    "arguments": raw_args,
+                },
             )
         try:
             output = await tool.run(args, self._context())
         except Exception as exc:
-            if level >= Level.AGIR:
+            if journaled:
                 await self._journal.append(
                     actor="jarvis",
                     action=f"outil.{name}.echec",
                     level=int(level),
                     summary=f"Échec : {summary}",
-                    details={
-                        "erreur": str(exc)[:300],
-                        "plan": approval.plan_id if approval else None,
-                    },
+                    details={"erreur": str(exc)[:300], "plan": plan_id},
                 )
             raise
-        if level >= Level.AGIR:
+        if journaled:
             await self._journal.append(
                 actor="jarvis",
                 action=f"outil.{name}.fait",
                 level=int(level),
                 summary=f"Fait : {summary}",
-                details={
-                    "resultat": output.text[:300],
-                    "plan": approval.plan_id if approval else None,
-                },
+                details={"resultat": output.text[:300], "plan": plan_id},
             )
         return output
