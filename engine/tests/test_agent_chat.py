@@ -353,6 +353,27 @@ def test_an_invalid_plan_is_sent_back_to_the_model(
     assert tool_messages(llm["deepseek"])[0].startswith("Échec : Plan refusé")
 
 
+def test_outside_shell_mode_a_command_is_neither_offered_nor_run(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    del tools
+    command = {"commande": "ls", "dossier": "~"}
+    step = {"outil": "executer_commande", "arguments": command, "pourquoi": "x"}
+    llm["deepseek"]._script = scripted(
+        [
+            [ToolCall("c", "executer_commande", command)],
+            [ToolCall("p", PLAN_TOOL, {"titre": "Lister", "etapes": [step]})],
+        ]
+    )
+    events = chat(client, "Liste mes fichiers avec ls.")
+    offered = {t.name for request, _ in llm["deepseek"].requests for t in request.tools or []}
+    assert "executer_commande" not in offered
+    failed = [d for e, d in events if e == "tool" and d["status"] == "failed"]
+    assert len(failed) == 2  # l'appel direct, puis le plan
+    assert all("mode shell" in d["error"] for d in failed)
+    assert not [e for e, _ in events if e == "plan"]
+
+
 def test_secrets_in_tool_output_never_reach_the_model(
     client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
 ) -> None:

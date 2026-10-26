@@ -95,6 +95,8 @@ class Tool[A: ToolArgs](ABC):
     #: Contrôle du PC (applications, écran, gestion de fichiers) : désactivé par défaut,
     #: tu l'actives dans Réglages.
     os_control: ClassVar[bool] = False
+    #: Mode shell seulement (lancer une commande) : jamais proposé ni accepté ailleurs.
+    shell_only: ClassVar[bool] = False
 
     def parse(self, raw: dict[str, Any]) -> A:
         try:
@@ -159,11 +161,15 @@ class ToolRegistry:
     def all(self) -> list[Tool[Any]]:
         return list(self._tools.values())
 
-    def specs(self, *, max_level: Level, os_control: bool = True) -> list[ToolSpec]:
+    def specs(
+        self, *, max_level: Level, os_control: bool = True, shell_mode: bool = False
+    ) -> list[ToolSpec]:
         return [
             t.spec()
             for t in self._tools.values()
-            if t.level <= max_level and (os_control or not t.os_control)
+            if t.level <= max_level
+            and (os_control or not t.os_control)
+            and (shell_mode or not t.shell_only)
         ]
 
     def catalog(self) -> list[dict[str, Any]]:

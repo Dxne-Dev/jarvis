@@ -78,6 +78,7 @@ from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.mcp import mcp_tools
+from ojarvis.tools.shell import RunCommand
 from ojarvis.tools.skills import skill_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
@@ -202,6 +203,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
             *automation_tools(automations, scheduler),
             *integration_tools(integrations),
             *desktop_tools(router, lambda: prefs().screen_vision),
+            RunCommand(user_home),  # proposé seulement en mode shell
         ],
     )
     # Jarvis s'étend : les skills actifs apportent leurs outils, testés en bac à sable.

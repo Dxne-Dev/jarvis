@@ -65,6 +65,10 @@ OS_CONTROL_OFF = (
     "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
     "dans Réglages, section « Contrôle du PC »."
 )
+SHELL_ONLY = (
+    "{tool} n'existe qu'en mode shell. Dis à l'utilisateur qu'il peut l'ouvrir (« passe en "
+    "mode shell ») pour lancer des commandes."
+)
 PLAN_STARTED = (
     "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "
     "dans la conversation. N'appelle pas d'autre outil : dis en une phrase ce que tu fais."
@@ -127,6 +131,8 @@ class AgentTurn:
 
     #: Un contenu externe a été lu : un plan proposé ensuite est signalé à la validation.
     tainted: bool = False
+    #: Tour du mode shell : seul à pouvoir lancer une commande (`executer_commande`).
+    shell: bool = False
     tools: list[dict[str, Any]] = field(default_factory=list)
     plans: list[str] = field(default_factory=list)
     #: Adresses connues pendant ce tour : celles de ta demande et celles lues (liens, résultats).
@@ -134,6 +140,11 @@ class AgentTurn:
 
     def knows(self, url: str) -> bool:
         return url.strip().rstrip("/") in self.known_urls
+
+
+class ShellOnlyError(EngineError):
+    status_code = 403
+    code = "shell_only"
 
 
 @dataclass(frozen=True)
@@ -190,11 +201,18 @@ class Agent:
         os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
         return f"{AGENT_RULES}\n\n{os_control}"
 
-    def specs(self) -> list[ToolSpec]:
+    def specs(self, *, shell_mode: bool = False) -> list[ToolSpec]:
         specs = self._gate.registry.specs(
-            max_level=Level.DETRUIRE, os_control=self._gate.os_control()
+            max_level=Level.DETRUIRE, os_control=self._gate.os_control(), shell_mode=shell_mode
         )
         return [*specs, plan_tool_spec()]
+
+    def _require_shell(self, name: str, turn: AgentTurn) -> None:
+        """Hors du mode shell, une commande n'est ni lancée ni proposée, même si le modèle
+        appelle l'outil sans l'avoir vu, ou le glisse dans un plan."""
+        registry = self._gate.registry
+        if not turn.shell and name in registry and registry.get(name).shell_only:
+            raise ShellOnlyError(SHELL_ONLY.format(tool=name))
 
     def describe(self, call: ToolCall) -> str:
         """Ce que fait l'appel, en clair (pour l'interface), sans rien exécuter."""
@@ -223,6 +241,7 @@ class Agent:
                 return self._failed(call, f"Plan invalide ({where} : {first.get('msg')}).")
             return await self._propose(call, plan_in, turn, conversation_id, request)
         try:
+            self._require_shell(call.name, turn)
             tool, args, level = self._gate.check(call.name, call.arguments)
         except EngineError as exc:
             return self._failed(call, exc.message)
@@ -318,6 +337,8 @@ class Agent:
         request: str,
     ) -> CallOutcome:
         try:
+            for step in plan_in.etapes:
+                self._require_shell(step.outil, turn)
             plan = await self._plans.create(
                 plan_in, conversation_id=conversation_id, request=request, tainted=turn.tainted
             )
