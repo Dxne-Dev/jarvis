@@ -16,7 +16,7 @@ from ojarvis.db.models import Setting
 from ojarvis.llm.types import TASK_TYPES
 from ojarvis.voice.tts import DEFAULT_CARTESIA_VOICE
 
-PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "ollama")
+PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "meta", "ollama")
 DEVICE_NAME = r"^[A-Za-z0-9._:@-]+$"
 
 

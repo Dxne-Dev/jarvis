@@ -17,6 +17,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  meta: "Meta",
   ollama: "Ollama (local)",
 };
 
