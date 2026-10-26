@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
@@ -14,9 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from ojarvis.api.deps import ServicesDep
 from ojarvis.chat.service import ChatEvent
 from ojarvis.conversations.store import ConversationRecord, MessageRecord
-from ojarvis.core.errors import EngineError
+from ojarvis.core.errors import EngineError, NotFoundError
 from ojarvis.llm.providers.registry import OllamaProvider
 from ojarvis.memory.store import MemoryKind, MemoryRecord
+from ojarvis.tools.guards import resolve_user_path, shown
 
 router = APIRouter(prefix="/v1")
 
@@ -29,7 +31,11 @@ class ChatIn(BaseModel):
 
     text: str = Field(min_length=1, max_length=8000)
     conversation_id: str | None = Field(default=None, max_length=32)
-    channel: Literal["app", "voice"] = "app"
+    channel: Literal["app", "voice", "shell"] = "app"
+    #: Mode shell : le dossier de la session (~/… ou chemin absolu dans ton dossier).
+    folder: str | None = Field(default=None, max_length=1000)
+    #: Mode shell : un plan validé dans le terminal ; ses résultats reviennent au modèle.
+    after_plan: str | None = Field(default=None, max_length=32)
 
 
 def sse(event: ChatEvent) -> str:
@@ -39,8 +45,21 @@ def sse(event: ChatEvent) -> str:
 @router.post("/chat")
 async def chat(body: ChatIn, services: ServicesDep) -> StreamingResponse:
     """Réponse en flux : événements start, context, route, delta…, puis done ou error."""
+    folder = None
+    if body.folder is not None:
+        # Le dossier de la session, dit comme Jarvis le dit (« ~/projet ») : vérifié ici (dans
+        # ton dossier personnel, hors dossiers de secrets), et sans ton nom d'utilisateur.
+        home = services.config.user_home or Path.home()
+        path = resolve_user_path(body.folder, home)
+        if not path.is_dir():
+            raise NotFoundError(f"Dossier introuvable : {body.folder}.")
+        folder = shown(path, home)
     stream = services.chat.respond(
-        text=body.text, conversation_id=body.conversation_id, channel=body.channel
+        text=body.text,
+        conversation_id=body.conversation_id,
+        channel=body.channel,
+        shell_folder=folder,
+        after_plan=body.after_plan,
     )
     # Les erreurs de validation (conversation inconnue, texte vide) arrivent avant le flux.
     first = await anext(stream)

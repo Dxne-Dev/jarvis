@@ -164,7 +164,13 @@ class PlanExecutor:
             body = as_data(output.text, origin=output.source) if output.external else output.text
             sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
         status: PlanStatus = "failed" if failed else "done"
-        synthesis = await self._synthesize(plan, sections)
+        if await self._in_shell(plan):
+            # En mode shell, Jarvis lit lui-même les résultats au tour suivant (il corrige,
+            # relance, vérifie) : un compte rendu par le modèle serait un appel de trop.
+            done = len(results)
+            synthesis = f"Plan « {plan.title} » : {done} étape(s) faite(s) sur {len(plan.steps)}."
+        else:
+            synthesis = await self._synthesize(plan, sections)
         # Le compte rendu entre dans la conversation avant que le plan soit dit fini : une
         # question posée juste après le voit déjà.
         if plan.conversation_id:
@@ -179,6 +185,15 @@ class PlanExecutor:
             "plan.finished",
             {"id": plan_id, "status": status, "conversation_id": plan.conversation_id},
         )
+
+    async def _in_shell(self, plan: PlanRecord) -> bool:
+        if not plan.conversation_id:
+            return False
+        try:
+            conversation = await self._conversations.get(plan.conversation_id)
+        except EngineError:
+            return False
+        return conversation.channel == "shell"
 
     async def _synthesize(self, plan: PlanRecord, sections: list[str]) -> str:
         request = LLMRequest(

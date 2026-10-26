@@ -19,7 +19,7 @@ from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryHit, MemoryRecord, MemoryStore
 
 #: Budget total du contexte (hors réponse), en jetons, par canal.
-BUDGETS = {"voice": 2200, "app": 7000, "telegram": 4000, "automation": 5000}
+BUDGETS = {"voice": 2200, "app": 7000, "telegram": 4000, "automation": 5000, "shell": 7000}
 #: Part maximale de chaque section dans le budget restant après le système.
 MEMORY_SHARE = 0.35
 RECALL_SHARE = 0.15
@@ -44,6 +44,10 @@ STYLE = {
     ),
     "app": "Réponds de façon concise. Utilise le markdown quand il aide (listes, code).",
     "telegram": "Réponds de façon concise, en texte simple, adapté à un téléphone.",
+    "shell": (
+        "Tu réponds dans un terminal : phrases courtes, texte simple, sans tableau ; les "
+        "commandes et les chemins entre accents graves."
+    ),
     "automation": (
         "Tu travailles seul, pour une automatisation que l'utilisateur a créée : fais la "
         "tâche avec tes outils de lecture, puis résume en quelques phrases ce que tu as fait "

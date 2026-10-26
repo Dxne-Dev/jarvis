@@ -53,7 +53,10 @@ from ojarvis.tracing.tracer import Tracer
 log = get_logger(__name__)
 
 MAX_INPUT_CHARS = 8000
-Channel = Literal["app", "voice", "telegram", "automation"]
+Channel = Literal["app", "voice", "telegram", "automation", "shell"]
+#: En mode shell, le modèle enchaîne plus de commandes dans une réponse (lire, corriger,
+#: relancer) ; les actions, elles, attendent toujours ta validation.
+SHELL_TOOL_ROUNDS = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +147,19 @@ class _Turn:
     agent: AgentTurn = field(default_factory=AgentTurn)
 
 
+TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
+
+
+def _add_to_last_user_message(request: LLMRequest, text: str) -> None:
+    """Ajoute un bloc (résultats d'un plan) à la demande de l'utilisateur, sans un second
+    message « user » que certains fournisseurs refusent."""
+    last = request.messages[-1]
+    if last.role == "user":
+        request.messages[-1] = Message("user", f"{last.content}\n\n{text}")
+    else:
+        request.messages.append(Message("user", text))
+
+
 def _context_event(context: BuiltContext) -> dict[str, Any]:
     return {
         "budget": context.budget,
@@ -188,9 +204,21 @@ class ChatService:
         conversation_id: str | None = None,
         channel: Channel = "app",
         learn: bool = True,
+        shell_folder: str | None = None,
+        after_plan: str | None = None,
     ) -> AsyncGenerator[ChatEvent]:
         """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
-        (par exemple une transcription vocale douteuse)."""
+        (par exemple une transcription vocale douteuse).
+
+        Mode shell : `shell_folder` est le dossier de la session ; `after_plan`, un plan
+        validé dans le terminal, dont les résultats reviennent au modèle pour qu'il continue.
+        """
+        if after_plan is not None and conversation_id is None:
+            raise InvalidInputError("La suite d'un plan va avec sa conversation.")
+        if (channel == "shell") != (shell_folder is not None):
+            raise InvalidInputError(
+                "Le dossier de travail va avec le mode shell, et seulement lui."
+            )
         # Une clé collée par erreur n'est ni enregistrée en clair ni envoyée au modèle.
         cleaned = REDACTOR.redact(text.strip())
         if not cleaned or len(cleaned) > MAX_INPUT_CHARS:
@@ -202,6 +230,11 @@ class ChatService:
             await self._bus.publish(
                 "conversation.created", {"id": conversation.id, "channel": channel}
             )
+        # Les résultats d'un plan validé : lus avant tout enregistrement, pour qu'un plan
+        # d'une autre conversation soit refusé sans laisser de message derrière lui.
+        report = None
+        if after_plan is not None and self._agent is not None:
+            report = await self._agent.plan_report(after_plan, conversation.id)
         history = await self._conversations.messages(conversation.id, limit=60)
         user = await self._conversations.add_message(conversation.id, "user", cleaned)
         assistant = await self._conversations.add_message(
@@ -218,7 +251,7 @@ class ChatService:
         )
         try:
             async with self._tracer.trace(
-                f"Tour {'vocal' if channel == 'voice' else 'de conversation'}",
+                TRACE_TITLES.get(channel, "Tour de conversation"),
                 kind="voice" if channel == "voice" else "chat",
                 meta={"conversation_id": conversation.id, "channel": channel},
                 reuse=True,
@@ -236,10 +269,17 @@ class ChatService:
                 request = LLMRequest(
                     messages=context.messages, max_tokens=500 if channel == "voice" else 4000
                 )
+                if report is not None:
+                    _add_to_last_user_message(request, report)
                 task: TaskType = "voice" if channel == "voice" else "chat"
                 try:
                     async for event in self._reply(
-                        task, request, turn, conversation_id=conversation.id, user_text=cleaned
+                        task,
+                        request,
+                        turn,
+                        conversation_id=conversation.id,
+                        user_text=cleaned,
+                        shell_folder=shell_folder,
                     ):
                         yield event
                 except LLMError as error:
@@ -279,20 +319,24 @@ class ChatService:
         *,
         conversation_id: str,
         user_text: str,
+        shell_folder: str | None = None,
     ) -> AsyncIterator[ChatEvent]:
         """Réponse du modèle ; s'il appelle des outils, on les traite et il reprend."""
         agent = self._agent
+        limit = MAX_TOOL_ROUNDS if shell_folder is None else SHELL_TOOL_ROUNDS
         if agent is not None:
             turn.agent.known_urls |= urls_in(user_text)
-            request.tools = agent.specs()
+            turn.agent.shell = shell_folder is not None
+            request.tools = agent.specs(shell_mode=turn.agent.shell)
             system = request.messages[0]
             # Ce qui a vraiment été exécuté, refusé ou attend encore : Jarvis le lit, sans
             # se fier à sa mémoire de la conversation.
             states = await agent.plan_states(conversation_id)
             extra = f"\n\n{states}" if states else ""
-            request.messages[0] = Message("system", f"{system.content}\n\n{agent.rules()}{extra}")
+            rules = agent.rules(shell_folder=shell_folder)
+            request.messages[0] = Message("system", f"{system.content}\n\n{rules}{extra}")
         reminded = False
-        for rounds in range(MAX_TOOL_ROUNDS + 1):
+        for rounds in range(limit + 1):
             step = _Round()
             async for event in self._stream_round(task, request, turn, step):
                 yield event
@@ -302,7 +346,7 @@ class ChatService:
             if not step.calls:
                 # Un plan annoncé sans être proposé : l'utilisateur chercherait en vain quoi
                 # valider. Le modèle est relancé une fois (la relance n'est pas enregistrée).
-                if reminded or rounds == MAX_TOOL_ROUNDS:
+                if reminded or rounds == limit:
                     return
                 if not claims_missing_plan("".join(turn.parts), turn.agent.plans):
                     return
@@ -311,7 +355,7 @@ class ChatService:
                 request.messages.append(Message("assistant", said))
                 request.messages.append(Message("user", PLAN_MISSING))
                 continue
-            if rounds == MAX_TOOL_ROUNDS:
+            if rounds == limit:
                 log.warning("tool_rounds_exhausted", rounds=rounds)
                 return
             request.messages.append(

@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.plans import PLAN_TOOL, PlanIn, PlanRecord, PlanStore, StepIn, plan_tool_spec
-from ojarvis.core.errors import EngineError
+from ojarvis.core.errors import ConflictError, EngineError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
@@ -33,9 +33,8 @@ MAX_TOOL_ROUNDS = 8
 
 AGENT_RULES = (
     "Tu as des outils. Dans leurs descriptions, « ton dossier personnel », « tes fichiers "
-    "» et « ~ » désignent ceux de l'utilisateur, sur cet ordinateur. Tu n'as aucun outil "
-    "pour lancer une commande dans un terminal, même avec le contrôle du PC activé : "
-    "dis-le simplement. Niveau 1 (lire : recherche web, pages, fichiers, navigateur, code "
+    "» et « ~ » désignent ceux de l'utilisateur, sur cet ordinateur. Niveau 1 (lire : "
+    "recherche web, pages, fichiers, navigateur, code "
     "isolé) : utilise-les directement quand ils aident, sans demander. Niveaux 2 et 3 "
     "(agir : cliquer, remplir, écrire un fichier, utiliser une session ; détruire) : ne "
     "les appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
@@ -54,6 +53,23 @@ AGENT_RULES = (
     "ni fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) : si "
     "ses tests réussissent, son activation est proposée à l'utilisateur ; une fois actif, "
     "utilise ses outils.\n\n" + DATA_RULE
+)
+NO_TERMINAL = (
+    "Tu n'as aucun outil pour lancer une commande dans un terminal, même avec le contrôle du "
+    "PC activé : dis-le simplement, et indique que le mode shell (« passe en mode shell ») le "
+    "permet."
+)
+SHELL_RULES = (
+    "Mode shell : l'utilisateur t'a ouvert un terminal, vous travaillez dans le dossier "
+    "{folder}. Lance les commandes avec executer_commande, avec dossier=« {folder} » sauf "
+    "s'il te demande un autre dossier. Les lectures (ls, cat, git status, df, du…) partent "
+    "tout de suite ; une autre action devient un plan qu'il valide dans le terminal ; une "
+    "suppression demande sa double confirmation. Avance par petites étapes : lance, lis la "
+    "sortie, corrige, relance, jusqu'au résultat. Après une action, vérifie son effet par une "
+    "lecture (par exemple df après un nettoyage) avant de dire que c'est fait. Ne lance "
+    "jamais sudo : écris la commande pour qu'il la tape. Une commande ne reçoit aucune "
+    "entrée : utilise les options non interactives (-y, --yes). Pour lire un fichier, "
+    "préfère cat, head, tail ou grep. Réponds court, en texte simple : c'est un terminal."
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
@@ -196,10 +212,37 @@ class Agent:
             "\n".join(lines)
         )
 
-    def rules(self) -> str:
+    async def plan_report(self, plan_id: str, conversation_id: str) -> str:
+        """Les résultats d'un plan fini de cette conversation, marqués comme données : en mode
+        shell, Jarvis les lit pour continuer (corriger, relancer, vérifier)."""
+        plan = await self._plans.get(plan_id)
+        if plan.conversation_id != conversation_id:
+            raise NotFoundError("Ce plan n'appartient pas à cette conversation.")
+        if plan.status not in ("done", "failed", "refused"):
+            raise ConflictError("Ce plan n'est pas encore terminé.")
+        if plan.status == "refused":
+            return f"L'utilisateur a refusé le plan « {plan.title} » : rien n'a été lancé."
+        sections = []
+        for step in plan.steps:
+            if step.status == "done":
+                body = as_data(step.result or "", origin="commande")
+                sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
+            elif step.status == "failed":
+                sections.append(f"Étape {step.position}, échec ({step.description}) : {step.error}")
+            else:
+                sections.append(f"Étape {step.position}, non lancée ({step.description}).")
+        state = PLAN_STATES.get(plan.status, plan.status)
+        return (
+            f"Le plan validé « {plan.title} » est {state}. Résultats :\n\n"
+            + "\n\n".join(sections)
+            + "\n\nContinue la tâche à partir de ces résultats, ou conclus si elle est finie."
+        )
+
+    def rules(self, *, shell_folder: str | None = None) -> str:
         """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
         os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
-        return f"{AGENT_RULES}\n\n{os_control}"
+        terminal = NO_TERMINAL if shell_folder is None else SHELL_RULES.format(folder=shell_folder)
+        return f"{AGENT_RULES}\n\n{terminal}\n\n{os_control}"
 
     def specs(self, *, shell_mode: bool = False) -> list[ToolSpec]:
         specs = self._gate.registry.specs(
