@@ -203,7 +203,8 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
             *automation_tools(automations, scheduler),
             *integration_tools(integrations),
             *desktop_tools(router, lambda: prefs().screen_vision),
-            RunCommand(user_home),  # proposé seulement en mode shell
+            # Proposé seulement en mode shell ; journaux des serveurs dans l'état du moteur.
+            RunCommand(user_home, log_dir=config.paths.state_dir / "shell"),
             OpenShell(user_home),  # « passe en mode shell » : ouvre un terminal
         ],
     )

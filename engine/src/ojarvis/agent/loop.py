@@ -73,7 +73,11 @@ SHELL_RULES = (
     "lecture (par exemple df après un nettoyage) avant de dire que c'est fait. Ne lance "
     "jamais sudo : écris la commande pour qu'il la tape. Une commande ne reçoit aucune "
     "entrée : utilise les options non interactives (-y, --yes). Pour lire un fichier, "
-    "préfère cat, head, tail ou grep. Réponds court, en texte simple : c'est un terminal."
+    "préfère cat, head, tail ou grep. Une commande qui ne se termine pas (serveur de "
+    "développement, surveillance) : lance-la avec arriere_plan=true, puis vérifie qu'elle "
+    "répond (ss -ltn, curl -I http://localhost:PORT). Si une vérification échoue (no-listen, "
+    "erreur, code non nul), dis-le et corrige : n'annonce jamais un succès que la sortie "
+    "contredit. Réponds court, en texte simple : c'est un terminal."
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
