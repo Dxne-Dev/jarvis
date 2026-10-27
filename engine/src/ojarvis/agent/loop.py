@@ -368,11 +368,19 @@ class Agent:
     async def _previews(self, plan_in: PlanIn) -> dict[int, str]:
         previews: dict[int, str] = {}
         touched: set[str] = set()
+        after_command = False
         for position, step in enumerate(plan_in.etapes, 1):
             target = str(step.arguments.get("chemin", ""))
-            if PLACEHOLDER.search(str(step.arguments)) or (target and target in touched):
-                # Cible connue seulement à l'exécution, ou fichier déjà changé par une étape
-                # précédente : son aperçu ne serait pas juste, le résultat le montrera.
+            if step.outil == SHELL_TOOL:
+                after_command = True
+                continue
+            if (
+                PLACEHOLDER.search(str(step.arguments))
+                or (target and target in touched)
+                or after_command
+            ):
+                # Cible connue seulement à l'exécution, ou fichier qu'une étape précédente a
+                # pu changer ou créer : son aperçu ne serait pas juste, le résultat le montrera.
                 continue
             preview = await anyio.to_thread.run_sync(self._gate.preview, step.outil, step.arguments)
             if preview is not None:

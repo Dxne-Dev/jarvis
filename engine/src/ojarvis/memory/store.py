@@ -130,9 +130,9 @@ class MemoryStore:
         cleaned = _clean(content)
         vector = await self._embed_passage(cleaned)
         if vector is not None:
-            near = await self.index.search(vector, 1)
-            if near and near[0][1] >= DUPLICATE_SIMILARITY:
-                updated = await self.update(near[0][0], content=cleaned, kind=kind)
+            duplicate = await self._duplicate(kind, cleaned, vector)
+            if duplicate is not None:
+                updated = await self.update(duplicate, content=cleaned, kind=kind)
                 return updated, False
         now = utc_now()
 
@@ -158,6 +158,21 @@ class MemoryStore:
             await self.index.upsert(record.id, vector)
         await self._publish("memory.added", {"id": record.id, "kind": kind, "source": source})
         return record, True
+
+    async def _duplicate(self, kind: MemoryKind, cleaned: str, vector: Vectors) -> int | None:
+        """Le souvenir que celui-ci répète, s'il y en a un. Une impasse ne se fond que dans
+        la même impasse : deux correctifs tentés pour une même erreur, ou la même erreur dans
+        deux projets, se ressemblent beaucoup, et chacun compte."""
+        for item_id, score in await self.index.search(vector, 5):
+            if score < DUPLICATE_SIMILARITY:
+                break
+            existing = await self.get(item_id)
+            if (existing.kind == "impasse") != (kind == "impasse"):
+                continue
+            if kind == "impasse" and existing.content != cleaned:
+                continue
+            return item_id
+        return None
 
     async def update(
         self,

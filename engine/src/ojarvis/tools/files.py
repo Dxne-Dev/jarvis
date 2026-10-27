@@ -49,10 +49,19 @@ def _read_text(path: Path, raw: str) -> str:
     """Le texte d'un fichier existant, pour le modifier (jamais un binaire)."""
     if not path.is_file():
         raise NotFoundError(f"Fichier introuvable : {raw}.")
-    data = path.read_bytes()
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise InvalidInputError(f"Fichier illisible : {raw} ({exc.strerror}).") from None
     if len(data) > MAX_WRITE_CHARS or b"\x00" in data[:8000]:
         raise InvalidInputError("Ce fichier n'est pas un texte modifiable.")
-    return data.decode("utf-8", "replace")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        # Le réécrire en UTF-8 abîmerait chaque accent hors du passage retouché.
+        raise InvalidInputError(
+            f"{raw} n'est pas en UTF-8 : une retouche abîmerait ses accents. Il n'est pas modifié."
+        ) from None
 
 
 class PathArgs(ToolArgs):
@@ -144,7 +153,13 @@ class WriteFile(Tool[WriteArgs]):
 
     def preview(self, args: WriteArgs, home: Path) -> str | None:
         path = resolve_user_path(args.chemin, home)
-        before = _read_text(path, args.chemin) if path.exists() else ""
+        before = ""
+        if path.exists():
+            try:
+                before = _read_text(path, args.chemin)
+            except InvalidInputError:
+                # Un gros fichier, un binaire : remplacé en entier, il n'y a pas de diff.
+                return f"(remplace en entier {shown(path, home)}, qui n'est pas un texte lisible)"
         return unified_diff(before, args.contenu, shown(path, home))
 
     async def run(self, args: WriteArgs, ctx: ToolContext) -> ToolOutput:
