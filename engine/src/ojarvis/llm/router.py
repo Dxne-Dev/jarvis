@@ -102,6 +102,15 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
         Route("openrouter", ANY_MODEL),
         Route("ollama", "ministral-3:3b"),
     ),
+    # Relecture d'une modification de code (mode shell) : un autre regard que l'auteur.
+    "review": (
+        Route("deepseek", "deepseek-v4-pro", thinking=True),
+        Route("anthropic", "claude-opus-5-5", thinking=True),
+        Route("openai", "gpt-5", thinking=True),
+        Route("deepseek", "deepseek-flash", thinking=True),
+        Route("openrouter", ANY_MODEL),
+        Route("ollama", "ministral-3:3b"),
+    ),
     "vision": (
         # Réflexion coupée : 1,5 s au lieu de 2,3 s à l'essai, pour la même lecture.
         Route("deepseek", "deepseek-v4-flash-vision-exp"),
@@ -122,6 +131,9 @@ META_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
     "extract": (Route("meta", "muse-spark-1.3"),),
     "title": (Route("meta", "muse-spark-1.3"),),
     "vision": (Route("meta", "muse-spark-1.3"),),
+    # Le relecteur n'est pas l'auteur : Muse Wonder, le plus fort (Muse Spark Open quand un
+    # partenaire d'inférence sera branché).
+    "review": (Route("meta", "muse-wonder-1.0", thinking=True),),
 }
 PROFILES: Mapping[str, Mapping[TaskType, tuple[Route, ...]]] = {"meta": META_POLICY}
 
@@ -135,6 +147,7 @@ FIRST_EVENT_TIMEOUT_S: Mapping[TaskType, float] = {
     "extract": 30.0,
     "title": 20.0,
     "vision": 45.0,
+    "review": 90.0,
 }
 #: Un modèle local peut devoir se charger en mémoire (jusqu'à ~50 s sur cette machine).
 LOCAL_FIRST_EVENT_TIMEOUT_S = 120.0

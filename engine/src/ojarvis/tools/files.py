@@ -7,19 +7,52 @@ Supprimer : niveau 3, double confirmation ; le fichier part à la corbeille (ré
 from __future__ import annotations
 
 import asyncio
+import difflib
 import shutil
+from pathlib import Path
 from typing import ClassVar
 
 import anyio
+import anyio.to_thread
 from pydantic import Field
 
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
-from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
+from ojarvis.tools.base import (
+    InvalidToolArgumentsError,
+    Level,
+    Tool,
+    ToolArgs,
+    ToolContext,
+    ToolOutput,
+)
 from ojarvis.tools.guards import resolve_user_path, shown
 
 MAX_READ_BYTES = 200_000
 MAX_WRITE_CHARS = 1_000_000
 MAX_ENTRIES = 200
+#: Un diff plus long est coupé : il reste lisible avant validation.
+MAX_DIFF_CHARS = 8_000
+
+
+def unified_diff(before: str, after: str, label: str) -> str:
+    """Le diff unifié de `before` à `after`, comme `git diff`, coupé s'il est trop long."""
+    lines = difflib.unified_diff(
+        before.splitlines(), after.splitlines(), f"a/{label}", f"b/{label}", lineterm=""
+    )
+    text = "\n".join(lines)
+    if len(text) > MAX_DIFF_CHARS:
+        return text[:MAX_DIFF_CHARS] + "\n[… diff coupé]"
+    return text or "(aucun changement)"
+
+
+def _read_text(path: Path, raw: str) -> str:
+    """Le texte d'un fichier existant, pour le modifier (jamais un binaire)."""
+    if not path.is_file():
+        raise NotFoundError(f"Fichier introuvable : {raw}.")
+    data = path.read_bytes()
+    if len(data) > MAX_WRITE_CHARS or b"\x00" in data[:8000]:
+        raise InvalidInputError("Ce fichier n'est pas un texte modifiable.")
+    return data.decode("utf-8", "replace")
 
 
 class PathArgs(ToolArgs):
@@ -109,6 +142,11 @@ class WriteFile(Tool[WriteArgs]):
         preview = preview if len(preview) <= 80 else preview[:77] + "…"
         return f"Écrire dans le fichier {args.chemin} (créé ou remplacé) : « {preview} »"
 
+    def preview(self, args: WriteArgs, home: Path) -> str | None:
+        path = resolve_user_path(args.chemin, home)
+        before = _read_text(path, args.chemin) if path.exists() else ""
+        return unified_diff(before, args.contenu, shown(path, home))
+
     async def run(self, args: WriteArgs, ctx: ToolContext) -> ToolOutput:
         path = resolve_user_path(args.chemin, ctx.home)
         apath = anyio.Path(path)
@@ -118,6 +156,72 @@ class WriteFile(Tool[WriteArgs]):
         verb = "remplacé" if existed else "créé"
         return ToolOutput(
             f"Fichier {verb} : {shown(path, ctx.home)}", {"chemin": str(path), "cree": not existed}
+        )
+
+
+class EditArgs(PathArgs):
+    ancien: str = Field(
+        min_length=1,
+        max_length=MAX_WRITE_CHARS,
+        description="Le passage exact à remplacer, copié du fichier (indentation comprise).",
+    )
+    nouveau: str = Field(
+        max_length=MAX_WRITE_CHARS,
+        description="Le texte qui le remplace (vide pour supprimer le passage).",
+    )
+    toutes: bool = Field(
+        default=False,
+        description="Remplacer toutes les occurrences ; sinon le passage doit être unique.",
+    )
+
+
+class EditFile(Tool[EditArgs]):
+    """Une retouche ciblée : un passage exact remplacé, le diff montré avant validation."""
+
+    name: ClassVar[str] = "modifier_fichier"
+    description: ClassVar[str] = (
+        "Modifie un fichier texte de ton dossier personnel en remplaçant un passage exact par "
+        "un autre : une retouche ciblée, dont le diff est montré avant validation. Préfère-le "
+        "à ecrire_fichier pour changer un fichier existant ; lis le fichier d'abord."
+    )
+    Args: ClassVar[type[ToolArgs]] = EditArgs
+    level: ClassVar[Level] = Level.AGIR
+    dynamic_fields: ClassVar[tuple[str, ...]] = ("nouveau",)
+
+    def describe(self, args: EditArgs) -> str:
+        removed = args.ancien.count("\n") + 1
+        added = args.nouveau.count("\n") + 1 if args.nouveau else 0
+        return f"Modifier le fichier {args.chemin} (−{removed} / +{added} lignes)"
+
+    def _apply(self, text: str, args: EditArgs) -> str:
+        count = text.count(args.ancien)
+        if count == 0:
+            raise InvalidToolArgumentsError(
+                f"Le passage à remplacer est introuvable dans {args.chemin} : relis le fichier "
+                "et copie le passage exactement, indentation comprise."
+            )
+        if count > 1 and not args.toutes:
+            raise InvalidToolArgumentsError(
+                f"Le passage apparaît {count} fois dans {args.chemin} : donne un passage plus "
+                "long, unique, ou toutes=true."
+            )
+        return text.replace(args.ancien, args.nouveau, -1 if args.toutes else 1)
+
+    def preview(self, args: EditArgs, home: Path) -> str | None:
+        path = resolve_user_path(args.chemin, home)
+        before = _read_text(path, args.chemin)
+        return unified_diff(before, self._apply(before, args), shown(path, home))
+
+    async def run(self, args: EditArgs, ctx: ToolContext) -> ToolOutput:
+        path = resolve_user_path(args.chemin, ctx.home)
+        # Relu au moment d'agir : le fichier a pu changer depuis l'aperçu.
+        before = await anyio.to_thread.run_sync(_read_text, path, args.chemin)
+        after = self._apply(before, args)
+        await anyio.Path(path).write_text(after, encoding="utf-8")
+        diff = unified_diff(before, after, shown(path, ctx.home))
+        return ToolOutput(
+            f"Fichier modifié : {shown(path, ctx.home)}\n{diff}",
+            {"chemin": str(path)},
         )
 
 

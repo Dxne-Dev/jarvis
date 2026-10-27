@@ -148,6 +148,7 @@ class _Turn:
 
 
 TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
+TASKS_BY_CHANNEL: dict[str, TaskType] = {"voice": "voice", "shell": "reasoning"}
 
 
 def _add_to_last_user_message(request: LLMRequest, text: str) -> None:
@@ -271,7 +272,9 @@ class ChatService:
                 )
                 if report is not None:
                     _add_to_last_user_message(request, report)
-                task: TaskType = "voice" if channel == "voice" else "chat"
+                # Mode shell : on y écrit du code, la réflexion paie (effort « high » chez
+                # Meta : environ 2 s de plus à l'essai, pour un raisonnement six fois plus long).
+                task: TaskType = TASKS_BY_CHANNEL.get(channel, "chat")
                 try:
                     async for event in self._reply(
                         task,
@@ -435,7 +438,9 @@ class ChatService:
             span.set(status=outcome.event.get("status"), error=outcome.event.get("error"))
         yield ChatEvent("tool", outcome.event)
         if outcome.plan is not None:
-            yield ChatEvent("plan", plan_summary(outcome.plan))
+            # Le résumé de l'agent porte les diffs et l'avis du relecteur, s'il y en a.
+            summary = outcome.event.get("plan") or plan_summary(outcome.plan)
+            yield ChatEvent("plan", summary)
         request.messages.append(
             Message("tool", outcome.content, tool_call_id=call.id, is_error=outcome.is_error)
         )

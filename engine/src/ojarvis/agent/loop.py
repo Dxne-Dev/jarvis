@@ -13,10 +13,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio.to_thread
 from pydantic import ValidationError
 
 from ojarvis.agent.executor import PlanExecutor
-from ojarvis.agent.plans import PLAN_TOOL, PlanIn, PlanRecord, PlanStore, StepIn, plan_tool_spec
+from ojarvis.agent.plans import (
+    PLACEHOLDER,
+    PLAN_TOOL,
+    PlanIn,
+    PlanRecord,
+    PlanStore,
+    StepIn,
+    plan_tool_spec,
+)
+from ojarvis.agent.review import CodeReviewer, Review
 from ojarvis.core.errors import ConflictError, EngineError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
@@ -77,7 +87,11 @@ SHELL_RULES = (
     "développement, surveillance) : lance-la avec arriere_plan=true, puis vérifie qu'elle "
     "répond (ss -ltn, curl -I http://localhost:PORT). Si une vérification échoue (no-listen, "
     "erreur, code non nul), dis-le et corrige : n'annonce jamais un succès que la sortie "
-    "contredit. Réponds court, en texte simple : c'est un terminal."
+    "contredit. Pour changer un fichier existant, lis-le, puis utilise modifier_fichier (un "
+    "passage exact remplacé, dont le diff est montré) plutôt que de le réécrire. Après une "
+    "modification de code, lance les tests du projet (pytest, npm test…) et corrige jusqu'à ce "
+    "qu'ils passent. Un relecteur commente chaque modification proposée : s'il signale un "
+    "problème, propose un plan corrigé. Réponds court, en texte simple : c'est un terminal."
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
@@ -179,18 +193,32 @@ class CallOutcome:
     plan: PlanRecord | None = None
 
 
-def plan_summary(plan: PlanRecord) -> dict[str, Any]:
-    return {
+def plan_summary(
+    plan: PlanRecord,
+    previews: dict[int, str] | None = None,
+    review: Review | None = None,
+) -> dict[str, Any]:
+    """Le plan tel qu'il s'affiche : ses étapes, leur aperçu (un diff), l'avis du relecteur."""
+    previews = previews or {}
+    summary: dict[str, Any] = {
         "id": plan.id,
         "title": plan.title,
         "status": plan.status,
         "max_level": plan.max_level,
         "tainted": plan.tainted,
         "steps": [
-            {"position": s.position, "description": s.description, "level": s.level}
+            {
+                "position": s.position,
+                "description": s.description,
+                "level": s.level,
+                **({"preview": previews[s.position]} if s.position in previews else {}),
+            }
             for s in plan.steps
         ],
     }
+    if review is not None:
+        summary["review"] = review.as_dict()
+    return summary
 
 
 class Agent:
@@ -201,11 +229,14 @@ class Agent:
         plans: PlanStore,
         bus: EventBus,
         executor: PlanExecutor | None = None,
+        reviewer: CodeReviewer | None = None,
     ) -> None:
         self._gate = gate
         self._plans = plans
         self._bus = bus
         self._executor = executor
+        #: Mode shell : relit chaque modification de code avant ta validation.
+        self._reviewer = reviewer
 
     async def plan_states(self, conversation_id: str) -> str:
         """L'état réel des plans de la conversation, du plus ancien au plus récent."""
@@ -257,6 +288,21 @@ class Agent:
             max_level=Level.DETRUIRE, os_control=self._gate.os_control(), shell_mode=shell_mode
         )
         return [*specs, plan_tool_spec()]
+
+    async def _previews(self, plan_in: PlanIn) -> dict[int, str]:
+        previews: dict[int, str] = {}
+        touched: set[str] = set()
+        for position, step in enumerate(plan_in.etapes, 1):
+            target = str(step.arguments.get("chemin", ""))
+            if PLACEHOLDER.search(str(step.arguments)) or (target and target in touched):
+                # Cible connue seulement à l'exécution, ou fichier déjà changé par une étape
+                # précédente : son aperçu ne serait pas juste, le résultat le montrera.
+                continue
+            preview = await anyio.to_thread.run_sync(self._gate.preview, step.outil, step.arguments)
+            if preview is not None:
+                previews[position] = preview
+                touched.add(target)
+        return previews
 
     def _require_shell(self, name: str, turn: AgentTurn) -> None:
         """Hors du mode shell, une commande n'est ni lancée ni proposée, même si le modèle
@@ -393,6 +439,9 @@ class Agent:
         try:
             for step in plan_in.etapes:
                 self._require_shell(step.outil, turn)
+            # Le diff de chaque modification, montré avant ta validation. Une retouche qui ne
+            # s'appliquerait pas (passage introuvable) revient au modèle, pas à toi.
+            previews = await self._previews(plan_in)
             plan = await self._plans.create(
                 plan_in, conversation_id=conversation_id, request=request, tainted=turn.tainted
             )
@@ -411,7 +460,10 @@ class Agent:
             }
             turn.tools.append({k: v for k, v in event.items() if k != "plan"})
             return CallOutcome(PLAN_STARTED, event, plan=plan)
-        summary = plan_summary(plan)
+        review = None
+        if previews and turn.shell and self._reviewer is not None:
+            review = await self._reviewer.review(request, list(previews.values()))
+        summary = plan_summary(plan, previews, review)
         await self._bus.publish(
             "plan.proposed",
             {"id": plan.id, "title": plan.title, "max_level": plan.max_level},
@@ -420,6 +472,9 @@ class Agent:
             f"{s.position}. {s.description} (niveau {s.level} : {LEVEL_LABELS[Level(s.level)]})"
             for s in plan.steps
         )
+        if review is not None:
+            # L'auteur lit l'avis : s'il signale un problème, il peut proposer un plan corrigé.
+            steps += f"\n\n{review.for_author()}"
         event = {
             "id": call.id,
             "name": PLAN_TOOL,

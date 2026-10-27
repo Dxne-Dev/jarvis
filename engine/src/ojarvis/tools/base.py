@@ -118,6 +118,14 @@ class Tool[A: ToolArgs](ABC):
     def describe(self, args: A) -> str:
         """Ce qui va se passer, et sur quoi : montré avant validation et écrit au journal."""
 
+    def preview(self, args: A, home: Path) -> str | None:
+        """Ce que l'action changerait (un diff), montré avant ta validation ; None sinon.
+
+        Peut refuser une action qui ne s'appliquerait pas (un passage introuvable) : le modèle
+        corrige avant que tu voies le plan."""
+        del args, home
+        return None
+
     @abstractmethod
     async def run(self, args: A, ctx: ToolContext) -> ToolOutput: ...
 

@@ -28,6 +28,7 @@ const TASKS: { id: string; label: string; hint: string }[] = [
   { id: "extract", label: "Souvenirs", hint: "Extraction des faits." },
   { id: "title", label: "Titres", hint: "Titres des conversations." },
   { id: "vision", label: "Vision", hint: "Images et écran." },
+  { id: "review", label: "Relecture du code", hint: "Un autre regard sur chaque modification." },
 ];
 
 function providerState(status: ProviderStatus): { tone: string; label: string } {

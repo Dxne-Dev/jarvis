@@ -19,6 +19,7 @@ from ojarvis import __version__
 from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.loop import Agent
 from ojarvis.agent.plans import PlanStore
+from ojarvis.agent.review import CodeReviewer
 from ojarvis.agents.orchestrator import Orchestrator
 from ojarvis.agents.specialists import STARTERS
 from ojarvis.anticipation.predictor import Predictor
@@ -481,7 +482,13 @@ class Services:
         acts = await _assemble_actions(
             config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
         )
-        core = Agent(gate=acts.gate, plans=acts.plans, bus=bus, executor=acts.executor)
+        core = Agent(
+            gate=acts.gate,
+            plans=acts.plans,
+            bus=bus,
+            executor=acts.executor,
+            reviewer=CodeReviewer(router),
+        )
         chat = ChatService(
             conversations=conversations,
             memory=memory,

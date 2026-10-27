@@ -61,6 +61,11 @@ class PermissionGate:
         args = tool.parse(raw_args)
         return tool, args, tool.level_for(args)
 
+    def preview(self, name: str, raw_args: dict[str, Any]) -> str | None:
+        """L'aperçu d'une action (un diff), sans rien exécuter."""
+        tool, args, _level = self.check(name, raw_args)
+        return tool.preview(args, self._context().home)
+
     async def execute(
         self, name: str, raw_args: dict[str, Any], *, approval: Approval | None = None
     ) -> ToolOutput:

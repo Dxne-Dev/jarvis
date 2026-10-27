@@ -8,8 +8,16 @@ from typing import Any, Literal
 Role = Literal["system", "user", "assistant", "tool"]
 
 #: Les types de tâche que le routeur sait servir.
-TaskType = Literal["chat", "voice", "reasoning", "extract", "title", "vision"]
-TASK_TYPES: tuple[TaskType, ...] = ("chat", "voice", "reasoning", "extract", "title", "vision")
+TaskType = Literal["chat", "voice", "reasoning", "extract", "title", "vision", "review"]
+TASK_TYPES: tuple[TaskType, ...] = (
+    "chat",
+    "voice",
+    "reasoning",
+    "extract",
+    "title",
+    "vision",
+    "review",
+)
 
 
 @dataclass(frozen=True, slots=True)
