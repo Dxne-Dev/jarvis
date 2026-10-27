@@ -216,8 +216,8 @@ class ContextEngine:
         for profile in await self._memory.items(kind="profil", limit=12):
             found[profile.id] = self._memory_item(profile, 1.0 + (0.1 if profile.pinned else 0))
         for hit in await self._memory.search(user_text, k=12):
-            if hit.record.id in found:
-                continue
+            if hit.record.id in found or hit.record.kind == "impasse":
+                continue  # une impasse est consultée au bon moment, jamais injectée d'office
             item = self._memory_item(hit.record, hit.score)
             if hit.via == "sens" and hit.score < self._floor:
                 item.reason = "trop peu pertinent"

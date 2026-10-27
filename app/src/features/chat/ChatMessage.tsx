@@ -24,6 +24,7 @@ const KIND_LABEL: Record<string, string> = {
   fait: "fait",
   preference: "préférence",
   souvenir: "échange passé",
+  impasse: "impasse",
 };
 
 function formatCost(cost: number | null): string | null {

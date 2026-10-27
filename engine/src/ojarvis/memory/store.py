@@ -27,8 +27,10 @@ from ojarvis.security.redaction import REDACTOR
 
 log = get_logger(__name__)
 
-MemoryKind = Literal["fait", "preference", "profil"]
-MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil")
+#: « impasse » : un correctif qui a échoué, noté par le mode shell (`ojarvis.tools.impasses`) ;
+#: jamais injecté d'office dans le contexte.
+MemoryKind = Literal["fait", "preference", "profil", "impasse"]
+MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil", "impasse")
 #: Au-delà de cette similarité, un nouveau souvenir met à jour l'ancien au lieu de doublonner.
 DUPLICATE_SIMILARITY = 0.95
 MAX_CONTENT = 1000

@@ -36,7 +36,7 @@ from ojarvis.browser.service import BrowserAccess
 from ojarvis.browser.vault import CookieVault
 from ojarvis.chat.service import ChatService
 from ojarvis.config import EngineConfig
-from ojarvis.context.engine import ContextEngine
+from ojarvis.context.engine import RELEVANCE_FLOOR, ContextEngine
 from ojarvis.conversations.store import ConversationStore
 from ojarvis.core.clock import local_timezone, utc_now
 from ojarvis.core.errors import UnavailableError
@@ -78,6 +78,7 @@ from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
 from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
+from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.mcp import mcp_tools
 from ojarvis.tools.shell import LookAtPage, OpenShell, RunCommand
@@ -490,6 +491,10 @@ class Services:
         acts = await _assemble_actions(
             config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
         )
+        # La mémoire des impasses du mode shell (la mémoire n'existe qu'ici).
+        floor = RELEVANCE_FLOOR.get(embedder.model_id, 0.5)
+        for tool in impasse_tools(memory, floor=floor):
+            acts.tools.register(tool)
         core = Agent(
             gate=acts.gate,
             plans=acts.plans,
