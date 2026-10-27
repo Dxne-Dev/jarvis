@@ -49,6 +49,7 @@ OK_RESPONSES: dict[str, tuple[str, dict[str, object], str]] = {
         {"data": [{"id": "muse-spark-1.3"}, {"id": "muse-spark-1.3-contributor"}]},
         "Modèles : muse-spark-1.3.",
     ),
+    "BASETEN_API_KEY": ("inference.baseten.co", {"data": [{"id": "x"}]}, "acceptée"),
     "CARTESIA_API_KEY": ("api.cartesia.ai", {"data": [{"id": "v1"}, {"id": "v2"}]}, "2 voix"),
     "TAVILY_API_KEY": (
         "api.tavily.com",

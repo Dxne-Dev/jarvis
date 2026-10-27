@@ -112,6 +112,16 @@ STATIC_CATALOG: tuple[ModelSpec, ...] = (
         context=1_048_576,
         price=Price(input=4.0, output=20.0, cached_input=0.2),
     ),
+    # Muse Spark Open, le modèle ouvert de Meta, chez Baseten. Prix relevés par des
+    # comparateurs le 27/10/2026 (la page de Baseten ne le donne pas) : ceux de Muse Spark.
+    ModelSpec(
+        "baseten",
+        "meta-models/muse-spark-open-1026",
+        "Muse Spark Open",
+        vision=True,
+        context=1_048_576,
+        price=Price(input=1.25, output=4.25),
+    ),
     ModelSpec("openai", "gpt-5", "GPT-5", vision=True, context=400_000),
     ModelSpec("openai", "gpt-5-mini", "GPT-5 mini", vision=True, context=400_000),
     ModelSpec(

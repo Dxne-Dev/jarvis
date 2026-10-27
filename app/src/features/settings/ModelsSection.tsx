@@ -18,6 +18,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
   meta: "Meta",
+  baseten: "Baseten",
   ollama: "Ollama (local)",
 };
 
@@ -126,7 +127,7 @@ export function ModelsSection() {
           {
             value: "meta",
             label: "Tout Meta",
-            hint: "Muse Spark pour chaque tâche, vision comprise ; les autres en secours. Clé Meta requise.",
+            hint: "Muse Spark pour chaque tâche, vision comprise ; Muse Spark Open en secours, puis les autres. Clé Meta requise.",
             // Seul ce choix demande la clé : sans elle, on peut toujours revenir en arrière.
             disabled: !configured.has("meta"),
           },

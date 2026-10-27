@@ -1,4 +1,5 @@
-"""Adaptateur générique pour les API compatibles OpenAI : DeepSeek, OpenRouter, OpenAI, Ollama.
+"""Adaptateur générique pour les API compatibles OpenAI : DeepSeek, OpenRouter, OpenAI, Meta,
+Baseten, Ollama.
 
 Chaque fournisseur ne diffère que par son adresse, sa clé et quelques options
 (réflexion de DeepSeek, nom du paramètre de longueur chez OpenAI).
@@ -72,6 +73,14 @@ META = CompatConfig(
     reasoning_effort=("minimal", "high"),
     reasoning_headroom=2048,
     refused_model_suffix="-contributor",
+)
+#: Muse Spark Open, le modèle ouvert de Meta, servi par Baseten (hackathon) : la réflexion se
+#: règle comme chez Muse Spark (« minimal » : 0,8 s à l'essai, le 27/10/2026).
+BASETEN = CompatConfig(
+    "baseten",
+    "https://inference.baseten.co/v1",
+    reasoning_effort=("minimal", "high"),
+    reasoning_headroom=2048,
 )
 OLLAMA = CompatConfig(
     "ollama", "http://127.0.0.1:11434/v1", local=True, needs_key=False, timeout_s=180.0

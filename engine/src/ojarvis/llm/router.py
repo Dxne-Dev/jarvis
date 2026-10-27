@@ -122,18 +122,23 @@ DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
 }
 
 
+#: Muse Spark Open, le modèle ouvert de Meta, chez Baseten.
+MUSE_SPARK_OPEN = "meta-models/muse-spark-open-1026"
+SPARK = Route("meta", "muse-spark-1.3")
+SPARK_OPEN = Route("baseten", MUSE_SPARK_OPEN)
+
 #: Profil « Tout Meta » (Réglages) : ces routes passent avant la politique par défaut, qui
-#: reste en secours ; un modèle imposé à la main garde la priorité.
+#: reste en secours ; un modèle imposé à la main garde la priorité. Si Muse Spark ne répond
+#: pas, Muse Spark Open prend le relais.
 META_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
-    "voice": (Route("meta", "muse-spark-1.3"),),
-    "chat": (Route("meta", "muse-spark-1.3"),),
-    "reasoning": (Route("meta", "muse-spark-1.3", thinking=True),),
-    "extract": (Route("meta", "muse-spark-1.3"),),
-    "title": (Route("meta", "muse-spark-1.3"),),
-    "vision": (Route("meta", "muse-spark-1.3"),),
-    # Le relecteur n'est pas l'auteur : Muse Wonder, le plus fort (Muse Spark Open quand un
-    # partenaire d'inférence sera branché).
-    "review": (Route("meta", "muse-wonder-1.0", thinking=True),),
+    "voice": (SPARK, SPARK_OPEN),
+    "chat": (SPARK, SPARK_OPEN),
+    "reasoning": (replace(SPARK, thinking=True), replace(SPARK_OPEN, thinking=True)),
+    "extract": (SPARK, SPARK_OPEN),
+    "title": (SPARK, SPARK_OPEN),
+    "vision": (SPARK, SPARK_OPEN),
+    # Le relecteur n'est pas l'auteur : Muse Wonder, le plus fort, puis Muse Spark Open.
+    "review": (Route("meta", "muse-wonder-1.0", thinking=True), replace(SPARK_OPEN, thinking=True)),
 }
 PROFILES: Mapping[str, Mapping[TaskType, tuple[Route, ...]]] = {"meta": META_POLICY}
 
