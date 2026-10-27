@@ -91,7 +91,10 @@ SHELL_RULES = (
     "passage exact remplacé, dont le diff est montré) plutôt que de le réécrire. Après une "
     "modification de code, lance les tests du projet (pytest, npm test…) et corrige jusqu'à ce "
     "qu'ils passent. Un relecteur commente chaque modification proposée : s'il signale un "
-    "problème, propose un plan corrigé. Réponds court, en texte simple : c'est un terminal."
+    "problème, propose un plan corrigé. Pour une page web servie sur la machine (serveur de "
+    "développement), regarde-la avec voir_page (une capture lue par la vision, avec les "
+    "erreurs de la console) et corrige ce qui cloche à l'écran. Réponds court, en texte "
+    "simple : c'est un terminal."
 )
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "

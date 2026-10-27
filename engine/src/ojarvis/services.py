@@ -67,6 +67,7 @@ from ojarvis.security.secrets import (
     SecretStore,
 )
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.shell.servers import BackgroundSessions
 from ojarvis.skills.runner import SkillRunner
 from ojarvis.skills.service import SkillService
 from ojarvis.skills.store import SkillStore
@@ -79,7 +80,7 @@ from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.mcp import mcp_tools
-from ojarvis.tools.shell import OpenShell, RunCommand
+from ojarvis.tools.shell import LookAtPage, OpenShell, RunCommand
 from ojarvis.tools.skills import skill_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
@@ -198,14 +199,21 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     workflows = WorkflowEngine(db, bus)
     scheduler = AutomationScheduler(store=automations, workflows=workflows, bus=bus)
     integrations = IntegrationManager(secrets.get)
+    servers = BackgroundSessions()  # les serveurs lancés par le mode shell
     tools = build_registry(
         browser.session,
         [
             *automation_tools(automations, scheduler),
             *integration_tools(integrations),
             *desktop_tools(router, lambda: prefs().screen_vision),
-            # Proposé seulement en mode shell ; journaux des serveurs dans l'état du moteur.
-            RunCommand(user_home, log_dir=config.paths.state_dir / "shell"),
+            # Proposés seulement en mode shell ; journaux et captures dans l'état du moteur.
+            RunCommand(user_home, log_dir=config.paths.state_dir / "shell", sessions=servers),
+            LookAtPage(
+                router,
+                lambda: prefs().screen_vision,
+                servers,
+                capture_dir=config.paths.state_dir / "shell" / "captures",
+            ),
             OpenShell(user_home),  # « passe en mode shell » : ouvre un terminal
         ],
     )
