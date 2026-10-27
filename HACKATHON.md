@@ -36,6 +36,14 @@ Each feature has an issue labeled `hackathon`.
 - **"Passe en mode shell"**: said to the app (or by voice), it opens your own terminal (the system default first, Ptyxis on Ubuntu 26.04) on `ojarvis-shell`, in the folder you asked for, joined to the same Jarvis.
 - **No secret leaves through a command**: commands that print a token (`gcloud auth print-access-token`, `gh auth token`, `pass`…) are refused unless used inside a substitution such as `-H "Authorization: Bearer $(…)"`; and Google tokens (even truncated), JWTs, private keys and more are masked before anything reaches the model. Found during a real test on October 26, fixed the same night.
 
+### Coding agents in the shell ([#8](https://github.com/octavebahoun/O-jarvis/issues/8)), in progress
+
+- **Targeted edits with a diff**: `modifier_fichier` replaces an exact passage; every file change shows its colored diff before you approve. An edit that would not apply goes back to the model, never to you.
+- **A second model reviews every change**: Muse Spark writes, Muse Wonder reviews the diff against your request (in "All Meta" mode). Its verdict is shown with the plan and sent back to the author, who can propose a corrected plan. You still decide.
+- **Tests until green**: after an edit, Jarvis runs the project's tests and fixes until they pass (real test: a failing `unittest` fixed in one 2-line edit, both tests green).
+- **Jarvis looks at its own web page**: `voir_page` opens a page served on your machine in a separate, throwaway Chromium (no cookies, local network blocked), takes a screenshot and has Muse Spark's vision read it, with the HTTP status and console errors. Real test: before the fix the model saw "a broken image icon, no visible button" (white on white); after it, "a blue rounded Commander button, well contrasted", and no console error.
+- The shell thinks harder (Muse Spark at `high` effort) since it writes code.
+
 ## Already there before (not part of the submission)
 
 The desktop app (Tauri + React), the Python engine, voice ("Hey Jarvis"), memory, the permission gate, the browser agent, skills, MCP servers, agents and Telegram. See the [README](./README.md).
