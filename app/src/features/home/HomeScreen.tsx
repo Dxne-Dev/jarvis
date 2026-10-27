@@ -145,7 +145,7 @@ export function HomeScreen() {
 
   return (
     <div className={home.home} data-mode={conversing ? "conversation" : "accueil"}>
-      <section className={home.stage} aria-label="Jarvis">
+      <section className={home.stage} data-model={avatarModel} aria-label="Jarvis">
         <div className={home.sphere} data-model={avatarModel}>
           <Sphere
             state={state}

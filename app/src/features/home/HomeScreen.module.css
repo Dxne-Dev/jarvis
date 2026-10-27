@@ -39,7 +39,7 @@
   text-align: center;
 }
 
-.home:has(.sphere[data-model="cyberMask"]) .heading {
+.stage[data-model="cyberMask"] .heading {
   margin-top: var(--space-4);
 }
 
