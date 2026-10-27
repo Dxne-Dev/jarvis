@@ -15,7 +15,7 @@ To see exactly what was built during the hackathon:
 
 Each feature has an issue labeled `hackathon`.
 
-### All-Meta profile ([#47](https://github.com/octavebahoun/O-jarvis/issues/47)), in progress
+### All-Meta profile ([#47](https://github.com/octavebahoun/O-jarvis/issues/47)), done
 
 - **Meta provider**: Muse Spark 1.3 and Muse Wonder 1.0 through the Meta Model API, with their prices so every call shows its cost.
   - Muse Spark always reasons before answering. Jarvis asks for `minimal` effort on quick tasks (first word in 0.8 s instead of 1.6 s, measured on October 26), and `high` effort on reasoning tasks.
