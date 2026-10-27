@@ -106,6 +106,11 @@ OS_CONTROL_OFF = (
     "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
     "dans Réglages, section « Contrôle du PC »."
 )
+ROUNDS_EXHAUSTED = (
+    "[Note du système] Tu as atteint le nombre d'étapes de cette réponse : n'appelle plus "
+    "d'outil. Dis en deux ou trois phrases où tu en es et ce qu'il reste à faire ; "
+    "l'utilisateur pourra te dire de continuer."
+)
 SHELL_ONLY = (
     "{tool} n'existe qu'en mode shell. Dis à l'utilisateur qu'il peut l'ouvrir (« passe en "
     "mode shell ») pour lancer des commandes."

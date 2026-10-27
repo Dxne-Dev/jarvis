@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from ojarvis.agent.loop import (
     MAX_TOOL_ROUNDS,
     PLAN_MISSING,
+    ROUNDS_EXHAUSTED,
     Agent,
     AgentTurn,
     claims_missing_plan,
@@ -359,7 +360,14 @@ class ChatService:
                 request.messages.append(Message("user", PLAN_MISSING))
                 continue
             if rounds == limit:
+                # Arrêt propre : les outils de ce dernier tour ne sont pas lancés, et le modèle
+                # dit où il en est, sans nouvel outil.
                 log.warning("tool_rounds_exhausted", rounds=rounds)
+                request.messages.append(Message("assistant", said))
+                request.messages.append(Message("user", ROUNDS_EXHAUSTED))
+                request.tools = []
+                async for event in self._stream_round(task, request, turn, _Round()):
+                    yield event
                 return
             request.messages.append(
                 Message(
@@ -541,7 +549,11 @@ class ChatService:
             await self._bus.publish("conversation.updated", {"id": conversation_id})
 
     async def _extract(self, user: MessageRecord, reply: MessageRecord) -> None:
-        known = await self._memory.search(user.content, k=8)
+        known = [
+            hit
+            for hit in await self._memory.search(user.content, k=8)
+            if hit.record.kind != "impasse"
+        ]
         known_lines = "\n".join(
             f"- id {h.record.id} [{h.record.kind}] {h.record.content}" for h in known
         )
