@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -34,6 +34,7 @@ from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
 from ojarvis.permissions.gate import PermissionGate
 from ojarvis.security.redaction import REDACTOR
+from ojarvis.shell.commands import talks_to_network
 from ojarvis.tools.base import LEVEL_LABELS, Level
 from ojarvis.tools.guards import DATA_RULE, as_data
 
@@ -183,7 +184,8 @@ class AgentTurn:
     tainted: bool = False
     #: Tour du mode shell : seul à pouvoir lancer une commande (`executer_commande`).
     shell: bool = False
-    #: Un contenu venu du web a été lu (page, recherche) : « toujours » ne s'applique pas.
+    #: Un contenu venu d'ailleurs a été lu (page, recherche, intégration, curl…) : « toujours »
+    #: ne s'applique pas.
     web: bool = False
     tools: list[dict[str, Any]] = field(default_factory=list)
     plans: list[str] = field(default_factory=list)
@@ -207,14 +209,42 @@ class CallOutcome:
     plan: PlanRecord | None = None
 
 
-def from_web(source: str | None) -> bool:
-    """Une donnée venue du web (une page, une recherche), pas de ta machine."""
+#: L'outil des commandes du mode shell (`ojarvis.tools.shell.RunCommand`).
+SHELL_TOOL = "executer_commande"
+
+
+@dataclass(frozen=True)
+class PlanReport:
+    """Les résultats d'un plan fini, rendus au modèle pour la suite du mode shell."""
+
+    text: str
+    #: La demande d'origine : la suite d'un plan n'a pour texte que « Continue. ».
+    request: str
+    #: Des sorties de commandes sont revenues : des données, jamais des consignes.
+    tainted: bool = False
+    #: L'une d'elles a parlé au réseau (curl, git clone…) : pas de « toujours » ensuite.
+    web: bool = False
+    urls: frozenset[str] = frozenset()
+
+
+#: Sources de ta machine : un fichier, le bac à sable, les tests d'un skill.
+LOCAL_SOURCES = frozenset({"bac à sable", "tests du skill"})
+
+
+def from_web(source: str | None, command: str | None = None) -> bool:
+    """Une donnée venue d'ailleurs que ta machine : une page, une recherche, une intégration
+    (GitHub, Notion…), un serveur MCP, un agent, ton écran, ou une commande qui parle au
+    réseau (curl, git clone…). Un contenu piégé peut s'y cacher."""
     if not source:
         return False
-    if source == "recherche web":
-        return True
-    host = (urlsplit(source).hostname or "") if "://" in source else ""
-    return bool(host) and host not in ("localhost", "127.0.0.1", "::1")
+    if "://" in source:
+        host = urlsplit(source).hostname or ""
+        return host not in ("localhost", "127.0.0.1", "::1")
+    if source.startswith(("/", "~")):
+        return False  # un fichier de ta machine
+    if source == "commande":
+        return command is not None and talks_to_network(command)
+    return source not in LOCAL_SOURCES
 
 
 def plan_summary(
@@ -285,7 +315,7 @@ class Agent:
             "\n".join(lines)
         )
 
-    async def plan_report(self, plan_id: str, conversation_id: str) -> str:
+    async def plan_report(self, plan_id: str, conversation_id: str) -> PlanReport:
         """Les résultats d'un plan fini de cette conversation, marqués comme données : en mode
         shell, Jarvis les lit pour continuer (corriger, relancer, vérifier)."""
         plan = await self._plans.get(plan_id)
@@ -294,7 +324,18 @@ class Agent:
         if plan.status not in ("done", "failed", "refused"):
             raise ConflictError("Ce plan n'est pas encore terminé.")
         if plan.status == "refused":
-            return f"L'utilisateur a refusé le plan « {plan.title} » : rien n'a été lancé."
+            refused = f"L'utilisateur a refusé le plan « {plan.title} » : rien n'a été lancé."
+            return PlanReport(refused, plan.request, tainted=plan.tainted)
+        ran = [step for step in plan.steps if step.status == "done"]
+        commands = [str(s.arguments.get("commande", "")) for s in ran if s.tool == SHELL_TOOL]
+        report = PlanReport(
+            "",
+            plan.request,
+            # Des sorties de commandes ou de fichiers : des données, jamais des consignes.
+            tainted=plan.tainted or bool(ran),
+            web=any(talks_to_network(command) for command in commands if command),
+            urls=frozenset(urls_in([step.result or "" for step in ran])),
+        )
         sections = []
         for step in plan.steps:
             if step.status == "done":
@@ -305,11 +346,12 @@ class Agent:
             else:
                 sections.append(f"Étape {step.position}, non lancée ({step.description}).")
         state = PLAN_STATES.get(plan.status, plan.status)
-        return (
+        text = (
             f"Le plan validé « {plan.title} » est {state}. Résultats :\n\n"
             + "\n\n".join(sections)
             + "\n\nContinue la tâche à partir de ces résultats, ou conclus si elle est finie."
         )
+        return replace(report, text=text)
 
     def rules(self, *, shell_folder: str | None = None) -> str:
         """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
@@ -449,7 +491,10 @@ class Agent:
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:
             turn.tainted = True
-            turn.web = turn.web or from_web(output.source)
+            command = call.arguments.get("commande")
+            turn.web = turn.web or from_web(
+                output.source, command if isinstance(command, str) else None
+            )
         content = as_data(output.text, origin=output.source) if output.external else output.text
         if output.follow_up is None:
             return CallOutcome(content, event)

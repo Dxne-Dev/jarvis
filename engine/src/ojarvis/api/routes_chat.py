@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ojarvis.api.deps import ServicesDep
 from ojarvis.chat.service import ChatEvent
@@ -34,8 +34,16 @@ class ChatIn(BaseModel):
     channel: Literal["app", "voice", "shell"] = "app"
     #: Mode shell : le dossier de la session (~/… ou chemin absolu dans ton dossier).
     folder: str | None = Field(default=None, max_length=1000)
-    #: Mode shell : un plan validé dans le terminal ; ses résultats reviennent au modèle.
-    after_plan: str | None = Field(default=None, max_length=32)
+    #: Mode shell : les plans validés dans le terminal ; leurs résultats reviennent au modèle.
+    #: Un seul identifiant est aussi accepté.
+    after_plan: list[Annotated[str, Field(max_length=32)]] | None = Field(
+        default=None, max_length=10
+    )
+
+    @field_validator("after_plan", mode="before")
+    @classmethod
+    def _one_or_more(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
 
 
 def sse(event: ChatEvent) -> str:

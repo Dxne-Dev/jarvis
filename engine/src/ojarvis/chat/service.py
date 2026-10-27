@@ -22,6 +22,7 @@ from ojarvis.agent.loop import (
     ROUNDS_EXHAUSTED,
     Agent,
     AgentTurn,
+    PlanReport,
     claims_missing_plan,
     plan_summary,
     urls_in,
@@ -152,6 +153,15 @@ TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
 TASKS_BY_CHANNEL: dict[str, TaskType] = {"voice": "voice", "shell": "reasoning"}
 
 
+def _keep_marks(turn: AgentTurn, reports: list[PlanReport]) -> None:
+    """Les sorties revenues d'un plan restent des données pour toute la suite : la garde des
+    adresses inventées, le signalement des plans et l'arrêt de « toujours » tiennent."""
+    for report in reports:
+        turn.tainted = turn.tainted or report.tainted
+        turn.web = turn.web or report.web
+        turn.known_urls |= report.urls
+
+
 def _add_to_last_user_message(request: LLMRequest, text: str) -> None:
     """Ajoute un bloc (résultats d'un plan) à la demande de l'utilisateur, sans un second
     message « user » que certains fournisseurs refusent."""
@@ -207,15 +217,15 @@ class ChatService:
         channel: Channel = "app",
         learn: bool = True,
         shell_folder: str | None = None,
-        after_plan: str | None = None,
+        after_plan: list[str] | None = None,
     ) -> AsyncGenerator[ChatEvent]:
         """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
         (par exemple une transcription vocale douteuse).
 
-        Mode shell : `shell_folder` est le dossier de la session ; `after_plan`, un plan
-        validé dans le terminal, dont les résultats reviennent au modèle pour qu'il continue.
+        Mode shell : `shell_folder` est le dossier de la session ; `after_plan`, les plans
+        validés dans le terminal, dont les résultats reviennent au modèle pour qu'il continue.
         """
-        if after_plan is not None and conversation_id is None:
+        if after_plan and conversation_id is None:
             raise InvalidInputError("La suite d'un plan va avec sa conversation.")
         if (channel == "shell") != (shell_folder is not None):
             raise InvalidInputError(
@@ -234,15 +244,19 @@ class ChatService:
             )
         # Les résultats d'un plan validé : lus avant tout enregistrement, pour qu'un plan
         # d'une autre conversation soit refusé sans laisser de message derrière lui.
-        report = None
-        if after_plan is not None and self._agent is not None:
-            report = await self._agent.plan_report(after_plan, conversation.id)
+        reports: list[PlanReport] = []
+        if after_plan and self._agent is not None:
+            reports = [await self._agent.plan_report(p, conversation.id) for p in after_plan]
         history = await self._conversations.messages(conversation.id, limit=60)
         user = await self._conversations.add_message(conversation.id, "user", cleaned)
         assistant = await self._conversations.add_message(
             conversation.id, "assistant", "", status="streaming"
         )
         turn = _Turn(assistant=assistant, start=time.perf_counter())
+        _keep_marks(turn.agent, reports)
+        # La suite d'un plan n'a pour texte que « Continue. » : le relecteur et les plans
+        # gardent la demande d'origine.
+        request_text = reports[0].request if reports else cleaned
         yield ChatEvent(
             "start",
             {
@@ -271,8 +285,8 @@ class ChatService:
                 request = LLMRequest(
                     messages=context.messages, max_tokens=500 if channel == "voice" else 4000
                 )
-                if report is not None:
-                    _add_to_last_user_message(request, report)
+                if reports:
+                    _add_to_last_user_message(request, "\n\n".join(r.text for r in reports))
                 # Mode shell : on y écrit du code, la réflexion paie (effort « high » chez
                 # Meta : environ 2 s de plus à l'essai, pour un raisonnement six fois plus long).
                 task: TaskType = TASKS_BY_CHANNEL.get(channel, "chat")
@@ -282,7 +296,7 @@ class ChatService:
                         request,
                         turn,
                         conversation_id=conversation.id,
-                        user_text=cleaned,
+                        user_text=request_text,
                         shell_folder=shell_folder,
                     ):
                         yield event
@@ -363,9 +377,11 @@ class ChatService:
                 # Arrêt propre : les outils de ce dernier tour ne sont pas lancés, et le modèle
                 # dit où il en est, sans nouvel outil.
                 log.warning("tool_rounds_exhausted", rounds=rounds)
-                request.messages.append(Message("assistant", said))
+                if said:  # un message vide, sans appel d'outil, serait refusé par l'API
+                    request.messages.append(Message("assistant", said))
                 request.messages.append(Message("user", ROUNDS_EXHAUSTED))
-                request.tools = []
+                # Les outils restent décrits (l'historique en contient, et certaines API le
+                # demandent) ; ceux que le modèle appellerait encore ne sont pas lancés.
                 async for event in self._stream_round(task, request, turn, _Round()):
                     yield event
                 return

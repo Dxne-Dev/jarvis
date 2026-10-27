@@ -425,3 +425,18 @@ async def test_fake_provider_scripts() -> None:
     assert isinstance(events[0], ReasoningDelta)
     assert provider.requests[0][1] == "m"
     assert await provider.list_models() == ["fake-model"]
+
+
+def test_a_text_after_tool_results_joins_their_user_message() -> None:
+    # L'arrêt au nombre d'étapes : « dis où tu en es » suit des résultats d'outils.
+    call = ToolCall("t1", "executer_commande", {"commande": "ls"})
+    _system, out = to_anthropic_messages(
+        [
+            Message("user", "Vérifie tout."),
+            Message("assistant", "", tool_calls=(call,)),
+            Message("tool", "a.txt", tool_call_id="t1"),
+            Message("user", "Dis où tu en es."),
+        ]
+    )
+    assert [m["role"] for m in out] == ["user", "assistant", "user"]
+    assert [b["type"] for b in out[-1]["content"]] == ["tool_result", "text"]
