@@ -442,6 +442,8 @@ class ModelRouter:
     ) -> AsyncIterator[StreamEvent | RouteInfo]:
         """Comme `stream`, dans une étape de trace « appel LLM » (jetons, coût, latence)."""
         state = state or RoutedStream()
+        # Un tour peut faire plusieurs appels avec le même état : chacun montre ses essais.
+        tried = len(state.attempts)
         start = time.perf_counter()
         first_token: float | None = None
         usage = Usage()
@@ -472,7 +474,7 @@ class ModelRouter:
                     provider=route.provider if route else None,
                     model=route.model if route else None,
                     thinking=(request.thinking or route.thinking) if route else None,
-                    attempts=list(state.attempts),
+                    attempts=state.attempts[tried:],
                     tokens_in=usage.input_tokens,
                     tokens_out=usage.output_tokens,
                     tokens_cached=usage.cached_input_tokens,

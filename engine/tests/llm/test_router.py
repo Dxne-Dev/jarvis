@@ -17,7 +17,7 @@ from ojarvis.llm.errors import (
     StructuredOutputError,
 )
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
-from ojarvis.llm.router import Constraints, ModelRouter, Relay, Route
+from ojarvis.llm.router import Constraints, ModelRouter, Relay, Route, RoutedStream
 from ojarvis.llm.structured import TOOL_NAME, generate_structured
 from ojarvis.llm.types import (
     ImagePart,
@@ -423,3 +423,23 @@ async def test_a_relay_goes_first_and_the_journal_says_why(tmp_path: Path) -> No
     found = await TraceQueries(db).get(trace.id)
     assert found is not None
     assert found[1][0].attributes["relais"] == "2 échecs de « npm test »"
+
+
+async def test_each_call_of_a_turn_shows_only_its_own_attempts(tmp_path: Path) -> None:
+    # Un tour avec des outils fait deux appels : le second ne doit pas compter le premier.
+    db_path = tmp_path / "t.db"
+    upgrade_to_head(db_path)
+    db = Database(db_path)
+    tracer = Tracer(db, EventBus())
+    router = make_router(tracer=tracer)
+    state = RoutedStream()
+    async with tracer.trace("tour", kind="chat") as trace:
+        for _ in range(2):
+            async for _event in router.stream_traced("chat", request("x"), state=state):
+                pass
+    found = await TraceQueries(db).get(trace.id)
+    assert found is not None
+    assert [span.attributes["attempts"] for span in found[1]] == [
+        ["deepseek/deepseek-flash"],
+        ["deepseek/deepseek-flash"],
+    ]
