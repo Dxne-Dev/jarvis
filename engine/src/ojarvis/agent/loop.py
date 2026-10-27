@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import anyio.to_thread
 from pydantic import ValidationError
@@ -179,6 +180,8 @@ class AgentTurn:
     tainted: bool = False
     #: Tour du mode shell : seul à pouvoir lancer une commande (`executer_commande`).
     shell: bool = False
+    #: Un contenu venu du web a été lu (page, recherche) : « toujours » ne s'applique pas.
+    web: bool = False
     tools: list[dict[str, Any]] = field(default_factory=list)
     plans: list[str] = field(default_factory=list)
     #: Adresses connues pendant ce tour : celles de ta demande et celles lues (liens, résultats).
@@ -201,12 +204,25 @@ class CallOutcome:
     plan: PlanRecord | None = None
 
 
+def from_web(source: str | None) -> bool:
+    """Une donnée venue du web (une page, une recherche), pas de ta machine."""
+    if not source:
+        return False
+    if source == "recherche web":
+        return True
+    host = (urlsplit(source).hostname or "") if "://" in source else ""
+    return bool(host) and host not in ("localhost", "127.0.0.1", "::1")
+
+
 def plan_summary(
     plan: PlanRecord,
     previews: dict[int, str] | None = None,
     review: Review | None = None,
+    *,
+    web: bool = False,
 ) -> dict[str, Any]:
-    """Le plan tel qu'il s'affiche : ses étapes, leur aperçu (un diff), l'avis du relecteur."""
+    """Le plan tel qu'il s'affiche : ses étapes (outil, commande, aperçu en diff), l'avis du
+    relecteur, et s'il suit une lecture venue du web."""
     previews = previews or {}
     summary: dict[str, Any] = {
         "id": plan.id,
@@ -214,11 +230,18 @@ def plan_summary(
         "status": plan.status,
         "max_level": plan.max_level,
         "tainted": plan.tainted,
+        "web": web,
         "steps": [
             {
                 "position": s.position,
                 "description": s.description,
                 "level": s.level,
+                "tool": s.tool,
+                **(
+                    {"command": str(s.arguments["commande"])}
+                    if s.tool == "executer_commande" and "commande" in s.arguments
+                    else {}
+                ),
                 **({"preview": previews[s.position]} if s.position in previews else {}),
             }
             for s in plan.steps
@@ -423,6 +446,7 @@ class Agent:
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:
             turn.tainted = True
+            turn.web = turn.web or from_web(output.source)
         content = as_data(output.text, origin=output.source) if output.external else output.text
         if output.follow_up is None:
             return CallOutcome(content, event)
@@ -471,7 +495,7 @@ class Agent:
         review = None
         if previews and turn.shell and self._reviewer is not None:
             review = await self._reviewer.review(request, list(previews.values()))
-        summary = plan_summary(plan, previews, review)
+        summary = plan_summary(plan, previews, review, web=turn.web)
         await self._bus.publish(
             "plan.proposed",
             {"id": plan.id, "title": plan.title, "max_level": plan.max_level},
