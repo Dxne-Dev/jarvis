@@ -25,6 +25,7 @@ from ojarvis.agent.plans import (
     PlanRecord,
     PlanStore,
     StepIn,
+    StepRecord,
     plan_tool_spec,
 )
 from ojarvis.agent.review import CodeReviewer, Review
@@ -225,6 +226,20 @@ class PlanReport:
     #: L'une d'elles a parlé au réseau (curl, git clone…) : pas de « toujours » ensuite.
     web: bool = False
     urls: frozenset[str] = frozenset()
+    #: Chaque commande lancée, et si elle a échoué : de quoi voir un test toujours rouge.
+    commands: tuple[tuple[str, bool], ...] = ()
+
+
+#: « code de sortie 1 (0,4 s) » dans la sortie d'une commande.
+EXIT_CODE = re.compile(r"code de sortie (-?\d+)")
+
+
+def command_failed(step: StepRecord) -> bool:
+    """Une commande en échec : l'étape a échoué, ou la commande a rendu un code non nul."""
+    if step.status == "failed":
+        return True
+    found = EXIT_CODE.search(step.result or "")
+    return found is not None and found.group(1) != "0"
 
 
 #: Sources de ta machine : un fichier, le bac à sable, les tests d'un skill.
@@ -335,6 +350,11 @@ class Agent:
             tainted=plan.tainted or bool(ran),
             web=any(talks_to_network(command) for command in commands if command),
             urls=frozenset(urls_in([step.result or "" for step in ran])),
+            commands=tuple(
+                (" ".join(str(step.arguments.get("commande", "")).split()), command_failed(step))
+                for step in plan.steps
+                if step.tool == SHELL_TOOL and step.status in ("done", "failed")
+            ),
         )
         sections = []
         for step in plan.steps:

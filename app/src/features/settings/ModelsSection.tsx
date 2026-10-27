@@ -42,6 +42,80 @@ function providerState(status: ProviderStatus): { tone: string; label: string } 
   return { tone: "ok", label: status.local ? "Prêt, sur la machine" : "Prêt" };
 }
 
+const RELAY_AFTER: { value: number; label: string }[] = [
+  { value: 0, label: "Coupé" },
+  { value: 1, label: "Après 1 échec" },
+  { value: 2, label: "Après 2 échecs (recommandé)" },
+  { value: 3, label: "Après 3 échecs" },
+];
+
+/** Profil « Tout Meta » : quand la même commande échoue encore, un modèle plus fort prend
+ *  le tour suivant (Muse Wonder par défaut). */
+function RelaySettings({ models }: { models: ModelInfo[] }) {
+  const preferences = usePreferences();
+  const update = useUpdatePreferences();
+  const baseId = useId();
+  const prefs = preferences.data;
+  if (prefs?.model_profile !== "meta") return null;
+  const disabled = update.isPending;
+  const known = models.some((m) => `${m.provider}/${m.model}` === prefs.relay_model);
+  return (
+    <div className={styles.routing}>
+      <div className={styles.routingRow}>
+        <label htmlFor={`${baseId}-after`} className={styles.routingLabel}>
+          <span>Relais</span>
+          <span className={styles.radioHint}>
+            Quand la même commande échoue encore (un test toujours rouge), le tour suivant passe à
+            un modèle plus fort.
+          </span>
+        </label>
+        <select
+          id={`${baseId}-after`}
+          className={`${styles.input} ${styles.select}`}
+          value={prefs.relay_after}
+          disabled={disabled}
+          onChange={(e) => {
+            update.mutate({ relay_after: Number(e.target.value) });
+          }}
+        >
+          {RELAY_AFTER.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={styles.routingRow}>
+        <label htmlFor={`${baseId}-model`} className={styles.routingLabel}>
+          <span>Modèle de relais</span>
+          <span className={styles.radioHint}>Muse Wonder, le plus fort de Meta, par défaut.</span>
+        </label>
+        <select
+          id={`${baseId}-model`}
+          className={`${styles.input} ${styles.select}`}
+          value={prefs.relay_model}
+          disabled={disabled || prefs.relay_after === 0}
+          onChange={(e) => {
+            update.mutate({ relay_model: e.target.value });
+          }}
+        >
+          {!known && <option value={prefs.relay_model}>{prefs.relay_model}</option>}
+          {models.map((m) => (
+            <option key={`${m.provider}/${m.model}`} value={`${m.provider}/${m.model}`}>
+              {m.label} — {PROVIDER_LABEL[m.provider] ?? m.provider}
+            </option>
+          ))}
+        </select>
+      </div>
+      {update.isError && (
+        <p className={styles.ko} role="alert">
+          {describeError(update.error)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TaskRouting({ models }: { models: ModelInfo[] }) {
   const preferences = usePreferences();
   const update = useUpdatePreferences();
@@ -133,6 +207,7 @@ export function ModelsSection() {
           },
         ]}
       />
+      <RelaySettings models={models.data.filter((m) => configured.has(m.provider))} />
       <TaskRouting models={models.data.filter((m) => configured.has(m.provider))} />
       <PreferenceSwitch
         name="learn_from_conversations"

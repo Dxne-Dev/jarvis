@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections import Counter
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -33,7 +34,7 @@ from ojarvis.core.errors import InvalidInputError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.errors import LLMError
-from ojarvis.llm.router import ModelRouter, RoutedStream
+from ojarvis.llm.router import ModelRouter, Relay, Route, RoutedStream
 from ojarvis.llm.structured import generate_structured
 from ojarvis.llm.types import (
     LLMRequest,
@@ -147,9 +148,14 @@ class _Turn:
     trace_id: str = ""
     finished: bool = False
     agent: AgentTurn = field(default_factory=AgentTurn)
+    #: Un modèle plus fort pour ce tour, après des échecs répétés (profil « Tout Meta »).
+    relay: Relay | None = None
 
 
 TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
+#: Le relais réglé : (modèle de relais, échecs de la même commande avant de l'appeler), ou
+#: None quand il est coupé ou hors du profil « Tout Meta ».
+RelayPolicy = Callable[[], tuple[Route, int] | None]
 TASKS_BY_CHANNEL: dict[str, TaskType] = {"voice": "voice", "shell": "reasoning"}
 
 
@@ -197,6 +203,7 @@ class ChatService:
         learn: bool = True,
         agent: Agent | None = None,
         graph: GraphStore | None = None,
+        relay: RelayPolicy | None = None,
     ) -> None:
         self._conversations = conversations
         self._memory = memory
@@ -207,6 +214,9 @@ class ChatService:
         self._bus = bus
         self.learn = learn
         self._agent = agent
+        self._relay_policy: RelayPolicy = relay or (lambda: None)
+        #: Par conversation, les commandes en échec et leur nombre d'échecs d'affilée.
+        self._failures: dict[str, Counter[str]] = {}
         self._background: set[asyncio.Task[None]] = set()
 
     async def respond(
@@ -253,7 +263,7 @@ class ChatService:
             conversation.id, "assistant", "", status="streaming"
         )
         turn = _Turn(assistant=assistant, start=time.perf_counter())
-        _keep_marks(turn.agent, reports)
+        self._after_plans(turn, conversation.id, reports)
         # La suite d'un plan n'a pour texte que « Continue. » : le relecteur et les plans
         # gardent la demande d'origine.
         request_text = reports[0].request if reports else cleaned
@@ -400,19 +410,50 @@ class ChatService:
                 ):
                     yield event
 
+    def _after_plans(self, turn: _Turn, conversation_id: str, reports: list[PlanReport]) -> None:
+        """Ce que les plans finis changent pour la suite : leurs sorties restent des données,
+        et une commande qui échoue encore peut passer la main au modèle de relais."""
+        _keep_marks(turn.agent, reports)
+        turn.relay = self._relay_for(conversation_id, reports)
+
+    def _relay_for(self, conversation_id: str, reports: list[PlanReport]) -> Relay | None:
+        """Profil « Tout Meta » : après N échecs de la même commande (un test toujours rouge),
+        ce tour passe au modèle de relais. Une réussite remet le compte de la commande à zéro."""
+        failures = self._failures.setdefault(conversation_id, Counter())
+        for report in reports:
+            for command, failed in report.commands:
+                if failed:
+                    failures[command] += 1
+                else:
+                    failures.pop(command, None)
+        policy = self._relay_policy()
+        if policy is None or not failures:
+            return None
+        route, after = policy
+        command, count = failures.most_common(1)[0]
+        if count < after:
+            return None
+        shown = command if len(command) <= 60 else command[:57] + "…"
+        return Relay(route, f"{count} échecs de « {shown} » : relais vers {route.model}")
+
     async def _stream_round(
         self, task: TaskType, request: LLMRequest, turn: _Turn, step: _Round
     ) -> AsyncIterator[ChatEvent]:
         """Un appel au modèle : texte diffusé au fil de l'eau, appels d'outils mis de côté."""
-        async for event in self._router.stream_traced(task, request, state=turn.state):
+        async for event in self._router.stream_traced(
+            task, request, state=turn.state, relay=turn.relay
+        ):
             if isinstance(event, RouteInfo):
                 turn.route = event
+                relay = turn.relay
+                relayed = relay is not None and relay.route.key == f"{event.provider}/{event.model}"
                 yield ChatEvent(
                     "route",
                     {
                         "provider": event.provider,
                         "model": event.model,
                         "fallback_from": event.fallback_from,
+                        "relay": relay.reason if relay is not None and relayed else None,
                     },
                 )
             elif isinstance(event, TextDelta):

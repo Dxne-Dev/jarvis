@@ -52,7 +52,7 @@ from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.fake import FakeProvider, e2e_script
 from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
-from ojarvis.llm.router import ModelRouter
+from ojarvis.llm.router import ModelRouter, Route
 from ojarvis.memory.embeddings import E5Embedder, Embedder
 from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
@@ -304,6 +304,14 @@ async def _assemble_memory(
     return memory, conversations, graph, context
 
 
+def relay_policy(prefs: Preferences) -> tuple[Route, int] | None:
+    """Le relais du profil « Tout Meta » : (modèle de relais, échecs avant de l'appeler)."""
+    if prefs.model_profile != "meta" or prefs.relay_after == 0:
+        return None
+    provider, _, model = prefs.relay_model.partition("/")
+    return Route(provider, model, thinking=True), prefs.relay_after
+
+
 def _build_router(
     providers: dict[str, Provider],
     catalog: Catalog,
@@ -512,6 +520,7 @@ class Services:
             learn=preferences.learn_from_conversations,
             agent=core,
             graph=graph,
+            relay=lambda: relay_policy(holder["value"]),
         )
         orchestrator = await _assemble_agents(
             acts, core, router=router, db=db, bus=bus, tracer=tracer

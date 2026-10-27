@@ -17,7 +17,7 @@ from ojarvis.llm.errors import (
     StructuredOutputError,
 )
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
-from ojarvis.llm.router import Constraints, ModelRouter, Route
+from ojarvis.llm.router import Constraints, ModelRouter, Relay, Route
 from ojarvis.llm.structured import TOOL_NAME, generate_structured
 from ojarvis.llm.types import (
     ImagePart,
@@ -406,3 +406,20 @@ async def test_secrets_never_reach_a_model() -> None:
     assert key not in sent
     assert "valeur-du-trousseau-xyz" not in sent
     assert sent.count("***") == 2
+
+
+async def test_a_relay_goes_first_and_the_journal_says_why(tmp_path: Path) -> None:
+    db_path = tmp_path / "t.db"
+    upgrade_to_head(db_path)
+    db = Database(db_path)
+    tracer = Tracer(db, EventBus())
+    router = make_router(profile="meta", tracer=tracer)
+    relay = Relay(Route("meta", "muse-wonder-1.0", thinking=True), "2 échecs de « npm test »")
+    assert router.routes("reasoning", first=relay.route)[0] == relay.route
+    async with tracer.trace("tour", kind="chat") as trace:
+        events = [e async for e in router.stream_traced("reasoning", request("x"), relay=relay)]
+    info = next(e for e in events if isinstance(e, RouteInfo))
+    assert (info.provider, info.model) == ("meta", "muse-wonder-1.0")
+    found = await TraceQueries(db).get(trace.id)
+    assert found is not None
+    assert found[1][0].attributes["relais"] == "2 échecs de « npm test »"

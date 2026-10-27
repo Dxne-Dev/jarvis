@@ -64,6 +64,15 @@ class Route:
         return f"{self.provider}/{self.model}"
 
 
+@dataclass(frozen=True, slots=True)
+class Relay:
+    """Un modèle plus fort pour ce tour (relais après des échecs), et pourquoi : la raison
+    s'affiche dans le Journal, sur l'appel au modèle."""
+
+    route: Route
+    reason: str
+
+
 #: Politique par défaut. Rapide et bon marché pour la voix et le chat courant.
 DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
     "voice": (
@@ -240,10 +249,13 @@ class ModelRouter:
             return False
         return not (constraints.needs_vision and not spec.vision)
 
-    def routes(self, task: TaskType, constraints: Constraints | None = None) -> list[Route]:
-        """Routes candidates, dans l'ordre, déjà filtrées (clé, capacités, sensibilité)."""
+    def routes(
+        self, task: TaskType, constraints: Constraints | None = None, *, first: Route | None = None
+    ) -> list[Route]:
+        """Routes candidates, dans l'ordre, déjà filtrées (clé, capacités, sensibilité).
+        `first` : un relais, essayé avant tout le reste."""
         constraints = constraints or Constraints()
-        candidates: list[Route] = []
+        candidates: list[Route] = [first] if first is not None else []
         override = self._overrides().get(task)
         if override and "/" in override:
             provider, model = override.split("/", 1)
@@ -338,6 +350,7 @@ class ModelRouter:
         constraints: Constraints | None = None,
         *,
         state: RoutedStream | None = None,
+        relay: Relay | None = None,
     ) -> AsyncIterator[StreamEvent | RouteInfo]:
         """Flux d'événements, précédé d'un `RouteInfo`.
 
@@ -353,7 +366,7 @@ class ModelRouter:
         if self._refresh_local and (constraints.sensitive or constraints.offline):
             # Seul le local convient : Ollama a pu démarrer après le moteur.
             await self._refresh_local()
-        routes = self.routes(task, constraints)
+        routes = self.routes(task, constraints, first=relay.route if relay else None)
         if not routes:
             raise NoRouteAvailableError(f"aucune route pour {task}")
         now = self._clock()
@@ -425,6 +438,7 @@ class ModelRouter:
         constraints: Constraints | None = None,
         *,
         state: RoutedStream | None = None,
+        relay: Relay | None = None,
     ) -> AsyncIterator[StreamEvent | RouteInfo]:
         """Comme `stream`, dans une étape de trace « appel LLM » (jetons, coût, latence)."""
         state = state or RoutedStream()
@@ -435,7 +449,7 @@ class ModelRouter:
 
         async def events() -> AsyncIterator[StreamEvent | RouteInfo]:
             nonlocal first_token, usage, finish
-            async for event in self.stream(task, request, constraints, state=state):
+            async for event in self.stream(task, request, constraints, state=state, relay=relay):
                 if isinstance(event, TextDelta | ToolCallReady) and first_token is None:
                     first_token = time.perf_counter()
                 elif isinstance(event, StreamEnd):
@@ -466,6 +480,8 @@ class ModelRouter:
                     ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
                     finish_reason=finish,
                 )
+                if relay is not None and route == relay.route:
+                    span.set(relais=relay.reason)
 
     def cost(self, route: Route | None, usage: Usage) -> float | None:
         if route is None:

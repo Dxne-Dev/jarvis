@@ -33,7 +33,15 @@ def test_build_providers_reads_keys_from_the_store(tmp_path: Path) -> None:
     upgrade_to_head(db_path)
     store = SecretStore(Database(db_path), MemoryBackend())
     providers = build_providers(store)
-    assert set(providers) == {"deepseek", "anthropic", "openai", "openrouter", "meta", "ollama"}
+    assert set(providers) == {
+        "deepseek",
+        "anthropic",
+        "openai",
+        "openrouter",
+        "meta",
+        "baseten",
+        "ollama",
+    }
     assert not providers["deepseek"].is_configured()
     store.set("DEEPSEEK_API_KEY", "cle-de-test")
     assert providers["deepseek"].is_configured()

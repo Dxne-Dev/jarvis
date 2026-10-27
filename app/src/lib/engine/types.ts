@@ -44,6 +44,10 @@ export interface Preferences {
   sphere_quality: "auto" | "high" | "low";
   routing: Record<string, string>;
   model_profile: "auto" | "meta";
+  /** Profil « Tout Meta » : échecs de la même commande avant le relais (0 : coupé). */
+  relay_after: number;
+  /** Le modèle de relais, « fournisseur/modèle ». */
+  relay_model: string;
   learn_from_conversations: boolean;
   voice_enabled: boolean;
   voice_input_device: string | null;

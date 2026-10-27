@@ -16,7 +16,7 @@ from ojarvis.db.models import Setting
 from ojarvis.llm.types import TASK_TYPES
 from ojarvis.voice.tts import DEFAULT_CARTESIA_VOICE
 
-PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "meta", "ollama")
+PROVIDERS = ("deepseek", "openrouter", "openai", "anthropic", "meta", "baseten", "ollama")
 DEVICE_NAME = r"^[A-Za-z0-9._:@-]+$"
 
 
@@ -32,6 +32,11 @@ class Preferences(BaseModel):
     #: Profil de modèles : « meta » met Muse Spark en tête de chaque tâche (les autres
     #: fournisseurs restent en secours). Désactivé par défaut.
     model_profile: Literal["auto", "meta"] = "auto"
+    #: Profil « Tout Meta » : après ce nombre d'échecs de la même commande (un test toujours
+    #: rouge), le tour suivant passe au modèle de relais, plus fort. 0 : relais coupé.
+    relay_after: int = Field(default=2, ge=0, le=5)
+    #: Le modèle de relais, « fournisseur/modèle » : Muse Wonder, le plus fort de Meta.
+    relay_model: str = Field(default="meta/muse-wonder-1.0", max_length=120)
     #: Apprendre de la conversation (faits et préférences extraits automatiquement).
     learn_from_conversations: bool = True
     #: Voix : « Hey Jarvis », écoute, réponse parlée. Désactivable sans toucher au chat.
@@ -71,10 +76,21 @@ class Preferences(BaseModel):
         for task, target in value.items():
             if task not in TASK_TYPES:
                 raise ValueError(f"type de tâche inconnu : {task}")
-            provider, _, model = target.partition("/")
-            if provider not in PROVIDERS or not model:
-                raise ValueError(f"modèle invalide : {target}")
+            _check_target(target)
         return value
+
+    @field_validator("relay_model")
+    @classmethod
+    def _check_relay_model(cls, value: str) -> str:
+        _check_target(value)
+        return value
+
+
+def _check_target(target: str) -> None:
+    """« fournisseur/modèle », d'un fournisseur connu."""
+    provider, _, model = target.partition("/")
+    if provider not in PROVIDERS or not model:
+        raise ValueError(f"modèle invalide : {target}")
 
 
 class SettingsStore:
