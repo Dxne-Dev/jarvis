@@ -30,7 +30,7 @@ export function Choice<K extends ChoiceKey>({
 }: {
   name: K;
   label: string;
-  options: { value: Preferences[K]; label: string; hint: string }[];
+  options: { value: Preferences[K]; label: string; hint: string; disabled?: boolean }[];
   disabled?: boolean;
 }) {
   const preferences = usePreferences();
@@ -52,7 +52,12 @@ export function Choice<K extends ChoiceKey>({
         }}
       >
         {options.map((option) => (
-          <RadioGroup.Item key={option.value} value={option.value} className={styles.radio}>
+          <RadioGroup.Item
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className={styles.radio}
+          >
             <span className={styles.radioDot} aria-hidden="true">
               <RadioGroup.Indicator className={styles.radioIndicator} />
             </span>

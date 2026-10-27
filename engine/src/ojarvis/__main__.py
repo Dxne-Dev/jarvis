@@ -107,6 +107,13 @@ def watch_parent(server: uvicorn.Server, stream: IO[bytes]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["shell"]:
+        # Le moteur empaqueté n'a pas de « python -m » : « ojarvis-engine shell » ouvre le
+        # terminal de Jarvis.
+        from ojarvis.shell.cli import main as shell_main  # noqa: PLC0415
+
+        return shell_main(argv[1:])
     args = parse_args(argv)
     config = load_config(dev_mode=args.dev)
     config.paths.ensure()

@@ -46,8 +46,14 @@ class ChatIn(BaseModel):
         return [value] if isinstance(value, str) else value
 
 
+#: Fins de ligne pour httpx (qui coupe comme `str.splitlines`), permises telles quelles dans
+#: une chaîne JSON : échappées, une ligne de données ne se coupe jamais en deux.
+LINE_BREAKS = str.maketrans({"\u2028": "\\u2028", "\u2029": "\\u2029", "\x85": "\\u0085"})
+
+
 def sse(event: ChatEvent) -> str:
-    return f"event: {event.type}\ndata: {json.dumps(event.data, ensure_ascii=False)}\n\n"
+    data = json.dumps(event.data, ensure_ascii=False).translate(LINE_BREAKS)
+    return f"event: {event.type}\ndata: {data}\n\n"
 
 
 @router.post("/chat")

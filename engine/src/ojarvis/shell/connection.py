@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import stat
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,3 +103,12 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def python_module(module: str, *, frozen_as: str | None = None) -> list[str]:
+    """Lancer un module d'O-jarvis avec ce même Python. Le moteur empaqueté (PyInstaller)
+    n'a pas de « -m » : le terminal y est la sous-commande `shell`, le moteur le programme
+    seul."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, frozen_as] if frozen_as else [sys.executable]
+    return [sys.executable, "-m", module]

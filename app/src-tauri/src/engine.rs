@@ -23,6 +23,9 @@ const READY_PREFIX: &str = "OJARVIS_READY ";
 const READY_TIMEOUT: Duration = Duration::from_secs(90);
 const GRACEFUL_STOP: Duration = Duration::from_secs(7);
 const MAX_RESTARTS: u32 = 3;
+/// Sortie du moteur quand un autre tient déjà le dossier de données
+/// (`ojarvis.shell.connection.EXIT_LOCKED`) : un terminal `ojarvis-shell` lancé avant l'app.
+const EXIT_LOCKED: i32 = 3;
 pub const STATUS_EVENT: &str = "engine://status";
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -355,6 +358,24 @@ impl EngineManager {
             return;
         }
         log::warn!("le moteur s'est arrêté (code {code:?})");
+        if code == Some(EXIT_LOCKED) {
+            // Pas une panne : relancer ne servirait à rien tant que ce terminal est ouvert.
+            self.publish(
+                &app,
+                EngineInfo {
+                    status: EngineStatus::Failed,
+                    base_url: None,
+                    token: None,
+                    error: Some(
+                        "Jarvis tourne déjà dans un terminal (ojarvis-shell) : ferme-le, puis \
+                         rouvre l'app"
+                            .to_string(),
+                    ),
+                    perf_probe: self.perf_probe,
+                },
+            );
+            return;
+        }
         let attempt = self.restarts.fetch_add(1, Ordering::SeqCst) + 1;
         if attempt > MAX_RESTARTS {
             self.publish(

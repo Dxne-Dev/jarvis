@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx
 import numpy as np
 import pytest
@@ -283,3 +284,19 @@ def test_devices_come_from_pipewire_with_readable_names(monkeypatch: pytest.Monk
         "inputs": [{"name": "alsa_input.pci", "label": "Audio interne"}],
         "outputs": [{"name": "alsa_output.pci", "label": "Haut-parleurs"}],
     }
+
+
+def test_switching_the_model_profile_reapplies_the_voice(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Revue du 27/10/2026 : couper « Tout Meta » laissait ta voix partir chez Meta.
+    applied: list[str] = []
+
+    async def record(prefs: Preferences) -> None:
+        applied.append(prefs.model_profile)
+
+    monkeypatch.setattr(services.voice, "apply", record)
+    assert client.patch("/v1/settings", json={"model_profile": "meta"}).status_code == 200
+    assert client.portal is not None
+    client.portal.call(anyio.sleep, 0.05)  # la mise à jour part en arrière-plan
+    assert applied == ["meta"]

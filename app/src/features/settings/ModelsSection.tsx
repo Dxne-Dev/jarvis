@@ -117,7 +117,6 @@ export function ModelsSection() {
       <Choice
         name="model_profile"
         label="Profil de modèles"
-        disabled={!configured.has("meta")}
         options={[
           {
             value: "auto",
@@ -128,6 +127,8 @@ export function ModelsSection() {
             value: "meta",
             label: "Tout Meta",
             hint: "Muse Spark pour chaque tâche, vision comprise ; les autres en secours. Clé Meta requise.",
+            // Seul ce choix demande la clé : sans elle, on peut toujours revenir en arrière.
+            disabled: !configured.has("meta"),
           },
         ]}
       />

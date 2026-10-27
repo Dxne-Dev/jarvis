@@ -672,7 +672,13 @@ class Services:
         self.preferences = preferences
         self._holder["value"] = preferences
         self.chat.learn = preferences.learn_from_conversations
-        voice_keys = [k for k in Preferences.model_fields if k.startswith(("voice_", "wake_"))]
+        # La voix suit aussi le profil : couper « Tout Meta » cesse tout de suite d'envoyer ta
+        # voix à Meta.
+        voice_keys = [
+            k
+            for k in Preferences.model_fields
+            if k.startswith(("voice_", "wake_")) or k == "model_profile"
+        ]
         if any(getattr(previous, k) != getattr(preferences, k) for k in voice_keys):
             self.spawn(self.voice.apply(preferences))
 
