@@ -551,6 +551,19 @@ class VoiceService:
             self._on_listen()
         return True
 
+    async def dictate(self, timeout_s: float) -> str | None:
+        """Une phrase dite pour le terminal (#10) : None si la voix ne tourne pas, « » si rien
+        n'a été entendu à temps."""
+        pipeline = self._pipeline
+        if pipeline is None:
+            return None
+        future = pipeline.dictate()
+        try:
+            return await asyncio.wait_for(asyncio.shield(future), timeout_s)
+        except TimeoutError:
+            pipeline.cancel_dictation()
+            return ""
+
     def say(self, text: str) -> bool:
         """Faire dire un texte à Jarvis (briefing) ; faux si la voix est éteinte ou occupée."""
         if self._pipeline is None:

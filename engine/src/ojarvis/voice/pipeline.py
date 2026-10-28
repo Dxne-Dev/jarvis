@@ -164,6 +164,9 @@ class VoicePipeline:
         self._turn_audio: list[Frame] = []
         self._barge_since: float | None = None
         self._listen_request = False
+        #: Une dictée du terminal en attente (#10) : la prochaine phrase lui revient, sans
+        #: réponse parlée ni tour de conversation vocal.
+        self._dictation: asyncio.Future[str] | None = None
         self._conversation: tuple[str, float] | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
         self.last_report: TurnReport | None = None
@@ -190,6 +193,27 @@ class VoicePipeline:
     def listen_now(self) -> None:
         """Parler sans mot de réveil (raccourci clavier, bouton micro) ; coupe Jarvis s'il parle."""
         self._listen_request = True
+
+    def dictate(self) -> asyncio.Future[str]:
+        """Le terminal écoute une phrase, comme avec le bouton micro de l'app : pas de mot de
+        réveil à dire, et rien ne quitte la machine avant que l'on parle. La phrase lui revient ;
+        il la montre et la traite comme une demande écrite. Une seule écoute à la fois : une
+        dictée déjà en cours est rendue telle quelle."""
+        if self._dictation is None or self._dictation.done():
+            self._dictation = asyncio.get_running_loop().create_future()
+            self.listen_now()
+        return self._dictation
+
+    def cancel_dictation(self) -> None:
+        self._end_dictation("")
+
+    def _end_dictation(self, text: str) -> bool:
+        """Rend la phrase au terminal qui l'attend ; faux s'il n'en attend pas."""
+        dictation, self._dictation = self._dictation, None
+        if dictation is None or dictation.done():
+            return False
+        dictation.set_result(text)
+        return True
 
     def say(self, text: str) -> bool:
         """Dire un texte de lui-même (ex. le briefing du matin), seulement s'il est en veille.
@@ -377,6 +401,7 @@ class VoicePipeline:
             self._listening = None
             if not listening.follow_up:
                 self._spawn(self._bus.publish("voice.timeout", {}, persist=False))
+            self._end_dictation("")  # rien entendu : le terminal le dit
             self._go_idle()
 
     def _stream_step(self, listening: _Listening, frame: Frame, event: Endpoint) -> None:
@@ -598,7 +623,13 @@ class VoicePipeline:
                 if self._listening is not None:
                     self._listening.retried = True
             else:
+                self._end_dictation("")
                 self._go_idle()
+            return
+        if self._end_dictation(text):
+            # La phrase est pour le terminal : il la traite comme une demande écrite.
+            self._turn = None
+            self._go_idle()
             return
         report = await self._answer(
             text,

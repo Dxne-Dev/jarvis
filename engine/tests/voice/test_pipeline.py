@@ -394,3 +394,35 @@ async def test_what_he_says_on_his_own_can_be_interrupted() -> None:
         await wait_until(lambda: "voice.interrupted" in r.types())
         assert [e.payload["by"] for e in r.events if e.type == "voice.interrupted"] == ["interface"]
         assert r.sink.stopped >= 1
+
+
+# ------------------------------------------------------------------ dictée du terminal (#10)
+
+
+async def test_the_terminal_gets_the_sentence_instead_of_a_spoken_answer() -> None:
+    audio = build_audio(("silence", 0.5), ("speech", 1.0), ("silence", 1.0))
+    async with rig(audio, stt=FakeSTT(["Liste les fichiers du dossier."])) as r:
+        heard = r.pipeline.dictate()
+        await wait_until(heard.done)
+        assert heard.result() == "Liste les fichiers du dossier."
+        assert r.chat.calls == []  # pas de tour vocal : le terminal s'en charge
+        assert r.tts.sentences == []  # rien de dit à voix haute
+        assert "voice.wake" not in r.types()  # comme le bouton micro
+
+
+async def test_a_silent_dictation_sends_nothing_online_and_says_so() -> None:
+    streaming = FakeStreamingSTT()
+    async with rig(build_audio(("silence", 4.0)), streaming=streaming) as r:
+        heard = r.pipeline.dictate()
+        await wait_until(heard.done, limit=10)
+        assert heard.result() == ""
+        assert streaming.streams == []  # rien n'est parti en ligne
+
+
+async def test_one_dictation_at_a_time() -> None:
+    audio = build_audio(("silence", 0.5), ("speech", 1.0), ("silence", 1.0))
+    async with rig(audio, stt=FakeSTT(["Une seule phrase."])) as r:
+        first, second = r.pipeline.dictate(), r.pipeline.dictate()
+        assert first is second
+        await wait_until(first.done)
+        assert first.result() == "Une seule phrase."

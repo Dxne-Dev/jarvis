@@ -300,3 +300,11 @@ def test_switching_the_model_profile_reapplies_the_voice(
     assert client.portal is not None
     client.portal.call(anyio.sleep, 0.05)  # la mise à jour part en arrière-plan
     assert applied == ["meta"]
+
+
+def test_dictation_needs_the_voice_to_run(client: TestClient) -> None:
+    # #10 : sans voix allumée (ici, pas d'audio), le terminal reçoit une explication claire.
+    response = client.post("/v1/voice/dictate", json={})
+    assert response.status_code == 409
+    assert "La voix est éteinte" in response.json()["error"]["message"]
+    assert client.post("/v1/voice/say", json={"text": "Bonjour."}).json() == {"spoken": False}
