@@ -18,7 +18,9 @@ import anyio.to_thread
 from pydantic import ValidationError
 
 from ojarvis.agent.executor import PlanExecutor
+from ojarvis.agent.measures import MEASURE_AFTER, MEASURE_BEFORE
 from ojarvis.agent.plans import (
+    MAX_STEPS,
     PLACEHOLDER,
     PLAN_TOOL,
     PlanIn,
@@ -29,7 +31,7 @@ from ojarvis.agent.plans import (
     plan_tool_spec,
 )
 from ojarvis.agent.review import CodeReviewer, Review
-from ojarvis.core.errors import ConflictError, EngineError, NotFoundError
+from ojarvis.core.errors import ConflictError, EngineError, InvalidInputError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
@@ -86,7 +88,10 @@ SHELL_RULES = (
     "tout de suite ; une autre action devient un plan qu'il valide dans le terminal ; une "
     "suppression demande sa double confirmation. Avance par petites étapes : lance, lis la "
     "sortie, corrige, relance, jusqu'au résultat. Après une action, vérifie son effet par une "
-    "lecture (par exemple df après un nettoyage) avant de dire que c'est fait. Ne lance "
+    "lecture avant de dire que c'est fait : quand l'action doit changer un chiffre ou un "
+    "état (place libérée, paquet installé, service démarré), ajoute au plan une mesure "
+    "(mesure.commande, une lecture comme df -h /) ; elle est prise avant et après tes étapes. "
+    "Compare-les : « vérifié » si l'après confirme, sinon « non vérifié ». Ne lance "
     "jamais sudo : propose la commande avec proposer_sudo ; il la lance lui-même en un appui "
     "(son mot de passe va directement à sudo), et sa sortie te revient. Une commande ne reçoit "
     "aucune "
@@ -330,6 +335,11 @@ def plan_summary(
                     else {}
                 ),
                 **({"preview": previews[s.position]} if s.position in previews else {}),
+                **(
+                    {"measure": "avant" if s.why == MEASURE_BEFORE else "après"}
+                    if s.why in (MEASURE_BEFORE, MEASURE_AFTER)
+                    else {}
+                ),
             }
             for s in plan.steps
         ],
@@ -396,8 +406,13 @@ class Agent:
             ),
         )
         sections = []
+        measured = any(step.why == MEASURE_BEFORE for step in plan.steps)
         for step in plan.steps:
-            if step.status == "done":
+            if step.why in (MEASURE_BEFORE, MEASURE_AFTER) and step.status == "done":
+                label = "Mesure avant" if step.why == MEASURE_BEFORE else "Mesure après"
+                body = as_data(step.result or "", origin="commande")
+                sections.append(f"{label} ({step.description}) :\n{body}")
+            elif step.status == "done":
                 body = as_data(step.result or "", origin="commande")
                 sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
             elif step.status == "failed":
@@ -410,6 +425,12 @@ class Agent:
             + "\n\n".join(sections)
             + "\n\nContinue la tâche à partir de ces résultats, ou conclus si elle est finie."
         )
+        if measured:
+            text += (
+                " Compare la mesure d'avant et celle d'après : si l'après confirme le résultat, "
+                "dis « vérifié » avec les deux chiffres ; sinon dis « non vérifié » et ce qui "
+                "manque, jamais « fait »."
+            )
         return replace(report, text=text)
 
     async def user_ran(self, ran: RanCommand) -> PlanReport:
@@ -454,7 +475,8 @@ class Agent:
         for position, step in enumerate(plan_in.etapes, 1):
             target = str(step.arguments.get("chemin", ""))
             if step.outil == SHELL_TOOL:
-                after_command = True
+                # Une mesure ne change rien : les retouches qui la suivent gardent leur diff.
+                after_command = after_command or step.pourquoi != MEASURE_BEFORE
                 continue
             if (
                 PLACEHOLDER.search(str(step.arguments))
@@ -469,6 +491,27 @@ class Agent:
                 previews[position] = preview
                 touched.add(target)
         return previews
+
+    def _measured(self, plan_in: PlanIn, turn: AgentTurn) -> PlanIn:
+        """La mesure d'un plan (#15) : une lecture prise avant les étapes, puis après. Sans
+        elle, Jarvis ne peut pas montrer la preuve de l'effet."""
+        measure = plan_in.mesure
+        if measure is None:
+            return plan_in
+        self._require_shell(SHELL_TOOL, turn)
+        arguments = {"commande": measure.commande, "dossier": measure.dossier}
+        _tool, _args, level = self._gate.check(SHELL_TOOL, arguments)
+        if level != Level.LIRE:
+            raise InvalidInputError(
+                "La mesure d'un plan est une simple lecture (df, ls, systemctl status…)."
+            )
+        if len(plan_in.etapes) + 2 > MAX_STEPS:
+            raise InvalidInputError(
+                f"Avec la mesure avant et après, le plan dépasserait {MAX_STEPS} étapes."
+            )
+        before = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_BEFORE)
+        after = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_AFTER)
+        return PlanIn(titre=plan_in.titre, etapes=[before, *plan_in.etapes, after])
 
     def _require_shell(self, name: str, turn: AgentTurn) -> None:
         """Hors du mode shell, une commande n'est ni lancée ni proposée, même si le modèle
@@ -609,6 +652,7 @@ class Agent:
         request: str,
     ) -> CallOutcome:
         try:
+            plan_in = self._measured(plan_in, turn)
             for step in plan_in.etapes:
                 self._require_shell(step.outil, turn)
             # Le diff de chaque modification, montré avant ta validation. Une retouche qui ne

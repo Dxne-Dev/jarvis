@@ -40,11 +40,28 @@ class StepIn(BaseModel):
     pourquoi: str = Field(min_length=1, max_length=300, description="Pourquoi cette étape.")
 
 
+class MeasureIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    commande: str = Field(
+        min_length=1,
+        max_length=1000,
+        description="Une lecture qui mesure le résultat attendu (df -h /, systemctl is-active "
+        "nginx, ls build/…).",
+    )
+    dossier: str = Field(default="~", min_length=1, max_length=1000, description="Son dossier.")
+
+
 class PlanIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     titre: str = Field(min_length=3, max_length=120, description="Titre court du plan.")
     etapes: list[StepIn] = Field(min_length=1, max_length=MAX_STEPS)
+    mesure: MeasureIn | None = Field(
+        default=None,
+        description="Mode shell : une lecture prise avant puis après les étapes, la preuve "
+        "que l'action a produit son effet.",
+    )
 
 
 def plan_tool_spec() -> ToolSpec:
@@ -55,7 +72,8 @@ def plan_tool_spec() -> ToolSpec:
         "Propose un plan d'étapes (outils et arguments) que l'utilisateur validera avant "
         "exécution. Obligatoire pour toute action de niveau 2 ou 3 et pour enchaîner "
         "plusieurs actions. Une étape peut reprendre le résultat d'une étape précédente "
-        "avec {{etape N}} dans un argument texte.",
+        "avec {{etape N}} dans un argument texte. En mode shell, quand l'action doit changer "
+        "un chiffre ou un état, ajoute une mesure : elle est prise avant et après.",
         schema,
     )
 
