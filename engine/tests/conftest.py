@@ -14,6 +14,7 @@ from ojarvis.memory.embeddings import HashEmbedder
 from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
+from ojarvis.shell.machine import MachineMap
 
 TOKEN = "t" * 40
 DEV_ORIGIN = "http://localhost:1420"
@@ -90,7 +91,21 @@ def client(
         discover=False,
     )
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as test_client:
+        # La carte de la machine n'est jamais relevée sur la machine qui lance les tests.
+        test_client.app.state.services.machine._collect = fake_machine  # type: ignore[attr-defined]
         yield test_client
+
+
+def fake_machine(home: Path) -> MachineMap:
+    del home
+    return MachineMap(
+        hardware="Matériel : processeur de test (4 fils), mémoire 7,2 Go, échange 2 Go.",
+        system="Système : Ubuntu 26.04 LTS, noyau 7.0.0, bureau GNOME (wayland).",
+        disks="Disques : / (ext4) 457 Go, 392 Go utilisés (91 %), 43 Go libres.",
+        tools="Outils : docker 28.1.1, node 22.11.0, python3 3.14.0, git 2.51.0.",
+        services="Services : 40 en marche, dont NetworkManager, snapd ; arrêtés : docker.",
+        projects="Projets (dossiers git, les plus récents d'abord) : ~/projet.",
+    )
 
 
 @pytest.fixture

@@ -221,7 +221,7 @@ export interface ConversationDetail extends Conversation {
   messages: StoredMessage[];
 }
 
-export type MemoryKind = "fait" | "preference" | "profil" | "impasse";
+export type MemoryKind = "fait" | "preference" | "profil" | "impasse" | "machine";
 
 export interface MemoryItem {
   id: number;

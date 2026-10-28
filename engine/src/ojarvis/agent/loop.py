@@ -273,7 +273,7 @@ def command_failed(step: StepRecord) -> bool:
 
 
 #: Sources de ta machine : un fichier, le bac à sable, les tests d'un skill.
-LOCAL_SOURCES = frozenset({"bac à sable", "tests du skill"})
+LOCAL_SOURCES = frozenset({"bac à sable", "tests du skill", "carte de la machine"})
 
 
 def from_web(source: str | None, command: str | None = None) -> bool:

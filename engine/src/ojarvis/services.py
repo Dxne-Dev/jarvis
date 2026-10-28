@@ -67,6 +67,7 @@ from ojarvis.security.secrets import (
     SecretStore,
 )
 from ojarvis.settings_store import Preferences, SettingsStore
+from ojarvis.shell.machine import MachineCard
 from ojarvis.shell.servers import BackgroundSessions
 from ojarvis.skills.runner import SkillRunner
 from ojarvis.skills.service import SkillService
@@ -80,6 +81,7 @@ from ojarvis.tools.code import ListCapabilities
 from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
+from ojarvis.tools.machine import ReadMachineMap
 from ojarvis.tools.mcp import mcp_tools
 from ojarvis.tools.shell import LookAtPage, OpenShell, ProposeAdmin, RunCommand
 from ojarvis.tools.skills import skill_tools
@@ -305,6 +307,19 @@ async def _assemble_memory(
     return memory, conversations, graph, context
 
 
+def _memory_tools(
+    acts: _Actions, memory: MemoryStore, embedder: Embedder, home: Path
+) -> MachineCard:
+    """Les outils qui ont besoin de la mémoire (elle n'existe qu'ici) : les impasses du mode
+    shell, et la carte de la machine, relevée en lecture seule."""
+    floor = RELEVANCE_FLOOR.get(embedder.model_id, 0.5)
+    for tool in impasse_tools(memory, floor=floor):
+        acts.tools.register(tool)
+    machine = MachineCard(memory, acts.journal, home)
+    acts.tools.register(ReadMachineMap(machine))
+    return machine
+
+
 def relay_policy(prefs: Preferences) -> tuple[Route, int] | None:
     """Le relais du profil « Tout Meta » : (modèle de relais, échecs avant de l'appeler)."""
     if prefs.model_profile != "meta" or prefs.relay_after == 0:
@@ -459,6 +474,7 @@ class Services:
     orchestrator: Orchestrator
     graph: GraphStore
     anticipation: AnticipationService
+    machine: MachineCard
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -500,10 +516,7 @@ class Services:
         acts = await _assemble_actions(
             config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
         )
-        # La mémoire des impasses du mode shell (la mémoire n'existe qu'ici).
-        floor = RELEVANCE_FLOOR.get(embedder.model_id, 0.5)
-        for tool in impasse_tools(memory, floor=floor):
-            acts.tools.register(tool)
+        machine = _memory_tools(acts, memory, embedder, config.user_home or Path.home())
         core = Agent(
             gate=acts.gate,
             plans=acts.plans,
@@ -522,6 +535,7 @@ class Services:
             agent=core,
             graph=graph,
             relay=lambda: relay_policy(holder["value"]),
+            machine=machine,
         )
         orchestrator = await _assemble_agents(
             acts, core, router=router, db=db, bus=bus, tracer=tracer
@@ -596,6 +610,7 @@ class Services:
             orchestrator=orchestrator,
             graph=graph,
             anticipation=anticipation,
+            machine=machine,
         )
         services._holder = holder
         await acts.executor.recover()

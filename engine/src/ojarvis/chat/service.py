@@ -52,6 +52,7 @@ from ojarvis.llm.types import (
 from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
 from ojarvis.security.redaction import REDACTOR
+from ojarvis.shell.machine import MachineCard
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
@@ -205,6 +206,7 @@ class ChatService:
         agent: Agent | None = None,
         graph: GraphStore | None = None,
         relay: RelayPolicy | None = None,
+        machine: MachineCard | None = None,
     ) -> None:
         self._conversations = conversations
         self._memory = memory
@@ -216,6 +218,7 @@ class ChatService:
         self.learn = learn
         self._agent = agent
         self._relay_policy: RelayPolicy = relay or (lambda: None)
+        self._machine = machine
         #: Par conversation, les commandes en échec et leur nombre d'échecs d'affilée.
         self._failures: dict[str, Counter[str]] = {}
         self._background: set[asyncio.Task[None]] = set()
@@ -284,6 +287,8 @@ class ChatService:
                 reuse=True,
             ) as trace:
                 turn.trace_id = trace.id
+                async for event in self._machine_card(channel):
+                    yield event
                 async with self._tracer.span("contexte", kind="context") as span:
                     context = await self._context.build(
                         conversation_id=conversation.id,
@@ -410,6 +415,17 @@ class ChatService:
                     agent, call, request, turn, conversation_id=conversation_id, user_text=user_text
                 ):
                     yield event
+
+    async def _machine_card(self, channel: Channel) -> AsyncIterator[ChatEvent]:
+        """Mode shell : la carte de la machine, relevée au premier tour (puis chaque semaine)."""
+        if channel != "shell" or self._machine is None:
+            return
+        async with self._tracer.span("carte de la machine", kind="context") as span:
+            fresh = await self._machine.ensure()
+            span.set(relevee=fresh)
+        if fresh:
+            text = "Carte de ta machine relevée, en lecture seule : elle est dans Mémoire."
+            yield ChatEvent("notice", {"text": text})
 
     async def _reports(
         self, conversation_id: str, after_plan: list[str] | None, ran: RanCommand | None

@@ -29,8 +29,11 @@ log = get_logger(__name__)
 
 #: « impasse » : un correctif qui a échoué, noté par le mode shell (`ojarvis.tools.impasses`) ;
 #: jamais injecté d'office dans le contexte.
-MemoryKind = Literal["fait", "preference", "profil", "impasse"]
-MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil", "impasse")
+MemoryKind = Literal["fait", "preference", "profil", "impasse", "machine"]
+MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil", "impasse", "machine")
+#: Ne se fondent jamais dans un souvenir d'un autre type, ni l'inverse : une impasse, une
+#: ligne de la carte de la machine.
+SEPARATE_KINDS = frozenset({"impasse", "machine"})
 #: Au-delà de cette similarité, un nouveau souvenir met à jour l'ancien au lieu de doublonner.
 DUPLICATE_SIMILARITY = 0.95
 MAX_CONTENT = 1000
@@ -167,7 +170,9 @@ class MemoryStore:
             if score < DUPLICATE_SIMILARITY:
                 break
             existing = await self.get(item_id)
-            if (existing.kind == "impasse") != (kind == "impasse"):
+            if (
+                existing.kind in SEPARATE_KINDS or kind in SEPARATE_KINDS
+            ) and existing.kind != kind:
                 continue
             if kind == "impasse" and existing.content != cleaned:
                 continue
