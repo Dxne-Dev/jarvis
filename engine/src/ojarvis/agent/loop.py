@@ -431,6 +431,11 @@ class Agent:
                 "dis « vérifié » avec les deux chiffres ; sinon dis « non vérifié » et ce qui "
                 "manque, jamais « fait »."
             )
+        elif any(step.level >= Level.AGIR and step.tool == SHELL_TOOL for step in ran):
+            text += (
+                " Ce plan n'avait pas de mesure : ne dis pas « fait ». Vérifie par une lecture, "
+                "ou dis « non vérifié »."
+            )
         return replace(report, text=text)
 
     async def user_ran(self, ran: RanCommand) -> PlanReport:
@@ -497,9 +502,13 @@ class Agent:
         elle, Jarvis ne peut pas montrer la preuve de l'effet."""
         measure = plan_in.mesure
         if measure is None:
-            return plan_in
+            return self._final_read_as_measure(plan_in, turn)
         self._require_shell(SHELL_TOOL, turn)
-        arguments = {"commande": measure.commande, "dossier": measure.dossier}
+        folders = [
+            str(s.arguments["dossier"]) for s in plan_in.etapes if s.arguments.get("dossier")
+        ]
+        folder = measure.dossier or (folders[0] if folders else "~")
+        arguments = {"commande": measure.commande, "dossier": folder}
         _tool, _args, level = self._gate.check(SHELL_TOOL, arguments)
         if level != Level.LIRE:
             raise InvalidInputError(
@@ -512,6 +521,29 @@ class Agent:
         before = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_BEFORE)
         after = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_AFTER)
         return PlanIn(titre=plan_in.titre, etapes=[before, *plan_in.etapes, after])
+
+    def _final_read_as_measure(self, plan_in: PlanIn, turn: AgentTurn) -> PlanIn:
+        """Un plan d'actions qui finit par une lecture (« touch a.txt » puis « ls -l a.txt ») :
+        cette vérification devient sa mesure, prise aussi avant les actions (#15). Muse Spark
+        écrit ainsi sa preuve plus souvent qu'il ne remplit la mesure (essai du 28/10/2026)."""
+        last = plan_in.etapes[-1]
+        if (
+            not turn.shell
+            or len(plan_in.etapes) < 2
+            or len(plan_in.etapes) + 1 > MAX_STEPS
+            or last.outil != SHELL_TOOL
+            or PLACEHOLDER.search(str(last.arguments))
+        ):
+            return plan_in
+        try:
+            levels = [self._gate.check(s.outil, s.arguments)[2] for s in plan_in.etapes]
+        except EngineError:
+            return plan_in  # la proposition dira l'erreur
+        if levels[-1] != Level.LIRE or max(levels[:-1]) < Level.AGIR:
+            return plan_in
+        before = StepIn(outil=SHELL_TOOL, arguments=last.arguments, pourquoi=MEASURE_BEFORE)
+        after = StepIn(outil=SHELL_TOOL, arguments=last.arguments, pourquoi=MEASURE_AFTER)
+        return PlanIn(titre=plan_in.titre, etapes=[before, *plan_in.etapes[:-1], after])
 
     def _require_shell(self, name: str, turn: AgentTurn) -> None:
         """Hors du mode shell, une commande n'est ni lancée ni proposée, même si le modèle

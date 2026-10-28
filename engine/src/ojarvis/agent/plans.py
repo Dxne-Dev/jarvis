@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,7 +49,9 @@ class MeasureIn(BaseModel):
         description="Une lecture qui mesure le résultat attendu (df -h /, systemctl is-active "
         "nginx, ls build/…).",
     )
-    dossier: str = Field(default="~", min_length=1, max_length=1000, description="Son dossier.")
+    dossier: str | None = Field(
+        default=None, min_length=1, max_length=1000, description="Son dossier (celui des étapes)."
+    )
 
 
 class PlanIn(BaseModel):
@@ -62,6 +64,12 @@ class PlanIn(BaseModel):
         description="Mode shell : une lecture prise avant puis après les étapes, la preuve "
         "que l'action a produit son effet.",
     )
+
+    @field_validator("mesure", mode="before")
+    @classmethod
+    def _measure_as_text(cls, value: Any) -> Any:
+        # « "mesure": "ls -l preuve.txt" » : Muse Spark l'écrit souvent ainsi (28/10/2026).
+        return {"commande": value} if isinstance(value, str) else value
 
 
 def plan_tool_spec() -> ToolSpec:
