@@ -156,8 +156,13 @@ PLAN_STATES = {
 PLAN_CLAIM = re.compile(
     r"(?:valid|confirm)\w*\s*(?:-le)?\s+(?:le\s+plan|à\s+l['’]écran)|plan\s+est\s+prêt"
     r"|attend\w*\s+ta\s+validation|passe\s+par\s+un\s+plan|voici\s+le\s+plan"
-    r"|je\s+(?:te\s+)?(?:prépare|propose)\s+(?:le|ce|un)\s+plan|<\s*/?\s*proposer_un_plan",
+    r"|<\s*/?\s*proposer_un_plan",
     re.IGNORECASE,
+)
+#: « Je te prépare un plan » : une annonce, sauf posée en question (« je te prépare un plan
+#: pour libérer ça ? »), qui attend ta réponse.
+PLAN_PROMISE = re.compile(
+    r"je\s+(?:te\s+)?(?:prépare|propose)\s+(?:le|ce|un)\s+plan", re.IGNORECASE
 )
 PLAN_MISSING = (
     "[Note du système] Tu viens d'annoncer un plan à valider, mais tu n'as pas appelé "
@@ -180,8 +185,12 @@ def claims_missing_plan(text: str, proposed: list[str]) -> bool:
     """Un plan annoncé dans la réponse alors qu'aucun n'a été proposé pendant le tour."""
     if proposed:
         return False
-    sentences = re.split(r"(?<=[.!?…])\s+|\n+", text)
-    return any(PLAN_CLAIM.search(s) and not PLAN_OFFER.search(s) for s in sentences)
+    for sentence in re.split(r"(?<=[.!?…])\s+|\n+", text):
+        if PLAN_CLAIM.search(sentence) and not PLAN_OFFER.search(sentence):
+            return True
+        if PLAN_PROMISE.search(sentence) and not sentence.rstrip().endswith("?"):
+            return True
+    return False
 
 
 _URL = re.compile(r"https?://[^\s<>\"'()\[\]{}«»]+")
