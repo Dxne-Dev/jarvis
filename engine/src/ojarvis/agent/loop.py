@@ -89,7 +89,11 @@ SHELL_RULES = (
     "lecture (par exemple df après un nettoyage) avant de dire que c'est fait. Ne lance "
     "jamais sudo : écris la commande pour qu'il la tape. Une commande ne reçoit aucune "
     "entrée : utilise les options non interactives (-y, --yes). Pour lire un fichier, "
-    "préfère cat, head, tail ou grep. Une commande qui ne se termine pas (serveur de "
+    "préfère cat, head, tail ou grep. Une mesure de place prend du temps (un dossier "
+    "personnel : plusieurs minutes) : pour un disque plein, lance du -xh -d1 ~ 2>/dev/null | "
+    "sort -h | tail -15 avec delai_s=300, puis descends dans les plus gros dossiers, sans "
+    "rien supprimer. Une lecture coupée au délai se relance avec un delai_s plus grand "
+    "(jusqu'à 900). Une commande qui ne se termine pas (serveur de "
     "développement, surveillance) : lance-la avec arriere_plan=true, puis vérifie qu'elle "
     "répond (ss -ltn, curl -I http://localhost:PORT). Si une vérification échoue (no-listen, "
     "erreur, code non nul), dis-le et corrige : n'annonce jamais un succès que la sortie "
@@ -161,9 +165,21 @@ PLAN_MISSING = (
 )
 
 
+#: Une offre (« tu veux que je te propose un plan ? ») n'annonce aucun plan : la relance
+#: le faisait proposer sans attendre la réponse (essai du 28/10/2026).
+PLAN_OFFER = re.compile(
+    r"\b(?:tu\s+veux|veux-tu|voulez-vous|tu\s+souhaites|souhaites-tu|je\s+peux|dois-je)\b"
+    r"[^?]*\?\s*$",
+    re.IGNORECASE,
+)
+
+
 def claims_missing_plan(text: str, proposed: list[str]) -> bool:
     """Un plan annoncé dans la réponse alors qu'aucun n'a été proposé pendant le tour."""
-    return not proposed and PLAN_CLAIM.search(text) is not None
+    if proposed:
+        return False
+    sentences = re.split(r"(?<=[.!?…])\s+|\n+", text)
+    return any(PLAN_CLAIM.search(s) and not PLAN_OFFER.search(s) for s in sentences)
 
 
 _URL = re.compile(r"https?://[^\s<>\"'()\[\]{}«»]+")
