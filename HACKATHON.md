@@ -57,6 +57,12 @@ Each feature has an issue labeled `hackathon`.
 - **`sudo` in one tap**: Jarvis proposes the command, and the terminal asks "[e]xecute it myself" ("oui" typed in full for a destruction). It runs in your own terminal: `sudo` asks for your password directly, and Jarvis never sees it. The output comes back to Jarvis, masked, as data, and the command goes to the audit log. Real test: `sudo du -sh /var/lib/docker` → "Docker uses 6.8 GB".
 - **Machine map**: on the first shell turn, Jarvis records the hardware, system, disks, installed tools, running services and project folders, read-only (names, sizes and versions, never file contents or secrets). It lives in Memory, where you can read, edit or delete it, and reaches the model in shell mode or when a question is about the PC. Real test: "my PC is slow, why?" → "your RAM is saturated: 4.9 GB used of 7.2 GB, 3.6 GB of swap".
 
+### Guardrails for autonomy ([#15](https://github.com/octavebahoun/O-jarvis/issues/15)), done
+
+- **Mission budgets**: on top of its step limit, a mission given to an agent has limits: $0.50, 10 minutes, 300,000 tokens and 3 tool failures in a row (money and duration can be set when it starts). Past them, it stops without another model call, becomes "suspended" with what it already did, and a notification tells you, in the app and on Telegram.
+- **Never an action on its own**: tested, a mission never runs an action (level 2) or a destruction (level 3) by itself; each one becomes a plan that waits for your approval. Automations go through the same gate.
+- **Before / after**: a shell plan carries a measure (a read-only command) taken before the actions and after them; when a plan ends with a read, that read becomes its measure. The terminal shows both side by side, Jarvis compares them and says "verified" or "not verified"; a plan of actions without proof can never be called "done". Real test: before "ls: cannot access 'preuve.txt'", after "6 bytes", answer "Verified".
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
