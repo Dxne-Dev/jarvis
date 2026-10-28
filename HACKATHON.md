@@ -50,6 +50,13 @@ Each feature has an issue labeled `hackathon`.
 - **Budgets**: a request stops cleanly after 12 follow-ups, 20 minutes or $1, and waits for your "continue"; the cost of each request is shown, and the results of the last plan reach the model with your next message.
 - **Dead-ends memory**: a fix that failed is noted per project. It never fills the context on its own: Jarvis looks it up when a test fails, so it does not try the same fix twice. Real test over two sessions: it found "returning None failed" and proposed `return 0`, tests green.
 
+### Managing the machine ([#9](https://github.com/octavebahoun/O-jarvis/issues/9)), done
+
+- **"Why is my disk full?"**: Jarvis measures with a 5-minute budget (a home folder takes 2 minutes here) and drills into the biggest folders, deleting nothing. Real test: Downloads 48 GB (27 GB of it Telegram), caches 47 GB, npm 17 GB, Videos 32 GB, trash 9 GB.
+- **Jarvis never runs `sudo`**: refused everywhere, even hidden in `bash -c`, a substitution, `xargs` or `find -exec`, plus `sudoedit` and `machinectl shell`.
+- **`sudo` in one tap**: Jarvis proposes the command, and the terminal asks "[e]xecute it myself" ("oui" typed in full for a destruction). It runs in your own terminal: `sudo` asks for your password directly, and Jarvis never sees it. The output comes back to Jarvis, masked, as data, and the command goes to the audit log. Real test: `sudo du -sh /var/lib/docker` → "Docker uses 6.8 GB".
+- **Machine map**: on the first shell turn, Jarvis records the hardware, system, disks, installed tools, running services and project folders, read-only (names, sizes and versions, never file contents or secrets). It lives in Memory, where you can read, edit or delete it, and reaches the model in shell mode or when a question is about the PC. Real test: "my PC is slow, why?" → "your RAM is saturated: 4.9 GB used of 7.2 GB, 3.6 GB of swap".
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
