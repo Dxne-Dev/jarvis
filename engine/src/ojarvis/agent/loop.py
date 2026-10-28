@@ -87,7 +87,9 @@ SHELL_RULES = (
     "suppression demande sa double confirmation. Avance par petites étapes : lance, lis la "
     "sortie, corrige, relance, jusqu'au résultat. Après une action, vérifie son effet par une "
     "lecture (par exemple df après un nettoyage) avant de dire que c'est fait. Ne lance "
-    "jamais sudo : écris la commande pour qu'il la tape. Une commande ne reçoit aucune "
+    "jamais sudo : propose la commande avec proposer_sudo ; il la lance lui-même en un appui "
+    "(son mot de passe va directement à sudo), et sa sortie te revient. Une commande ne reçoit "
+    "aucune "
     "entrée : utilise les options non interactives (-y, --yes). Pour lire un fichier, "
     "préfère cat, head, tail ou grep. Une mesure de place prend du temps (un dossier "
     "personnel : plusieurs minutes) : pour un disque plein, lance du -xh -d1 ~ 2>/dev/null | "
@@ -231,6 +233,15 @@ class CallOutcome:
 
 #: L'outil des commandes du mode shell (`ojarvis.tools.shell.RunCommand`).
 SHELL_TOOL = "executer_commande"
+
+
+@dataclass(frozen=True, slots=True)
+class RanCommand:
+    """Une commande que l'utilisateur a lancée lui-même (sudo, proposée par Jarvis)."""
+
+    command: str
+    code: int
+    output: str
 
 
 @dataclass(frozen=True)
@@ -392,6 +403,29 @@ class Agent:
         )
         return replace(report, text=text)
 
+    async def user_ran(self, ran: RanCommand) -> PlanReport:
+        """Une commande lancée par l'utilisateur lui-même : au journal, puis rendue au modèle
+        comme une donnée, masquée, pour qu'il continue."""
+        await self._gate.note_user_command(ran.command, ran.code)
+        output = REDACTOR.redact(ran.output)
+        body = as_data(
+            f"$ {ran.command}\ncode de sortie {ran.code}\n--- sortie ---\n{output}",
+            origin="commande lancée par l’utilisateur",
+        )
+        text = (
+            f"L'utilisateur a lancé lui-même la commande proposée (code de sortie {ran.code}). "
+            f"Résultat :\n\n{body}\n\nContinue la tâche à partir de ce résultat, ou conclus si "
+            "elle est finie."
+        )
+        return PlanReport(
+            text,
+            "",
+            tainted=True,
+            web=talks_to_network(ran.command),
+            urls=frozenset(urls_in(output)),
+            commands=((" ".join(ran.command.split()), ran.code != 0),),
+        )
+
     def rules(self, *, shell_folder: str | None = None) -> str:
         """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
         os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
@@ -534,6 +568,8 @@ class Agent:
         if self._gate.registry.get(call.name).shell_only:
             # Le terminal montre la fin de la sortie ; le modèle, lui, la lit en entier.
             event["output"] = REDACTOR.redact(output.text[-OUTPUT_PREVIEW_CHARS:])
+        if isinstance(output.data, dict) and output.data.get("sudo"):
+            event["sudo"] = output.data["sudo"]  # le terminal la propose : tu la lances
         turn.tools.append(event)
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:

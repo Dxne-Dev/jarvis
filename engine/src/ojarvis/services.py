@@ -81,7 +81,7 @@ from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.mcp import mcp_tools
-from ojarvis.tools.shell import LookAtPage, OpenShell, RunCommand
+from ojarvis.tools.shell import LookAtPage, OpenShell, ProposeAdmin, RunCommand
 from ojarvis.tools.skills import skill_tools
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
@@ -216,6 +216,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
                 capture_dir=config.paths.state_dir / "shell" / "captures",
             ),
             OpenShell(user_home),  # « passe en mode shell » : ouvre un terminal
+            ProposeAdmin(),  # sudo : proposé par Jarvis, lancé par toi
         ],
     )
     # Jarvis s'étend : les skills actifs apportent leurs outils, testés en bac à sable.

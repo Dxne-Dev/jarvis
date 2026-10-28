@@ -24,6 +24,7 @@ from ojarvis.agent.loop import (
     Agent,
     AgentTurn,
     PlanReport,
+    RanCommand,
     claims_missing_plan,
     plan_summary,
     urls_in,
@@ -228,14 +229,16 @@ class ChatService:
         learn: bool = True,
         shell_folder: str | None = None,
         after_plan: list[str] | None = None,
+        ran: RanCommand | None = None,
     ) -> AsyncGenerator[ChatEvent]:
         """Un tour de conversation, en flux. `learn=False` : rien n'est retenu de ce tour
         (par exemple une transcription vocale douteuse).
 
         Mode shell : `shell_folder` est le dossier de la session ; `after_plan`, les plans
-        validés dans le terminal, dont les résultats reviennent au modèle pour qu'il continue.
+        validés dans le terminal, dont les résultats reviennent au modèle pour qu'il continue ;
+        `ran`, une commande sudo qu'il a proposée et que l'utilisateur a lancée lui-même.
         """
-        if after_plan and conversation_id is None:
+        if (after_plan or ran is not None) and conversation_id is None:
             raise InvalidInputError("La suite d'un plan va avec sa conversation.")
         if (channel == "shell") != (shell_folder is not None):
             raise InvalidInputError(
@@ -254,9 +257,7 @@ class ChatService:
             )
         # Les résultats d'un plan validé : lus avant tout enregistrement, pour qu'un plan
         # d'une autre conversation soit refusé sans laisser de message derrière lui.
-        reports: list[PlanReport] = []
-        if after_plan and self._agent is not None:
-            reports = [await self._agent.plan_report(p, conversation.id) for p in after_plan]
+        reports = await self._reports(conversation.id, after_plan, ran)
         history = await self._conversations.messages(conversation.id, limit=60)
         user = await self._conversations.add_message(conversation.id, "user", cleaned)
         assistant = await self._conversations.add_message(
@@ -266,7 +267,7 @@ class ChatService:
         self._after_plans(turn, conversation.id, reports)
         # La suite d'un plan n'a pour texte que « Continue. » : le relecteur et les plans
         # gardent la demande d'origine.
-        request_text = reports[0].request if reports else cleaned
+        request_text = next((r.request for r in reports if r.request), cleaned)
         yield ChatEvent(
             "start",
             {
@@ -409,6 +410,17 @@ class ChatService:
                     agent, call, request, turn, conversation_id=conversation_id, user_text=user_text
                 ):
                     yield event
+
+    async def _reports(
+        self, conversation_id: str, after_plan: list[str] | None, ran: RanCommand | None
+    ) -> list[PlanReport]:
+        """Ce qui revient du terminal : les plans finis, la commande sudo lancée par toi."""
+        if self._agent is None:
+            return []
+        reports = [await self._agent.plan_report(p, conversation_id) for p in after_plan or []]
+        if ran is not None:
+            reports.append(await self._agent.user_ran(ran))
+        return reports
 
     def _after_plans(self, turn: _Turn, conversation_id: str, reports: list[PlanReport]) -> None:
         """Ce que les plans finis changent pour la suite : leurs sorties restent des données,

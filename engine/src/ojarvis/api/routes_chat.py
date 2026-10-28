@@ -12,6 +12,7 @@ from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ojarvis.agent.loop import RanCommand
 from ojarvis.api.deps import ServicesDep
 from ojarvis.chat.service import ChatEvent
 from ojarvis.conversations.store import ConversationRecord, MessageRecord
@@ -24,6 +25,16 @@ router = APIRouter(prefix="/v1")
 
 
 # ---------------------------------------------------------------------- chat
+
+
+class RanIn(BaseModel):
+    """Une commande sudo proposée par Jarvis, que l'utilisateur a lancée lui-même."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: str = Field(min_length=1, max_length=4000)
+    code: int = Field(ge=-255, le=255)
+    output: str = Field(default="", max_length=20_000)
 
 
 class ChatIn(BaseModel):
@@ -39,6 +50,9 @@ class ChatIn(BaseModel):
     after_plan: list[Annotated[str, Field(max_length=32)]] | None = Field(
         default=None, max_length=10
     )
+
+    #: Mode shell : une commande sudo que l'utilisateur a lancée lui-même ; sa sortie revient.
+    ran: RanIn | None = None
 
     @field_validator("after_plan", mode="before")
     @classmethod
@@ -74,6 +88,7 @@ async def chat(body: ChatIn, services: ServicesDep) -> StreamingResponse:
         channel=body.channel,
         shell_folder=folder,
         after_plan=body.after_plan,
+        ran=RanCommand(body.ran.command, body.ran.code, body.ran.output) if body.ran else None,
     )
     # Les erreurs de validation (conversation inconnue, texte vide) arrivent avant le flux.
     first = await anext(stream)

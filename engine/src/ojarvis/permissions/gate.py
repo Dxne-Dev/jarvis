@@ -66,6 +66,16 @@ class PermissionGate:
         tool, args, _level = self.check(name, raw_args)
         return tool.preview(args, self._context().home)
 
+    async def note_user_command(self, command: str, code: int) -> None:
+        """Une commande lancée par l'utilisateur lui-même (sudo, depuis le terminal)."""
+        await self._journal.append(
+            actor="utilisateur",
+            action="commande.utilisateur",
+            level=int(Level.AGIR),
+            summary=f"Lancée par toi : {command}",
+            details={"code": code},
+        )
+
     async def execute(
         self, name: str, raw_args: dict[str, Any], *, approval: Approval | None = None
     ) -> ToolOutput:
