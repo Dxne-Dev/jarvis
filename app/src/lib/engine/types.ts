@@ -589,7 +589,7 @@ export interface AgentRun {
   id: string;
   agent: string;
   task: string;
-  status: "en_cours" | "fini" | "echec" | "interrompu";
+  status: "en_cours" | "fini" | "echec" | "interrompu" | "suspendue";
   origin: "chat" | "interface";
   result: string | null;
   error: string | null;

@@ -367,6 +367,7 @@ async def _assemble_agents(
         db=db,
         bus=bus,
         tracer=tracer,
+        notifier=acts.notifier,
     )
     for tool in agent_tools(orchestrator):
         acts.tools.register(tool)

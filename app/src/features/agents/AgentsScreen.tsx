@@ -19,6 +19,7 @@ const RUN_STATUS: Record<AgentRun["status"], string> = {
   fini: "Terminée",
   echec: "En échec",
   interrompu: "Interrompue (Jarvis s'est arrêté)",
+  suspendue: "Suspendue (garde-fou atteint)",
 };
 
 function StepIcon({ step }: { step: AgentStep }) {

@@ -17,13 +17,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ojarvis.agents.base import AgentOutcome, AgentStep, BaseAgent
+from ojarvis.agents.base import AgentOutcome, AgentStep, BaseAgent, MissionBudget
 from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import ConflictError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
 from ojarvis.db.models import AgentRunRecord
 from ojarvis.events.bus import EventBus
+from ojarvis.notifications import Notice, Notifier
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
@@ -67,12 +68,19 @@ def _run(row: AgentRunRecord) -> AgentRun:
 
 class Orchestrator:
     def __init__(
-        self, agents: Mapping[str, BaseAgent], *, db: Database, bus: EventBus, tracer: Tracer
+        self,
+        agents: Mapping[str, BaseAgent],
+        *,
+        db: Database,
+        bus: EventBus,
+        tracer: Tracer,
+        notifier: Notifier | None = None,
     ) -> None:
         self.agents = dict(agents)
         self._db = db
         self._bus = bus
         self._tracer = tracer
+        self._notifier = notifier
         #: Agent occupé → mission en cours.
         self._busy: dict[str, str] = {}
         self._tasks: set[asyncio.Task[AgentRun]] = set()
@@ -113,16 +121,29 @@ class Orchestrator:
         return agent
 
     async def delegate(
-        self, name: str, task: str, *, origin: str = "chat", conversation_id: str | None = None
+        self,
+        name: str,
+        task: str,
+        *,
+        origin: str = "chat",
+        conversation_id: str | None = None,
+        budget: MissionBudget | None = None,
     ) -> AgentRun:
         """Confie la tâche et attend le compte rendu."""
         run = await self._open(name, task, origin)
-        return await self._execute(run, conversation_id)
+        return await self._execute(run, conversation_id, budget)
 
-    async def launch(self, name: str, task: str, *, origin: str = "interface") -> AgentRun:
+    async def launch(
+        self,
+        name: str,
+        task: str,
+        *,
+        origin: str = "interface",
+        budget: MissionBudget | None = None,
+    ) -> AgentRun:
         """Confie la tâche en arrière-plan ; l'état arrive par les événements `agent.*`."""
         run = await self._open(name, task, origin)
-        job = asyncio.create_task(self._execute(run, None))
+        job = asyncio.create_task(self._execute(run, None, budget))
         self._tasks.add(job)
         job.add_done_callback(self._tasks.discard)
         return run
@@ -181,7 +202,9 @@ class Orchestrator:
         await self._publish("agent.started", run)
         return run
 
-    async def _execute(self, run: AgentRun, conversation_id: str | None) -> AgentRun:
+    async def _execute(
+        self, run: AgentRun, conversation_id: str | None, budget: MissionBudget | None = None
+    ) -> AgentRun:
         agent = self.agent(run.agent)
 
         async def progress(step: AgentStep) -> None:
@@ -204,7 +227,7 @@ class Orchestrator:
             ) as trace:
                 trace_id = trace.id
                 outcome = await agent.run(
-                    run.task, conversation_id=conversation_id, progress=progress
+                    run.task, conversation_id=conversation_id, progress=progress, budget=budget
                 )
         except asyncio.CancelledError:
             error = "Mission arrêtée."
@@ -214,9 +237,10 @@ class Orchestrator:
             error = f"{type(exc).__name__} : {exc}"[:500]
         finally:
             self._busy.pop(run.agent, None)
+            status = "echec" if outcome is None else "suspendue" if outcome.suspended else "fini"
             done = await self._update(
                 run.id,
-                status="fini" if outcome is not None else "echec",
+                status=status,
                 result=outcome.report if outcome else None,
                 error=error,
                 plans=outcome.plans if outcome else [],
@@ -225,6 +249,14 @@ class Orchestrator:
                 ended=True,
             )
             await self._publish("agent.finished", done)
+            if outcome is not None and outcome.suspended and self._notifier is not None:
+                # Une mission suspendue te prévient, dans l'app et sur Telegram.
+                await self._notifier.notify(
+                    Notice(
+                        title=f"Mission suspendue : {agent.label}",
+                        body=f"{outcome.suspended}. Tâche : {run.task[:200]}",
+                    )
+                )
         return done
 
     async def _update(
