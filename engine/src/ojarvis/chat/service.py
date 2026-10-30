@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -127,6 +128,20 @@ def clean_title(raw: str) -> str:
     return " ".join(first_line.strip(_TITLE_TRIM).split())[:80]
 
 
+#: La fin d'une phrase : sa ponctuation (mise en forme comprise), puis un blanc.
+_SENTENCE_END = re.compile(r"[.!?…:][*_`]*\s+")
+
+
+def _plain(sentence: str) -> str:
+    """Une phrase sans mise en forme, casse ni ponctuation finale : pour reconnaître une
+    répétition."""
+    return " ".join(re.sub(r"[*_`]", "", sentence).split()).lower().rstrip(".!?…: ")
+
+
+def _sentences(text: str) -> set[str]:
+    return {plain for part in _SENTENCE_END.split(text) if (plain := _plain(part))}
+
+
 @dataclass
 class _Round:
     """Un appel au modèle dans un tour : ce qu'il a dit, pensé et demandé."""
@@ -134,6 +149,28 @@ class _Round:
     said: list[str] = field(default_factory=list)
     reasoning: list[str] = field(default_factory=list)
     calls: list[ToolCall] = field(default_factory=list)
+    #: Après des outils, le début du texte est retenu le temps de vérifier qu'il ne répète
+    #: pas une phrase déjà dite dans ce tour (le 30/10, Muse Spark redisait « Je vais cliquer
+    #: sur Projets, puis sur Blog » après avoir proposé le plan).
+    checking: bool = False
+    held: str = ""
+    known: set[str] = field(default_factory=set)
+
+    def unrepeated(self, *, final: bool) -> str:
+        """Le texte retenu, moins ses premières phrases déjà dites ; « » tant qu'une phrase
+        n'est pas finie (`final` : le modèle a fini d'écrire)."""
+        while self.checking:
+            held = self.held.lstrip()
+            end = _SENTENCE_END.search(held)
+            if end is None and not final:
+                return ""
+            sentence = held[: end.end()] if end else held
+            if _plain(sentence) and _plain(sentence) in self.known:
+                self.held = held[len(sentence) :]
+                continue
+            self.checking = False
+        text, self.held = self.held, ""
+        return text
 
 
 @dataclass
@@ -159,6 +196,13 @@ TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
 #: None quand il est coupé ou hors du profil « Tout Meta ».
 RelayPolicy = Callable[[], tuple[Route, int] | None]
 TASKS_BY_CHANNEL: dict[str, TaskType] = {"voice": "voice", "shell": "reasoning"}
+
+
+def _remind_plan(request: LLMRequest, said: str) -> None:
+    """Le modèle a annoncé un plan sans le proposer : il est relancé (relance non gardée)."""
+    if said:  # un message vide, sans appel d'outil, serait refusé par l'API
+        request.messages.append(Message("assistant", said))
+    request.messages.append(Message("user", PLAN_MISSING))
 
 
 def _keep_marks(turn: AgentTurn, reports: list[PlanReport]) -> None:
@@ -386,8 +430,7 @@ class ChatService:
                     return
                 reminded = True
                 log.warning("plan_announced_not_proposed")
-                request.messages.append(Message("assistant", said))
-                request.messages.append(Message("user", PLAN_MISSING))
+                _remind_plan(request, said)
                 continue
             if rounds == limit:
                 # Arrêt propre : les outils de ce dernier tour ne sont pas lancés, et le modèle
@@ -468,6 +511,9 @@ class ChatService:
         self, task: TaskType, request: LLMRequest, turn: _Turn, step: _Round
     ) -> AsyncIterator[ChatEvent]:
         """Un appel au modèle : texte diffusé au fil de l'eau, appels d'outils mis de côté."""
+        before = "".join(turn.parts)
+        step.checking = bool(before.strip())
+        step.known = _sentences(before) if step.checking else set()
         async for event in self._router.stream_traced(
             task, request, state=turn.state, relay=turn.relay
         ):
@@ -487,12 +533,13 @@ class ChatService:
             elif isinstance(event, TextDelta):
                 if turn.first_token_ms is None:
                     turn.first_token_ms = (time.perf_counter() - turn.start) * 1000
-                text = event.text
-                if not step.said and turn.parts and not turn.parts[-1].endswith(("\n", " ")):
-                    text = "\n\n" + text  # texte d'un nouveau tour, après des outils
-                step.said.append(text)
-                turn.parts.append(text)
-                yield ChatEvent("delta", {"text": text})
+                if step.checking:
+                    step.held += event.text
+                    text = step.unrepeated(final=False)
+                else:
+                    text = event.text
+                if text:
+                    yield self._said(turn, step, text)
             elif isinstance(event, ReasoningDelta):
                 step.reasoning.append(event.text)
             elif isinstance(event, ToolCallReady):
@@ -504,6 +551,19 @@ class ChatService:
                     cached_input_tokens=turn.usage.cached_input_tokens
                     + event.usage.cached_input_tokens,
                 )
+        if step.checking and (text := step.unrepeated(final=True)).strip():
+            yield self._said(turn, step, text)
+
+    @staticmethod
+    def _said(turn: _Turn, step: _Round, text: str) -> ChatEvent:
+        if not step.said and turn.parts:
+            # Texte d'un nouveau tour, après des outils : un paragraphe à part.
+            text = text.lstrip()
+            if not turn.parts[-1].endswith(("\n", " ")):
+                text = "\n\n" + text
+        step.said.append(text)
+        turn.parts.append(text)
+        return ChatEvent("delta", {"text": text})
 
     async def _run_tool(
         self,

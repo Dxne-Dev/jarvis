@@ -94,6 +94,38 @@ def test_reading_tools_run_directly_and_their_output_is_data(
     assert messages[-1]["meta"]["tools"][0]["name"] == "echo"
 
 
+def test_a_sentence_already_said_in_the_turn_is_not_said_again(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    """Le 30/10, Muse Spark redisait « Je vais cliquer sur Projets, puis sur Blog » après
+    avoir proposé son plan : la phrase n'apparaît qu'une fois."""
+    del tools
+    announce = "Je vais cliquer sur **Projets**, puis sur **Blog**."
+
+    def script(request: LLMRequest) -> FakeReply:
+        if request.tools and request.tools[0].name == TOOL_NAME:
+            return FakeReply(tool_calls=[ToolCall("m", TOOL_NAME, {"faits": []})])
+        if "titre" in request.messages[0].content:
+            return FakeReply(text="Clics")
+        if not any(m.role == "tool" for m in request.messages):
+            return FakeReply(text=announce, tool_calls=[ToolCall("c1", "echo", {"texte": "a"})])
+        # Le modèle reprend sa phrase (autrement écrite), puis dit enfin du neuf.
+        return FakeReply(
+            text="Je vais cliquer sur Projets, puis sur Blog !\n\nLe plan attend ta "
+            "validation. Je vais cliquer sur Projets, puis sur Blog."
+        )
+
+    llm["deepseek"]._script = script
+    events = chat(client, "Va sur mon site.")
+    text = "".join(d["text"] for e, d in events if e == "delta")
+    # Seul le début d'un nouveau tour est vérifié : une redite plus loin reste.
+    assert text == (
+        f"{announce}\n\nLe plan attend ta validation. Je vais cliquer sur Projets, puis sur Blog."
+    )
+    conversation = client.get(f"/v1/conversations/{events[0][1]['conversation_id']}").json()
+    assert conversation["messages"][-1]["content"] == text
+
+
 def test_an_action_called_directly_becomes_a_plan_that_waits(
     client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
 ) -> None:

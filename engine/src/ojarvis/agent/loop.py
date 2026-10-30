@@ -142,8 +142,10 @@ PLAN_STARTED = (
 )
 PLAN_PENDING = (
     "Plan enregistré. L'utilisateur le voit à l'écran avec « Valider » et « Refuser » ; rien "
-    "n'est exécuté avant sa décision. N'appelle pas d'autre outil : dis-lui en une ou deux "
-    "phrases ce que fera le plan et qu'il attend sa validation."
+    "n'est exécuté avant sa décision. N'appelle pas d'autre outil. Dis-lui en une phrase "
+    "qu'il attend sa validation, et ce que fera le plan seulement si tu ne l'as pas déjà "
+    "dit : ne répète pas tes phrases d'avant, et ne pose pas de question (valider est sa "
+    "réponse)."
 )
 
 
