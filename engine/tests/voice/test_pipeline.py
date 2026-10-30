@@ -12,8 +12,15 @@ import pytest
 
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.voice.audio import FileSource, MemorySink, Pcm, VirtualClock
-from ojarvis.voice.pipeline import SPOKEN_LLM_ERROR, VoiceConfig, VoicePipeline, VoiceState
-from ojarvis.voice.vad import EndpointConfig
+from ojarvis.voice.pipeline import (
+    SPOKEN_LLM_ERROR,
+    SPOKEN_STT_ERROR,
+    VoiceConfig,
+    VoicePipeline,
+    VoiceState,
+)
+from ojarvis.voice.stt import SttError, Transcript
+from ojarvis.voice.vad import EndpointConfig, EnergyVad, SpeechDetector
 from tests.voice.fakes import (
     FakeChat,
     FakeCloudSTT,
@@ -68,6 +75,8 @@ async def rig(
     wake: FakeWake | None = None,
     streaming: FakeStreamingSTT | None = None,
     cloud: FakeCloudSTT | None = None,
+    vad: SpeechDetector | None = None,
+    wake_word: bool = True,
     **changes: Any,
 ) -> AsyncIterator[Rig]:
     clock = VirtualClock()
@@ -92,8 +101,8 @@ async def rig(
     parts.pipeline = VoicePipeline(
         source=source,
         sink=sink,
-        wake=parts.wake,
-        vad=FakeVad(),
+        wake=parts.wake if wake_word else None,
+        vad=vad or FakeVad(),
         stt=parts.stt,
         tts=parts.tts,
         chat=parts.chat,  # type: ignore[arg-type]
@@ -426,3 +435,47 @@ async def test_one_dictation_at_a_time() -> None:
         assert first is second
         await wait_until(first.done)
         assert first.result() == "Une seule phrase."
+
+
+# ---------------------------------------------------------------- profil « Tout Meta »
+
+
+class MuseVoiceDown(FakeSTT):
+    """Muse Voice Transcribe injoignable : le seul moteur du profil « Tout Meta »."""
+
+    name = "meta"
+
+    async def transcribe(self, audio: Pcm) -> Transcript:
+        self.calls.append(len(audio) / 16_000)
+        raise SttError("Meta injoignable : ConnectError")
+
+
+async def test_without_a_wake_word_speech_alone_opens_nothing() -> None:
+    audio = build_audio(("silence", 0.5), ("wake", 0.8), ("speech", 1.0), ("silence", 0.5))
+    async with rig(audio, vad=EnergyVad(), wake_word=False) as r:
+        await wait_until(lambda: r.pipeline.frames_seen >= len(audio) // 1280)
+        assert r.stt.calls == []  # rien n'a quitté la machine
+        assert r.chat.calls == []
+        assert r.pipeline.state == VoiceState.IDLE
+
+
+async def test_the_shortcut_then_a_sentence_heard_by_its_volume_gets_an_answer() -> None:
+    audio = build_audio(("silence", 1.0), ("speech", 1.0), ("silence", 1.0))
+    stt = FakeSTT(["Quelle heure est-il ?"])
+    async with rig(audio, stt=stt, vad=EnergyVad(), wake_word=False) as r:
+        r.pipeline.listen_now()
+        await wait_until(lambda: r.pipeline.last_report is not None)
+        report = r.pipeline.last_report
+        assert report is not None
+        assert report.text == "Quelle heure est-il ?"
+        assert stt.calls[-1] == pytest.approx(1.0, abs=0.6)  # la phrase, pas le silence
+
+
+async def test_a_failed_transcription_is_said_out_loud_without_another_engine() -> None:
+    audio = build_audio(("silence", 0.5), ("speech", 1.0), ("silence", 1.0))
+    async with rig(audio, stt=MuseVoiceDown(), wake_word=False) as r:
+        r.pipeline.listen_now()
+        await wait_until(lambda: " ".join(r.tts.sentences) == SPOKEN_STT_ERROR)
+        await wait_until(lambda: r.pipeline.state == VoiceState.IDLE)
+        assert r.chat.calls == []
+        assert "voice.error" in r.types()

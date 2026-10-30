@@ -19,7 +19,7 @@ import anyio
 from ojarvis.core.downloads import ChecksumError, PinnedFile, files_present
 from ojarvis.memory.embeddings import E5_FILES
 from ojarvis.voice.stt import WHISPER_FILES
-from ojarvis.voice.tts import PIPER_FILES
+from ojarvis.voice.tts import MMS_FILES, PIPER_FILES
 from ojarvis.voice.wake import WAKE_FILES
 
 
@@ -36,6 +36,7 @@ LOCAL_MODELS: tuple[ModelSet, ...] = (
     ModelSet("reveil", "Mot de réveil", "openwakeword", WAKE_FILES),
     ModelSet("transcription", "Transcription", "faster-whisper-base", WHISPER_FILES),
     ModelSet("voix_locale", "Voix locale", "piper", PIPER_FILES),
+    ModelSet("voix_meta", "Voix de Meta (MMS)", "mms-tts-fra", MMS_FILES),
     ModelSet("memoire", "Mémoire", "multilingual-e5-small", E5_FILES),
 )
 

@@ -50,6 +50,7 @@ STT_MODELS = {
 }
 
 SPOKEN_LLM_ERROR = "Je n'arrive pas à joindre le modèle pour l'instant. Réessaie dans un moment."
+SPOKEN_STT_ERROR = "Je n'ai pas pu transcrire ta phrase. Réessaie dans un moment."
 
 
 class VoiceState(enum.StrEnum):
@@ -125,7 +126,7 @@ class VoicePipeline:
         *,
         source: AudioSource,
         sink: AudioSink,
-        wake: WakeDetector,
+        wake: WakeDetector | None,
         vad: SpeechDetector,
         stt: Transcriber,
         tts: Synthesizer,
@@ -145,6 +146,7 @@ class VoicePipeline:
         self.cloud_stt = cloud_stt
         self._source = source
         self._sink = sink
+        #: Sans détecteur (profil « Tout Meta ») : on parle après le raccourci ou le bouton micro.
         self._wake = wake
         self._vad = vad
         self._stt = stt
@@ -307,6 +309,10 @@ class VoicePipeline:
     # ------------------------------------------------------------------ réveil
 
     def _wake_step(self, frame: Frame) -> None:
+        if self._wake is None:
+            # Pas de mot de réveil : le détecteur de parole apprend le bruit de la pièce.
+            self._vad.process(frame.pcm)
+            return
         cfg = self.config
         score = self._wake.score(frame.pcm)
         if score >= cfg.wake_threshold:
@@ -342,7 +348,8 @@ class VoicePipeline:
         self._candidate = None
         # Le détecteur garde ~1,5 s d'audio en mémoire : sans remise à zéro, il
         # réentendrait ce même « Hey Jarvis » pendant la réponse et la couperait.
-        self._wake.reset()
+        if self._wake is not None:
+            self._wake.reset()
         self._spawn(
             self._bus.publish("voice.wake", {"score": round(score, 3), "verified": verified})
         )
@@ -473,7 +480,7 @@ class VoicePipeline:
 
     async def _busy_step(self, frame: Frame) -> None:
         cfg = self.config
-        score = self._wake.score(frame.pcm)
+        score = self._wake.score(frame.pcm) if self._wake is not None else 0.0
         if score >= max(cfg.wake_threshold, 0.6):
             await self._cancel_turn(by="mot de réveil")
             self._woke(frame.at, score, verified=False)
@@ -515,7 +522,8 @@ class VoicePipeline:
         self._spawn(self._bus.publish("voice.interrupted", {"by": by}))
 
     def _go_idle(self) -> None:
-        self._wake.reset()
+        if self._wake is not None:
+            self._wake.reset()
         self._candidate = None
         self._set_state(VoiceState.IDLE)
 
@@ -598,7 +606,7 @@ class VoicePipeline:
                 return await _transcribe_at_once(relay, audio), False, "cartesia"
             except Exception as exc:
                 self._stt_fallback(exc)
-        return await self._stt.transcribe(audio), False, "whisper"
+        return await self._stt.transcribe(audio), False, getattr(self._stt, "name", "whisper")
 
     async def _turn_steps(
         self,
@@ -611,9 +619,17 @@ class VoicePipeline:
         speculative_engine: str = "whisper",
     ) -> None:
         stt_started = utc_now()
-        transcript, used_speculative, stt_engine = await self._transcribe(
-            audio, speculative, stream, speculative_engine
-        )
+        try:
+            transcript, used_speculative, stt_engine = await self._transcribe(
+                audio, speculative, stream, speculative_engine
+            )
+        except Exception as exc:
+            # Plus aucun moteur (« Tout Meta » n'a que Muse Voice Transcribe) : Jarvis le dit.
+            log.warning("stt_failed", error=str(exc))
+            await self._bus.publish("voice.error", {"message": "transcription"})
+            self._end_dictation("")
+            await self._speak(SPOKEN_STT_ERROR)
+            return
         text = strip_wake_words(transcript.text)
         if not _meaningful(text, transcript):
             self._turn = None

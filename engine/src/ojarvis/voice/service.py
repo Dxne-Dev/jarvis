@@ -3,6 +3,10 @@
 Il est découplé du chat : sans micro, sans modèle ou sur une erreur, le reste du moteur
 continue ; l'état et la raison sont visibles dans l'interface. Les modèles locaux
 (mot de réveil, transcription, voix de secours) sont téléchargés une fois et vérifiés.
+
+Profil « Tout Meta » : aucun modèle qui ne soit pas de Meta. L'écoute passe par Muse Voice
+Transcribe, la voix est MMS (Meta, lancée ici) puis espeak-ng (la voix du système), la parole
+est reconnue à son volume, et l'on parle après le raccourci, le bouton micro ou « /voix ».
 """
 
 from __future__ import annotations
@@ -48,21 +52,32 @@ from ojarvis.voice.stt import (
 )
 from ojarvis.voice.tts import (
     CARTESIA_VERSION,
+    MMS_FILES,
     PIPER_FILES,
     CartesiaTTS,
+    EspeakTTS,
     FallbackTTS,
+    MmsTTS,
     PiperTTS,
 )
-from ojarvis.voice.vad import EndpointConfig, SileroVad
+from ojarvis.voice.vad import EndpointConfig, EnergyVad, SileroVad
 from ojarvis.voice.wake import WAKE_FILES, OpenWakeWord
 
 log = get_logger(__name__)
 
-MODEL_SETS: dict[str, tuple[str, dict[str, PinnedFile]]] = {
+ModelSets = dict[str, tuple[str, dict[str, PinnedFile]]]
+MODEL_SETS: ModelSets = {
     "reveil": ("openwakeword", WAKE_FILES),
     "transcription": ("faster-whisper-base", WHISPER_FILES),
     "voix_locale": ("piper", PIPER_FILES),
 }
+#: « Tout Meta » : seule la voix de Meta se télécharge.
+META_MODEL_SETS: ModelSets = {"voix_meta": ("mms-tts-fra", MMS_FILES)}
+
+
+def model_sets(profile: str) -> ModelSets:
+    return META_MODEL_SETS if profile == "meta" else MODEL_SETS
+
 
 #: Seuils du mot de réveil selon la sensibilité choisie dans Réglages.
 SENSITIVITY: dict[str, tuple[float, float, bool]] = {
@@ -248,8 +263,9 @@ class VoiceService:
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._echo = echo or EchoCancel()
-        #: Composants chargés une fois (modèles) ; fournis directement par les tests.
+        #: Composants chargés une fois par profil (modèles) ; fournis directement par les tests.
         self._parts: dict[str, Any] = dict(parts or {})
+        self._parts_profile: str | None = None
         self._preloaded = parts is not None
         self._applied: dict[str, Any] = {}
         self._voices_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -273,10 +289,10 @@ class VoiceService:
     async def _publish(self) -> None:
         await self._bus.publish("voice.status", self.snapshot(), persist=False)
 
-    def _model_status(self) -> dict[str, str]:
+    def _model_status(self, profile: str) -> dict[str, str]:
         return {
             key: "prêt" if files_present(self._models / folder, files) else "absent"
-            for key, (folder, files) in MODEL_SETS.items()
+            for key, (folder, files) in model_sets(profile).items()
         }
 
     # ------------------------------------------------------------------ démarrage
@@ -288,8 +304,11 @@ class VoiceService:
     async def _start_locked(self) -> None:
         prefs = self._preferences()
         self.status.enabled = prefs.voice_enabled
+        sets = model_sets(prefs.model_profile)
         self.status.models = (
-            dict.fromkeys(MODEL_SETS, "simulé") if self._preloaded else self._model_status()
+            dict.fromkeys(sets, "simulé")
+            if self._preloaded
+            else self._model_status(prefs.model_profile)
         )
         if not prefs.voice_enabled or not self._audio:
             self.status.state = VoiceState.OFF.value
@@ -301,8 +320,8 @@ class VoiceService:
         await self._publish()
         try:
             if not self._preloaded:
-                await self._ensure_models()
-                await self._load_parts()
+                await self._ensure_models(sets)
+                await self._load_parts(prefs.model_profile)
             await self._launch(prefs)
         except Exception as exc:
             log.exception("voice_start_failed")
@@ -310,8 +329,8 @@ class VoiceService:
             self.status.error = _describe(exc)
             await self._publish()
 
-    async def _ensure_models(self) -> None:
-        for key, (folder, files) in MODEL_SETS.items():
+    async def _ensure_models(self, sets: ModelSets) -> None:
+        for key, (folder, files) in sets.items():
             target = self._models / folder
             if files_present(target, files):
                 continue
@@ -331,9 +350,28 @@ class VoiceService:
             self.status.models[key] = "prêt"
         await self._publish()
 
-    async def _load_parts(self) -> None:
-        if self._parts:
+    async def _load_parts(self, profile: str) -> None:
+        if self._parts and self._parts_profile == profile:
             return
+        tts = self._parts.get("tts")
+        if tts is not None:
+            await tts.close()
+        # Un seul jeu en mémoire : celui de l'autre profil est libéré.
+        self._parts = {}
+        self._parts = await (self._meta_parts() if profile == "meta" else self._auto_parts())
+        self._parts_profile = profile
+
+    async def _meta_parts(self) -> dict[str, Any]:
+        mms = MmsTTS(self._models / "mms-tts-fra")
+        await mms.warm_up()
+        return {
+            "wake": None,
+            "vad": EnergyVad(),
+            "stt": MetaTranscriber(lambda: self._secrets.get("MODEL_API_KEY"), self._http),
+            "tts": FallbackTTS(mms, EspeakTTS(), on_fallback=self._on_tts_fallback),
+        }
+
+    async def _auto_parts(self) -> dict[str, Any]:
         wake = await anyio.to_thread.run_sync(OpenWakeWord, self._models / "openwakeword")
         vad = await anyio.to_thread.run_sync(SileroVad)
         stt = WhisperTranscriber(self._models / "faster-whisper-base")
@@ -350,19 +388,20 @@ class VoiceService:
             on_fallback=self._on_tts_fallback,
             prefer_secondary=lambda: self._preferences().voice_engine == "piper",
         )
-        self._parts = {
+        return {
             "wake": wake,
             "vad": vad,
             "stt": stt,
             "tts": tts,
             "cloud_stt": GroqTranscriber(lambda: self._secrets.get("GROQ_API_KEY"), self._http),
-            "meta_stt": MetaTranscriber(lambda: self._secrets.get("MODEL_API_KEY"), self._http),
             "streaming_stt": CartesiaSTT(lambda: self._secrets.get("CARTESIA_API_KEY")),
         }
 
     def _on_tts_fallback(self, reason: str) -> None:
         self.status.tts_fallback = reason
-        self._spawn(self._bus.publish("voice.tts_fallback", {"reason": reason, "engine": "piper"}))
+        tts = self._parts.get("tts")
+        engine = getattr(getattr(tts, "secondary", None), "name", "piper")
+        self._spawn(self._bus.publish("voice.tts_fallback", {"reason": reason, "engine": engine}))
 
     def _config(self, prefs: Preferences, *, echo_cancel: bool) -> VoiceConfig:
         threshold, candidate, verify = SENSITIVITY[prefs.wake_sensitivity]
@@ -464,23 +503,17 @@ class VoiceService:
 
     def _streaming_for(self, prefs: Preferences) -> StreamingTranscriber | None:
         """Cartesia en flux : choisi, ou en relais de Groq si sa clé manque."""
-        if prefs.voice_stt == "local":
+        if prefs.voice_stt == "local" or prefs.model_profile == "meta":
             return None
         engine: StreamingTranscriber | None = self._parts.get("streaming_stt")
         return engine
 
     def _cloud_for(self, prefs: Preferences) -> CloudTranscriber | None:
-        """Par phrase : Muse Voice Transcribe (profil « Tout Meta ») ou Groq (Whisper
-        large-v3). « Whisper local seulement » reste local, profil ou non ; Whisper local
-        reste aussi le dernier secours."""
-        if prefs.voice_stt == "local":
+        """Par phrase : Groq (Whisper large-v3), Whisper local restant le dernier secours.
+        En « Tout Meta », Muse Voice Transcribe est la seule transcription : rien en plus."""
+        if prefs.voice_stt != "groq" or prefs.model_profile == "meta":
             return None
         engine: CloudTranscriber | None
-        if prefs.model_profile == "meta":
-            engine = self._parts.get("meta_stt")
-            return engine
-        if prefs.voice_stt != "groq":
-            return None
         engine = self._parts.get("cloud_stt")
         return engine
 
@@ -494,7 +527,7 @@ class VoiceService:
             pipeline.streaming_stt is not None or pipeline.cloud_stt is not None
         )
         self.status.stt_fallback = wanted and report.stt_engine != "cartesia"
-        if report.tts_engine == "cartesia":
+        if report.tts_engine in ("cartesia", "mms"):
             self.status.tts_fallback = None
 
     # ------------------------------------------------------------------ arrêt et réglages
@@ -606,7 +639,12 @@ class VoiceService:
 
 
 def _device_prefs(prefs: Preferences) -> dict[str, Any]:
-    return {"input": prefs.voice_input_device, "output": prefs.voice_output_device}
+    """Ce qui oblige à relancer la voix : les périphériques, et le profil (autres modèles)."""
+    return {
+        "input": prefs.voice_input_device,
+        "output": prefs.voice_output_device,
+        "profile": prefs.model_profile,
+    }
 
 
 #: Erreurs audio reconnues à leur texte, la plus précise d'abord.

@@ -209,16 +209,20 @@ async def test_service_runs_a_turn_and_follows_settings() -> None:
     await service.close()
 
 
-def test_the_meta_profile_transcribes_with_meta_but_local_stays_local() -> None:
-    prefs = {"value": Preferences()}
+def test_the_meta_profile_listens_with_muse_voice_transcribe_alone() -> None:
+    prefs = {"value": Preferences(model_profile="auto")}
     service, _bus, _chat = make_service(prefs, echo=FakeEcho(available=True), sources=[])
-    groq, meta = object(), object()
-    service._parts.update({"cloud_stt": groq, "meta_stt": meta})
-    assert service._cloud_for(Preferences()) is groq
-    assert service._cloud_for(Preferences(model_profile="meta")) is meta
-    assert service._cloud_for(Preferences(model_profile="meta", voice_stt="cartesia")) is meta
-    # « Whisper local seulement » est un choix de confidentialité : le profil ne le change pas.
-    assert service._cloud_for(Preferences(model_profile="meta", voice_stt="local")) is None
+    groq, cartesia = object(), object()
+    service._parts.update({"cloud_stt": groq, "streaming_stt": cartesia})
+    auto = Preferences(model_profile="auto")
+    assert service._cloud_for(auto) is groq
+    assert service._streaming_for(auto) is cartesia
+    assert service._cloud_for(Preferences(model_profile="auto", voice_stt="local")) is None
+    # « Tout Meta » : Muse Voice Transcribe est le moteur du jeu, sans Groq ni Cartesia en plus.
+    for stt in ("groq", "cartesia", "local"):
+        meta = Preferences(model_profile="meta", voice_stt=stt)
+        assert service._cloud_for(meta) is None
+        assert service._streaming_for(meta) is None
 
 
 async def test_an_echo_micro_invisible_to_portaudio_falls_back_to_the_default() -> None:
