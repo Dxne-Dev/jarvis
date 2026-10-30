@@ -120,12 +120,15 @@ SHELL_RULES = (
 OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
     "dans son navigateur et ranger des fichiers (par un plan à valider), et regarder l'écran "
-    "avec regarder_ecran quand on te le demande."
+    "avec regarder_ecran quand on te le demande. Pour cliquer dans une application de "
+    "bureau : trouve d'abord l'élément avec trouver_a_l_ecran, puis propose un plan avec "
+    "cliquer_ecran et le repère rendu. Si l'élément est introuvable ou ambigu, demande à "
+    "l'utilisateur au lieu de deviner."
 )
 OS_CONTROL_OFF = (
     "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "
-    "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
-    "dans Réglages, section « Contrôle du PC »."
+    "fichiers, ni regarder l'écran, ni y cliquer. Si on te le demande, dis-le et indique "
+    "qu'on l'active dans Réglages, section « Contrôle du PC »."
 )
 ROUNDS_EXHAUSTED = (
     "[Note du système] Tu as atteint le nombre d'étapes de cette réponse : n'appelle plus "

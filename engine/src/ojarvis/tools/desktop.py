@@ -1,9 +1,9 @@
 """Outils du contrôle du PC : applications, écran, gestion des fichiers.
 
 Tous désactivés par défaut : tu les actives dans Réglages → Contrôle du PC. Ouvrir ou
-fermer une application, déplacer ou copier un fichier, créer un dossier : niveau 2 (ta
-validation). Lister et regarder l'écran : niveau 1. Ce que montre l'écran est une
-donnée, jamais une instruction.
+fermer une application, déplacer ou copier un fichier, créer un dossier, cliquer à l'écran :
+niveau 2 (ta validation). Lister, regarder l'écran et y trouver un élément : niveau 1. Ce
+que montre l'écran est une donnée, jamais une instruction.
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ from pydantic import Field
 from ojarvis.context.engine import PERSONA
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
 from ojarvis.desktop import apps as applications
+from ojarvis.desktop.locate import Kind, Locator, ScreenMarks, unchanged
+from ojarvis.desktop.pointer import Pointer
 from ojarvis.desktop.screen import capture, shrink
 from ojarvis.llm.errors import LLMError
 from ojarvis.llm.router import Constraints, ModelRouter
@@ -376,9 +378,120 @@ class MakeDir(Tool[DirArgs]):
         return ToolOutput(f"Dossier prêt : {shown(path, ctx.home)}")
 
 
-def desktop_tools(router: ModelRouter, screen_mode: Callable[[], ScreenMode]) -> list[Tool[Any]]:
+LOCAL_SCREEN_ONLY = (
+    "Trouver un élément envoie la capture à SAM 3.1 et à Muse Spark (Meta), et ta lecture "
+    "de l'écran est réglée « sur ce PC » : rien n'est envoyé. Change-la dans Réglages › "
+    "Contrôle du PC si tu veux t'en servir."
+)
+
+
+class FindArgs(ToolArgs):
+    element: str = Field(
+        min_length=2,
+        max_length=200,
+        description="L'élément, avec les mots affichés : « le bouton Exporter en PDF ».",
+    )
+    sorte: Kind = Field(
+        default="bouton",
+        description="Ce que c'est : bouton, icône, menu, onglet, champ, case ou lien.",
+    )
+
+
+class FindOnScreen(Tool[FindArgs]):
+    name: ClassVar[str] = "trouver_a_l_ecran"
+    description: ClassVar[str] = (
+        "Trouve un élément à l'écran (bouton, icône, menu…) dans une application de bureau : "
+        "SAM 3.1 encadre les éléments, Muse Spark choisit le bon. Rend un repère pour "
+        "cliquer_ecran ; ne clique rien. Pour une page web, utilise plutôt le navigateur."
+    )
+    Args: ClassVar[type[ToolArgs]] = FindArgs
+    level: ClassVar[Level] = Level.LIRE
+    os_control: ClassVar[bool] = True
+
+    def __init__(self, locator: Locator, mode: Callable[[], ScreenMode]) -> None:
+        self._locator = locator
+        self._mode = mode
+
+    def describe(self, args: FindArgs) -> str:
+        return f"Trouver à l'écran : {args.element}"
+
+    async def run(self, args: FindArgs, ctx: ToolContext) -> ToolOutput:
+        del ctx
+        if self._mode() == "local":
+            raise InvalidInputError(LOCAL_SCREEN_ONLY, code="screen_local_only")
+        mark = await self._locator.find(args.element, args.sorte)
+        x, y = mark.center
+        return ToolOutput(
+            f"Trouvé : {args.element} ({mark.seen}). Repère {mark.id}, au centre ({x}, {y}) "
+            f"d'une capture {mark.width}×{mark.height}. Pour cliquer, propose un plan avec "
+            f"cliquer_ecran et repere={mark.id} : l'utilisateur voit la capture annotée avant "
+            "de valider.",
+            {"repere": mark.id, "x": x, "y": y},
+            external=True,
+            source="ton écran",
+        )
+
+
+class ClickArgs(ToolArgs):
+    repere: str = Field(
+        pattern=r"^r[0-9a-f]{6}$", description="Le repère rendu par trouver_a_l_ecran."
+    )
+
+
+class ClickOnScreen(Tool[ClickArgs]):
+    name: ClassVar[str] = "cliquer_ecran"
+    description: ClassVar[str] = (
+        "Clique au centre d'un élément trouvé par trouver_a_l_ecran (son repère, jamais des "
+        "coordonnées). Par le portail de GNOME : la première fois, GNOME demande l'accord de "
+        "l'utilisateur. Si l'écran a changé à cet endroit, rien n'est cliqué."
+    )
+    Args: ClassVar[type[ToolArgs]] = ClickArgs
+    level: ClassVar[Level] = Level.AGIR
+    os_control: ClassVar[bool] = True
+
+    def __init__(
+        self,
+        marks: ScreenMarks,
+        pointer: Pointer,
+        grab: Callable[[], Awaitable[bytes]] = capture,
+    ) -> None:
+        self._marks = marks
+        self._pointer = pointer
+        self._grab = grab
+
+    def describe(self, args: ClickArgs) -> str:
+        try:
+            target = self._marks.get(args.repere).target
+        except NotFoundError:
+            return f"Cliquer à l'écran (repère {args.repere})"
+        return f"Cliquer sur {target} (repère {args.repere})"
+
+    async def run(self, args: ClickArgs, ctx: ToolContext) -> ToolOutput:
+        mark = self._marks.get(args.repere)
+        if not await anyio.to_thread.run_sync(unchanged, mark, await self._grab()):
+            raise InvalidInputError(
+                f"L'écran a changé à l'endroit de « {mark.target} » (une fenêtre passée "
+                "devant ?) : rien n'a été cliqué. Retrouve l'élément.",
+                code="screen_changed",
+            )
+        x, y = mark.center
+        await self._pointer.click(x, y, (mark.width, mark.height))
+        return ToolOutput(
+            f"Clic fait sur « {mark.target} » en ({x}, {y}). Capture annotée : "
+            f"{shown(mark.image, ctx.home)}.",
+            {"repere": mark.id, "x": x, "y": y},
+        )
+
+
+def desktop_tools(
+    router: ModelRouter,
+    screen_mode: Callable[[], ScreenMode],
+    *,
+    locator: Locator | None = None,
+    pointer: Pointer | None = None,
+) -> list[Tool[Any]]:
     catalog = AppCatalog()
-    return [
+    tools: list[Tool[Any]] = [
         ListApps(catalog),
         RunningApps(catalog),
         OpenApp(catalog),
@@ -389,3 +502,6 @@ def desktop_tools(router: ModelRouter, screen_mode: Callable[[], ScreenMode]) ->
         CopyFile(),
         MakeDir(),
     ]
+    if locator is not None and pointer is not None:
+        tools += [FindOnScreen(locator, screen_mode), ClickOnScreen(locator.marks, pointer)]
+    return tools

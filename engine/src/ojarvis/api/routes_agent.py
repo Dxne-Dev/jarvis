@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
+import anyio
 from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -213,6 +214,17 @@ async def browser_state(services: ServicesDep) -> BrowserOut:
             for g in await access.grants()
         ],
         login_domain=access.login_domain,
+    )
+
+
+@router.get("/desktop/marks/{mark_id}")
+async def desktop_mark(mark_id: str, services: ServicesDep) -> Response:
+    """La capture annotée d'un élément trouvé à l'écran (#48) : la carte du plan la montre."""
+    path = services.marks.image(mark_id)
+    return Response(
+        content=await anyio.Path(path).read_bytes(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
     )
 
 

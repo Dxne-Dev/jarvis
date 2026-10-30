@@ -21,6 +21,7 @@ import type { Plan, PlanStep, StepStatus } from "../../lib/engine/types";
 import { formatRelative } from "../../lib/format";
 import styles from "./Actions.module.css";
 import { BrowserLive } from "./BrowserLive";
+import { ScreenMark } from "./ScreenMark";
 import { LEVEL_HINT, LEVEL_NAME, PLAN_STATUS, STEP_STATUS } from "./levels";
 
 function StepIcon({ status }: { status: StepStatus }) {
@@ -58,6 +59,9 @@ function StepItem({ step }: { step: PlanStep }) {
           {step.description}
         </p>
         <p className={styles.stepWhy}>{step.why}</p>
+        {step.tool === "cliquer_ecran" && typeof step.arguments.repere === "string" && (
+          <ScreenMark id={step.arguments.repere} target={step.description} />
+        )}
         {step.error && <p className={styles.stepError}>{step.error}</p>}
         <button
           type="button"

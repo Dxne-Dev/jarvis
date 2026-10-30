@@ -43,6 +43,10 @@ from ojarvis.core.errors import UnavailableError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
+from ojarvis.desktop.locate import Locator, ScreenMarks
+from ojarvis.desktop.pointer import PortalPointer
+from ojarvis.desktop.sam import SamClient
+from ojarvis.desktop.screen import capture
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.integrations.google import GoogleAccount, attach_agenda
@@ -162,6 +166,7 @@ class _Actions:
     gate: PermissionGate
     plans: PlanStore
     executor: PlanExecutor
+    marks: ScreenMarks
 
 
 async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
@@ -173,6 +178,8 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     router: ModelRouter,
     conversations: ConversationStore,
     prefs: Callable[[], Preferences],
+    *,
+    tracer: Tracer | None = None,
 ) -> _Actions:
     # Jarvis agit : journal immuable vérifié au démarrage, outils derrière une seule porte.
     journal = AuditJournal(db, bus)
@@ -210,12 +217,22 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         current = prefs()
         return "en_ligne" if current.model_profile == "meta" else current.screen_vision
 
+    # Trouver puis cliquer un élément de l'écran (#48) : SAM 3.1 encadre, Muse Spark choisit,
+    # le portail de GNOME clique (avec ton accord).
+    desktop = config.paths.state_dir / "desktop"
+    marks = ScreenMarks(desktop / "reperes")
+    sam = SamClient(lambda: secrets.get("MODEL_API_KEY"), http, tracer)
     tools = build_registry(
         browser.session,
         [
             *automation_tools(automations, scheduler),
             *integration_tools(integrations),
-            *desktop_tools(router, screen_vision),
+            *desktop_tools(
+                router,
+                screen_vision,
+                locator=Locator(sam, router, marks, capture),
+                pointer=PortalPointer(desktop / "controle-a-distance.jeton"),
+            ),
             # Proposés seulement en mode shell ; journaux et captures dans l'état du moteur.
             RunCommand(user_home, log_dir=config.paths.state_dir / "shell", sessions=servers),
             LookAtPage(
@@ -275,6 +292,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         gate=gate,
         plans=plans,
         executor=executor,
+        marks=marks,
     )
 
 
@@ -483,6 +501,8 @@ class Services:
     graph: GraphStore
     anticipation: AnticipationService
     machine: MachineCard
+    #: Les éléments trouvés à l'écran (#48) et leurs captures annotées.
+    marks: ScreenMarks
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -526,7 +546,15 @@ class Services:
         memory, conversations, graph, context = await _assemble_memory(db, bus, embedder)
 
         acts = await _assemble_actions(
-            config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
+            config,
+            db,
+            bus,
+            secrets,
+            http,
+            router,
+            conversations,
+            lambda: holder["value"],
+            tracer=tracer,
         )
         machine = _memory_tools(acts, memory, embedder, config.user_home or Path.home())
         core = Agent(
@@ -623,6 +651,7 @@ class Services:
             graph=graph,
             anticipation=anticipation,
             machine=machine,
+            marks=acts.marks,
         )
         services._holder = holder
         await acts.executor.recover()

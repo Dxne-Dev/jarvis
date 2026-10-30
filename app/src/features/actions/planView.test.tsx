@@ -64,8 +64,11 @@ describe("Voir Jarvis agir (#34)", () => {
 
   it("montre la page pendant le plan, et « Arrêter » ne lance pas l'étape suivante", async () => {
     const user = userEvent.setup();
-    Object.defineProperty(URL, "createObjectURL", { value: vi.fn(() => "blob:page") });
-    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn() });
+    Object.defineProperty(URL, "createObjectURL", {
+      value: vi.fn(() => "blob:page"),
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
     const { client, calls } = fakeEngine((_method, path) => {
       if (path === "/v1/plans/p1/stop") return [200, running];
       return [200, {}];
@@ -102,5 +105,39 @@ describe("Voir Jarvis agir (#34)", () => {
     expect(screen.getByText(stopped.result ?? "")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Arrêter" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Le navigateur de Jarvis, en direct")).not.toBeInTheDocument();
+  });
+});
+
+describe("Cliquer dans une application (#48)", () => {
+  it("montre où Jarvis va cliquer avant la validation", async () => {
+    Object.defineProperty(URL, "createObjectURL", {
+      value: vi.fn(() => "blob:capture"),
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
+    const click: Plan = {
+      ...plan,
+      status: "proposed",
+      result: null,
+      steps: [
+        {
+          position: 1,
+          tool: "cliquer_ecran",
+          arguments: { repere: "rab12cd" },
+          why: "Exporter le rapport.",
+          level: 2,
+          description: "Cliquer sur le bouton Exporter en PDF (repère rab12cd)",
+          status: "pending",
+          result: null,
+          error: null,
+        },
+      ],
+    };
+    const { client, calls } = fakeEngine(() => [200, {}]);
+    renderScreen(<PlanView plan={click} compact />, { client });
+    const capture = await screen.findByRole("img", { name: /Où Jarvis va cliquer : Cliquer sur/ });
+    expect(capture).toHaveAttribute("src", "blob:capture");
+    expect(calls.some((c) => c.path === "/v1/desktop/marks/rab12cd")).toBe(true);
+    expect(screen.getByRole("button", { name: "Valider" })).toBeInTheDocument();
   });
 });
