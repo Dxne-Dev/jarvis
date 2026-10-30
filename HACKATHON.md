@@ -81,6 +81,14 @@ The full list of Meta models and of OS features is in the [README](./README.md#m
 - **Nothing leaves the PC before you speak**: like the mic button, and silence sends nothing. If the app is closed, the terminal says to open it first.
 - Real test: "ouvre, ouvre mon navigateur" said to the terminal, transcribed, plan approved, Chrome opened.
 
+### Watch Jarvis act ([#34](https://github.com/octavebahoun/O-jarvis/issues/34)), done
+
+- **Live view**: Chromium films Jarvis's page (DevTools screencast). Only the latest image is kept, and the app reads it from the engine on 127.0.0.1; nothing leaves the PC. It shows in the card of a running plan that uses the browser, with the page address.
+- **"Stop"**: the running step finishes and the next ones never start. The plan ends as "stopped by you", and the stop goes to the audit log.
+- **"Show Jarvis's browser"** (Settings › Browser): Chromium opens in a window. Approvals stay the same.
+- **Found during the real test**: in a web app (React), a click changed the address without reloading, and Jarvis read the old page; it now waits until the text changes and settles. Two links with the same name and the same address (menu and footer) are no longer ambiguous.
+- Real tests on octave.excellenceteam.site: "click Projects, then Blog, and tell me the latest article" → the right title, watched in a Chromium window; a 4-click plan stopped during the 2nd click → the last two never ran.
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
