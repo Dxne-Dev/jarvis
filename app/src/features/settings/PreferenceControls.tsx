@@ -19,7 +19,8 @@ type SwitchKey =
   | "voice_enabled"
   | "voice_follow_up"
   | "voice_barge_in"
-  | "voice_headset";
+  | "voice_headset"
+  | "browser_visible";
 
 /** Un réglage à choix unique, en boutons radio accessibles. */
 export function Choice<K extends ChoiceKey>({
