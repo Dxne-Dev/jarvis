@@ -21,11 +21,22 @@ Each feature has an issue labeled `hackathon`.
   - Muse Spark always reasons before answering. Jarvis asks for `minimal` effort on quick tasks (first word in 0.8 s instead of 1.6 s, measured on October 26), and `high` effort on reasoning tasks.
   - The hidden reasoning counts toward the token limit. Jarvis adds headroom, so a short answer (a 30-token title) never comes back empty.
   - Contributor model IDs (`-contributor`), where Meta trains on your requests, are refused.
-- **"All Meta" profile in Settings**: Muse Spark answers every task first (chat, voice, reasoning, screen reading), and the other providers stay as fallback. It is off by default and needs a Meta key, and the key has its own "Test" button. A model forced by hand, or a privacy rule (sensitive data stays on a local model), still wins.
-- **Speech to text with Muse Voice Transcribe**: with the profile on, each spoken sentence is transcribed by Meta, with a French hint and the keyword "Jarvis". "Local Whisper only" stays local.
+- **"All Meta" profile in Settings**: Muse Spark answers every task (chat, voice, reasoning, screen reading). It needs a Meta key, and the key has its own "Test" button. Since October 30 it is the default and calls Meta models only (see below).
+- **Speech to text with Muse Voice Transcribe**: with the profile on, each spoken sentence is transcribed by Meta, with a French hint and the keyword "Jarvis".
 - **Muse Spark Open as fallback**: if Muse Spark does not answer, Muse Spark Open, Meta's open-weight model served by Baseten, takes over for every task (text, tools, vision, code review). Real test with Muse Spark made unreachable: a text answer, a tool call and an image read all went through Muse Spark Open, for less than a tenth of a cent each.
 - **Relay to Muse Wonder**: Muse Spark does the everyday work. When the same command fails twice in a row (a test still red), the next turn goes to Muse Wonder, Meta's strongest model; a success resets the count. Settings: how many failures before the relay (1 to 3, or off) and which model.
-- **The Journal shows it all**: every model call records its provider, model, attempts (fallbacks included), tokens and cost, plus a "relais" line with the reason when the relay is used; every spoken sentence records its transcription model (`muse-voice-transcribe-1.0`). Screen reading follows its own privacy setting: "Online" sends it to Muse Spark, "On this PC" keeps screenshots local.
+- **The Journal shows it all**: every model call records its provider, model, attempts (fallbacks included), tokens and cost, plus a "relais" line with the reason when the relay is used; every spoken sentence records its transcription model (`muse-voice-transcribe-1.0`) and its voice (`mms`).
+
+### Meta models only (rule of October 29), done
+
+The rule: every model the project calls at runtime must be a Meta model, small local ones included (confirmed by the organizers on October 30). The "All Meta" profile became strict, and the default:
+
+- **Text**: Muse Spark, then Muse Spark Open; never DeepSeek, Claude, GPT or Ollama, even as a fallback. A model forced by hand counts only if it is a Meta model. Screen reading goes to Muse Spark. With no Meta model ready, Jarvis says how to fix it.
+- **Voice**: MMS TTS (French), a Meta model run on the CPU with ONNX Runtime (114 MB, pinned by SHA-256), replaces Cartesia and Piper; numbers, units and acronyms are spelled out by plain code ("6,8 Go" becomes "six virgule huit gigaoctets"). espeak-ng, the system voice, takes over if MMS fails. Measured on an i5-4200M: 0.7 s for a short sentence.
+- **Listening**: Muse Voice Transcribe alone (no Groq, Cartesia or Whisper fallback; a failure is said out loud). Speech is detected from the sound volume above the room's noise, in place of Silero VAD. No wake word (openWakeWord is not a Meta model): you speak after the global shortcut, the mic button or `/voix`.
+- **Memory**: search by hashed words in place of multilingual-e5; memories already kept get their new vector at startup.
+
+The full list of Meta models and of OS features is in the [README](./README.md#meta-models-meta-global-ai-developer-hackathon).
 
 ### Shell mode: Jarvis in your terminal ([#7](https://github.com/octavebahoun/O-jarvis/issues/7)), done
 
@@ -63,13 +74,20 @@ Each feature has an issue labeled `hackathon`.
 - **Never an action on its own**: tested, a mission never runs an action (level 2) or a destruction (level 3) by itself; each one becomes a plan that waits for your approval. Automations go through the same gate.
 - **Before / after**: a shell plan carries a measure (a read-only command) taken before the actions and after them; when a plan ends with a read, that read becomes its measure. The terminal shows both side by side, Jarvis compares them and says "verified" or "not verified"; a plan of actions without proof can never be called "done". Real test: before "ls: cannot access 'preuve.txt'", after "6 bytes", answer "Verified".
 
+### Voice in the terminal ([#10](https://github.com/octavebahoun/O-jarvis/issues/10)), done
+
+- **`/voix`** in `ojarvis-shell`: the app's voice pipeline hears one sentence, the terminal shows it ("Tu as dit : …") and handles it like a typed request, plan approvals included. The final answer is also spoken.
+- **One listener at a time**: the microphone stays with the app; the terminal asks the engine for one sentence, then for the spoken answer.
+- **Nothing leaves the PC before you speak**: like the mic button, and silence sends nothing. If the app is closed, the terminal says to open it first.
+- Real test: "ouvre, ouvre mon navigateur" said to the terminal, transcribed, plan approved, Chrome opened.
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
 
 ## Already there before (not part of the submission)
 
-The desktop app (Tauri + React), the Python engine, voice ("Hey Jarvis"), memory, the permission gate, the browser agent, skills, MCP servers, agents and Telegram. See the [README](./README.md).
+The desktop app (Tauri + React), the Python engine, voice ("Hey Jarvis", in the "Automatic" profile), memory, the permission gate, the browser agent, skills, MCP servers, agents and Telegram. See the [README](./README.md).
 
 ## Contributors
 
