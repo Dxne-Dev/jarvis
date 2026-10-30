@@ -15,6 +15,7 @@ import { useId, useState } from "react";
 
 import { Button } from "../../components/Button";
 import confirmStyles from "../../components/ConfirmDialog.module.css";
+import { stepAside } from "../../lib/desktop";
 import { describeError } from "../../lib/engine/client";
 import { useDecidePlan, usePlan, useStopPlan } from "../../lib/engine/queries";
 import type { Plan, PlanStep, StepStatus } from "../../lib/engine/types";
@@ -159,8 +160,17 @@ export function PlanView({
   const proposed = plan.status === "proposed";
   const running = plan.status === "approved" || plan.status === "running";
   const browsing = plan.steps.some((step) => step.tool.startsWith("navigateur_"));
+  const clicks = plan.steps.some((step) => step.tool === "cliquer_ecran");
   const approve = (doubleConfirm: boolean) => {
-    decide.mutate({ id: plan.id, decision: "approve", doubleConfirm });
+    decide.mutate(
+      { id: plan.id, decision: "approve", doubleConfirm },
+      {
+        // Un clic à l'écran : Jarvis se met de côté, l'application visée repasse devant.
+        onSuccess: () => {
+          if (clicks) void stepAside();
+        },
+      },
+    );
   };
   return (
     <article className={styles.plan} data-status={plan.status} aria-labelledby={titleId}>
@@ -176,6 +186,12 @@ export function PlanView({
       </h3>
       {!compact && plan.request && (
         <p className={styles.request}>Ta demande : « {plan.request} »</p>
+      )}
+      {clicks && proposed && (
+        <p className={styles.request}>
+          Après ta validation, Jarvis se réduit et clique dès qu&apos;il revoit l&apos;élément, 15 s
+          au plus. La première fois, GNOME te demande ton accord.
+        </p>
       )}
       {plan.tainted && proposed && (
         <p className={styles.tainted} role="note">

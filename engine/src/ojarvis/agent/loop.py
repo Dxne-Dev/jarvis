@@ -121,9 +121,12 @@ OS_CONTROL_ON = (
     "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
     "dans son navigateur et ranger des fichiers (par un plan à valider), et regarder l'écran "
     "avec regarder_ecran quand on te le demande. Pour cliquer dans une application de "
-    "bureau : trouve d'abord l'élément avec trouver_a_l_ecran, puis propose un plan avec "
-    "cliquer_ecran et le repère rendu. Si l'élément est introuvable ou ambigu, demande à "
-    "l'utilisateur au lieu de deviner."
+    "bureau : trouve d'abord l'élément avec trouver_a_l_ecran, puis propose aussitôt un plan "
+    "avec cliquer_ecran et le repère rendu (il reste valable 10 minutes : ne cherche pas une "
+    "seconde fois). Si l'utilisateur doit d'abord mettre la fenêtre devant, utilise "
+    "attendre_s. Si l'élément est introuvable ou ambigu, demande-lui au lieu de deviner. Tu "
+    "peux toujours capturer l'écran avec ces outils : n'invente jamais un réglage ou une "
+    "permission qui t'en empêcherait, appelle l'outil et rapporte sa réponse."
 )
 OS_CONTROL_OFF = (
     "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "

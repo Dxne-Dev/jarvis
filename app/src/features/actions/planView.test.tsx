@@ -139,5 +139,6 @@ describe("Cliquer dans une application (#48)", () => {
     expect(capture).toHaveAttribute("src", "blob:capture");
     expect(calls.some((c) => c.path === "/v1/desktop/marks/rab12cd")).toBe(true);
     expect(screen.getByRole("button", { name: "Valider" })).toBeInTheDocument();
+    expect(screen.getByText(/Jarvis se réduit et clique dès qu'il revoit l'élément/)).toBeVisible();
   });
 });

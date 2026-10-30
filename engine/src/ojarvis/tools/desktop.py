@@ -22,7 +22,7 @@ from pydantic import Field
 from ojarvis.context.engine import PERSONA
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
 from ojarvis.desktop import apps as applications
-from ojarvis.desktop.locate import Kind, Locator, ScreenMarks, unchanged
+from ojarvis.desktop.locate import Kind, Locator, Mark, ScreenMarks, unchanged
 from ojarvis.desktop.pointer import Pointer
 from ojarvis.desktop.screen import capture, shrink
 from ojarvis.llm.errors import LLMError
@@ -378,6 +378,9 @@ class MakeDir(Tool[DirArgs]):
         return ToolOutput(f"Dossier prêt : {shown(path, ctx.home)}")
 
 
+#: Après ta validation, le temps laissé pour que l'élément revienne à l'écran.
+CLICK_WAIT_S = 15.0
+CLICK_POLL_S = 1.0
 LOCAL_SCREEN_ONLY = (
     "Trouver un élément envoie la capture à SAM 3.1 et à Muse Spark (Meta), et ta lecture "
     "de l'écran est réglée « sur ce PC » : rien n'est envoyé. Change-la dans Réglages › "
@@ -395,6 +398,12 @@ class FindArgs(ToolArgs):
         default="bouton",
         description="Ce que c'est : bouton, icône, menu, onglet, champ, case ou lien.",
     )
+    attendre_s: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description="Secondes à attendre avant de regarder (l'utilisateur met la fenêtre devant).",
+    )
 
 
 class FindOnScreen(Tool[FindArgs]):
@@ -408,9 +417,15 @@ class FindOnScreen(Tool[FindArgs]):
     level: ClassVar[Level] = Level.LIRE
     os_control: ClassVar[bool] = True
 
-    def __init__(self, locator: Locator, mode: Callable[[], ScreenMode]) -> None:
+    def __init__(
+        self,
+        locator: Locator,
+        mode: Callable[[], ScreenMode],
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         self._locator = locator
         self._mode = mode
+        self._sleep = sleep
 
     def describe(self, args: FindArgs) -> str:
         return f"Trouver à l'écran : {args.element}"
@@ -419,13 +434,15 @@ class FindOnScreen(Tool[FindArgs]):
         del ctx
         if self._mode() == "local":
             raise InvalidInputError(LOCAL_SCREEN_ONLY, code="screen_local_only")
+        if args.attendre_s:
+            await self._sleep(args.attendre_s)
         mark = await self._locator.find(args.element, args.sorte)
         x, y = mark.center
         return ToolOutput(
             f"Trouvé : {args.element} ({mark.seen}). Repère {mark.id}, au centre ({x}, {y}) "
-            f"d'une capture {mark.width}×{mark.height}. Pour cliquer, propose un plan avec "
-            f"cliquer_ecran et repere={mark.id} : l'utilisateur voit la capture annotée avant "
-            "de valider.",
+            f"d'une capture {mark.width}×{mark.height}. Propose maintenant le plan avec "
+            f"cliquer_ecran et repere={mark.id}, sans redemander : l'utilisateur voit la "
+            "capture annotée et valide dans la carte. Le repère reste valable 10 minutes.",
             {"repere": mark.id, "x": x, "y": y},
             external=True,
             source="ton écran",
@@ -454,10 +471,15 @@ class ClickOnScreen(Tool[ClickArgs]):
         marks: ScreenMarks,
         pointer: Pointer,
         grab: Callable[[], Awaitable[bytes]] = capture,
+        *,
+        wait_s: float = CLICK_WAIT_S,
+        poll_s: float = CLICK_POLL_S,
     ) -> None:
         self._marks = marks
         self._pointer = pointer
         self._grab = grab
+        self._wait_s = wait_s
+        self._poll_s = poll_s
 
     def describe(self, args: ClickArgs) -> str:
         try:
@@ -466,12 +488,24 @@ class ClickOnScreen(Tool[ClickArgs]):
             return f"Cliquer à l'écran (repère {args.repere})"
         return f"Cliquer sur {target} (repère {args.repere})"
 
+    async def _visible(self, mark: Mark) -> bool:
+        """L'élément revient-il à l'écran ? À la validation, la fenêtre de Jarvis est devant :
+        elle se réduit, et l'on attend de revoir l'élément (le 31/10, le clic était refusé)."""
+        deadline = time.monotonic() + self._wait_s
+        while True:
+            if await anyio.to_thread.run_sync(unchanged, mark, await self._grab()):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(self._poll_s)
+
     async def run(self, args: ClickArgs, ctx: ToolContext) -> ToolOutput:
         mark = self._marks.get(args.repere)
-        if not await anyio.to_thread.run_sync(unchanged, mark, await self._grab()):
+        if not await self._visible(mark):
             raise InvalidInputError(
-                f"L'écran a changé à l'endroit de « {mark.target} » (une fenêtre passée "
-                "devant ?) : rien n'a été cliqué. Retrouve l'élément.",
+                f"« {mark.target} » n'est pas revenu à l'écran en {self._wait_s:.0f} s (une "
+                "fenêtre est devant, ou l'écran a changé) : rien n'a été cliqué. Mets la "
+                "fenêtre devant, puis retrouve l'élément.",
                 code="screen_changed",
             )
         x, y = mark.center
