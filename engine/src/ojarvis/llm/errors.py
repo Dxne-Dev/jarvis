@@ -55,6 +55,13 @@ class NoRouteAvailableError(LLMError):
     public = "Aucun modèle n'est disponible pour le moment."
 
 
+class NoMetaModelError(NoRouteAvailableError):
+    public = (
+        "« Tout Meta » n'appelle que des modèles de Meta, et aucun n'est prêt : ajoute ta clé "
+        "Meta (Réglages › Clés), ou passe en « Automatique » (Réglages › Modèles)."
+    )
+
+
 class StructuredOutputError(LLMError):
     public = "Le modèle n'a pas produit une réponse exploitable."
 

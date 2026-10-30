@@ -2,6 +2,7 @@
 
 - Chaque type de tâche a une liste ordonnée de routes (fournisseur, modèle, réflexion).
 - Les données sensibles et le mode hors ligne ne passent que par un modèle local.
+- Profil « Tout Meta » : seuls les modèles de Meta, secours compris.
 - Réglages : l'utilisateur peut imposer un modèle par type de tâche.
 - Un fournisseur qui échoue est mis de côté un temps (disjoncteur) ; l'interface est
   prévenue par un événement, et la requête bascule sur la route suivante tant
@@ -24,6 +25,7 @@ from ojarvis.llm.errors import (
     ContentRefusedError,
     FirstTokenTimeoutError,
     LLMError,
+    NoMetaModelError,
     NoRouteAvailableError,
     NotConfiguredError,
     QuotaExhaustedError,
@@ -136,9 +138,9 @@ MUSE_SPARK_OPEN = "meta-models/muse-spark-open-1026"
 SPARK = Route("meta", "muse-spark-1.3")
 SPARK_OPEN = Route("baseten", MUSE_SPARK_OPEN)
 
-#: Profil « Tout Meta » (Réglages) : ces routes passent avant la politique par défaut, qui
-#: reste en secours ; un modèle imposé à la main garde la priorité. Si Muse Spark ne répond
-#: pas, Muse Spark Open prend le relais.
+#: Profil « Tout Meta » (Réglages) : seules ces routes, jamais un modèle d'un autre éditeur,
+#: même en secours. Si Muse Spark ne répond pas, Muse Spark Open prend le relais ; un modèle
+#: imposé à la main ne compte que s'il est de Meta.
 META_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
     "voice": (SPARK, SPARK_OPEN),
     "chat": (SPARK, SPARK_OPEN),
@@ -150,6 +152,13 @@ META_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
     "review": (Route("meta", "muse-wonder-1.0", thinking=True), replace(SPARK_OPEN, thinking=True)),
 }
 PROFILES: Mapping[str, Mapping[TaskType, tuple[Route, ...]]] = {"meta": META_POLICY}
+
+
+def is_meta(route: Route) -> bool:
+    """Un modèle de Meta : l'API de Meta, ou un modèle ouvert de Meta chez Baseten."""
+    return route.provider == "meta" or (
+        route.provider == "baseten" and route.model.startswith("meta-models/")
+    )
 
 
 #: Délai maximal avant le premier morceau de réponse, par tâche (fournisseurs en ligne).
@@ -261,17 +270,21 @@ class ModelRouter:
             provider, model = override.split("/", 1)
             default_thinking = any(r.thinking for r in self.policy.get(task, ()))
             candidates.append(Route(provider, model, thinking=default_thinking))
+        meta_only = self._profile() == "meta"
         candidates.extend(PROFILES.get(self._profile(), {}).get(task, ()))
-        candidates.extend(self.policy.get(task, ()))
-        if constraints.sensitive or constraints.offline:
-            candidates.extend(
-                Route(spec.provider, spec.model) for spec in self.catalog.all() if spec.local
-            )
+        if not meta_only:
+            candidates.extend(self.policy.get(task, ()))
+            if constraints.sensitive or constraints.offline:
+                candidates.extend(
+                    Route(spec.provider, spec.model) for spec in self.catalog.all() if spec.local
+                )
         seen: set[str] = set()
         result: list[Route] = []
         for candidate in candidates:
             route = self._resolve(candidate, constraints)
             if route is None or route.key in seen or not self._fits(route, constraints):
+                continue
+            if meta_only and not is_meta(route):
                 continue
             seen.add(route.key)
             result.append(route)
@@ -367,6 +380,8 @@ class ModelRouter:
             # Seul le local convient : Ollama a pu démarrer après le moteur.
             await self._refresh_local()
         routes = self.routes(task, constraints, first=relay.route if relay else None)
+        if not routes and self._profile() == "meta":
+            raise NoMetaModelError(f"aucun modèle Meta pour {task}")
         if not routes:
             raise NoRouteAvailableError(f"aucune route pour {task}")
         now = self._clock()

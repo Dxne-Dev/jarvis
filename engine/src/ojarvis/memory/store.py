@@ -19,7 +19,7 @@ from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import InvalidInputError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
-from ojarvis.db.models import MemoryItem
+from ojarvis.db.models import Embedding, MemoryItem
 from ojarvis.events.bus import EventBus
 from ojarvis.memory.embeddings import Embedder, Vectors
 from ojarvis.memory.vectors import VectorIndex
@@ -101,6 +101,27 @@ class MemoryStore:
 
     async def start(self) -> None:
         await self.index.ensure()
+        await self._embed_missing()
+
+    async def _embed_missing(self) -> None:
+        """Les souvenirs sans vecteur pour ce modèle (le profil « Tout Meta » change de
+        modèle d'embeddings) le reçoivent au démarrage."""
+
+        def missing(session: Session) -> list[tuple[int, str]]:
+            indexed = select(Embedding.owner_id).where(
+                Embedding.owner_type == self.index.owner_type,
+                Embedding.model == self.index.model_id,
+            )
+            rows = session.execute(
+                select(MemoryItem.id, MemoryItem.content).where(MemoryItem.id.not_in(indexed))
+            ).all()
+            return [(row.id, row.content) for row in rows]
+
+        for item_id, content in await self._db.run(missing):
+            vector = await self._embed_passage(content)
+            if vector is None:
+                return  # le modèle n'est pas prêt : on réessaiera au prochain démarrage
+            await self.index.upsert(item_id, vector)
 
     async def _publish(self, event: str, payload: dict[str, object]) -> None:
         if self._bus is not None:

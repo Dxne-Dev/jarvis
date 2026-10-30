@@ -53,7 +53,7 @@ from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.fake import FakeProvider, e2e_script
 from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
 from ojarvis.llm.router import ModelRouter, Route
-from ojarvis.memory.embeddings import E5Embedder, Embedder
+from ojarvis.memory.embeddings import E5Embedder, Embedder, HashEmbedder
 from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
 from ojarvis.notifications import Notifier
@@ -78,7 +78,7 @@ from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
 from ojarvis.tools.code import ListCapabilities
-from ojarvis.tools.desktop import desktop_tools
+from ojarvis.tools.desktop import ScreenMode, desktop_tools
 from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.machine import ReadMachineMap
@@ -203,17 +203,23 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     scheduler = AutomationScheduler(store=automations, workflows=workflows, bus=bus)
     integrations = IntegrationManager(secrets.get)
     servers = BackgroundSessions()  # les serveurs lancés par le mode shell
+
+    def screen_vision() -> ScreenMode:
+        # « Tout Meta » n'a pas de modèle local : l'écran est lu par Muse Spark.
+        current = prefs()
+        return "en_ligne" if current.model_profile == "meta" else current.screen_vision
+
     tools = build_registry(
         browser.session,
         [
             *automation_tools(automations, scheduler),
             *integration_tools(integrations),
-            *desktop_tools(router, lambda: prefs().screen_vision),
+            *desktop_tools(router, screen_vision),
             # Proposés seulement en mode shell ; journaux et captures dans l'état du moteur.
             RunCommand(user_home, log_dir=config.paths.state_dir / "shell", sessions=servers),
             LookAtPage(
                 router,
-                lambda: prefs().screen_vision,
+                screen_vision,
                 servers,
                 capture_dir=config.paths.state_dir / "shell" / "captures",
             ),
@@ -509,8 +515,12 @@ class Services:
         providers = providers if providers is not None else build_providers(secrets)
         holder: dict[str, Preferences] = {"value": preferences}
         router = _build_router(providers, catalog, bus=bus, tracer=tracer, holder=holder, http=http)
-        embedder = embedder or E5Embedder(
-            config.paths.cache_dir / "models" / "multilingual-e5-small"
+        # « Tout Meta » n'appelle aucun modèle d'un autre éditeur : la mémoire y cherche par
+        # mots hachés plutôt qu'avec e5. Le changement de profil vaut au prochain démarrage.
+        embedder = embedder or (
+            HashEmbedder()
+            if preferences.model_profile == "meta"
+            else E5Embedder(config.paths.cache_dir / "models" / "multilingual-e5-small")
         )
         memory, conversations, graph, context = await _assemble_memory(db, bus, embedder)
 

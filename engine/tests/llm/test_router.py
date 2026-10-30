@@ -12,6 +12,7 @@ from ojarvis.llm.catalog import Catalog
 from ojarvis.llm.errors import (
     AuthenticationFailedError,
     ContentRefusedError,
+    NoMetaModelError,
     NoRouteAvailableError,
     ProviderUnavailableError,
     StructuredOutputError,
@@ -110,17 +111,14 @@ def test_override_comes_first() -> None:
     assert reasoning.thinking  # la tâche de réflexion garde sa réflexion
 
 
-def test_meta_profile_puts_muse_spark_first_and_keeps_the_rest_as_fallback() -> None:
+def test_meta_profile_only_ever_routes_to_meta_models() -> None:
     router = make_router(profile="meta")
     assert [r.key for r in router.routes("chat")] == [
         "meta/muse-spark-1.3",
         "baseten/meta-models/muse-spark-open-1026",
-        "deepseek/deepseek-flash",
-        "openrouter/google/gemma-4-26b-a4b-it:free",
-        "ollama/ministral-3:3b",
     ]
     assert router.routes("reasoning")[0] == Route("meta", "muse-spark-1.3", thinking=True)
-    # Muse Spark voit les images : il passe aussi en tête pour la vision.
+    # Muse Spark voit les images : il lit aussi l'écran.
     assert router.routes("vision", Constraints(needs_vision=True))[0].provider == "meta"
     # Sans le profil, Meta n'apparaît nulle part.
     assert not {"meta", "baseten"} & {r.provider for r in make_router().routes("chat")}
@@ -137,19 +135,40 @@ async def test_muse_spark_open_takes_over_when_muse_spark_does_not_answer() -> N
     assert info.fallback_from == "meta/muse-spark-1.3"
 
 
-def test_meta_profile_needs_the_key_and_never_beats_privacy_or_a_forced_model() -> None:
+async def test_meta_profile_never_falls_back_outside_meta() -> None:
     no_key = make_router(profile="meta", meta=FakeProvider("meta", configured=False))
-    assert no_key.routes("chat")[0].provider == "baseten"  # Muse Spark Open reste un modèle Meta
+    assert [r.key for r in no_key.routes("chat")] == ["baseten/meta-models/muse-spark-open-1026"]
     no_keys = make_router(
         profile="meta",
         meta=FakeProvider("meta", configured=False),
         baseten=FakeProvider("baseten", configured=False),
     )
-    assert no_keys.routes("chat")[0].provider == "deepseek"
+    assert no_keys.routes("chat") == []  # pas de DeepSeek en secours
+    with pytest.raises(NoMetaModelError, match="aucun modèle Meta"):
+        _ = [e async for e in no_keys.stream("chat", LLMRequest(messages=[Message("user", "?")]))]
     router = make_router(profile="meta")
-    assert [r.provider for r in router.routes("chat", Constraints(sensitive=True))] == ["ollama"]
+    # Aucun modèle local n'est de Meta : une demande « sur ce PC » n'a pas de route.
+    assert router.routes("chat", Constraints(sensitive=True)) == []
+    # Un modèle imposé à la main ne passe que s'il est de Meta.
     forced = make_router(profile="meta", overrides={"chat": "ollama/ministral-3:3b"})
-    assert forced.routes("chat")[0].provider == "ollama"
+    assert [r.provider for r in forced.routes("chat")] == ["meta", "baseten"]
+    wonder = make_router(profile="meta", overrides={"chat": "meta/muse-wonder-1.0"})
+    assert wonder.routes("chat")[0] == Route("meta", "muse-wonder-1.0")
+
+
+async def test_meta_profile_says_so_instead_of_calling_another_model() -> None:
+    down = FakeProvider("meta", script=lambda r: FakeReply(error=ProviderUnavailableError("panne")))
+    deepseek = FakeProvider("deepseek")
+    router = make_router(
+        profile="meta",
+        meta=down,
+        baseten=FakeProvider("baseten", configured=False),
+        deepseek=deepseek,
+    )
+    request = LLMRequest(messages=[Message("user", "Bonjour")])
+    with pytest.raises(ProviderUnavailableError):
+        _ = [e async for e in router.stream("chat", request)]
+    assert deepseek.requests == []
 
 
 async def test_fallback_before_first_token_publishes_event() -> None:
