@@ -319,6 +319,18 @@ class Site(BaseHTTPRequestHandler):
             "/qui": (
                 f"<title>Qui</title><p>Cookies reçus : {self.headers.get('Cookie') or 'aucun'}</p>"
             ),
+            # Une app web : un clic change l'adresse sans recharger, la page arrive après.
+            "/app": (
+                "<title>Accueil</title><nav><a href='/blog'>Blog</a> <a href='/aide'>Aide</a>"
+                "</nav><main id=m><p>Bienvenue sur la page d'accueil.</p>"
+                "<a href='/projets' id=p>Projets</a></main>"
+                "<footer><a href='/blog'>Blog</a> <a href='/aide/faq'>Aide</a></footer>"
+                "<script>document.getElementById('p').onclick = (e) => {"
+                "e.preventDefault(); history.pushState({}, '', '/projets');"
+                "setTimeout(() => { document.title = 'Projets';"
+                "document.getElementById('m').innerHTML = '<h1>Quinze projets</h1>'; }, 600);"
+                "};</script>"
+            ),
         }
         body = pages.get(
             self.path.split("?")[0], f"<title>Résultats</title><p>Page {self.path}</p>"
@@ -372,6 +384,21 @@ async def test_reading_filling_and_clicking_a_local_page(browser: Any, site: int
     after = await session.click("Chercher")
     assert after.url.endswith("/cherche?q=th%C3%A9+vert")
     assert not any("127.0.0.2" in hit for hit in Site.hits)  # l'image piégée n'est pas partie
+
+
+async def test_a_click_in_a_web_app_waits_for_the_new_page(browser: Any, site: int) -> None:
+    session, _, _ = browser
+    await session.goto(f"http://127.0.0.1:{site}/app")
+    view = await session.click("Projets")  # la page n'arrive que 0,6 s après le clic
+    assert view.url.endswith("/projets")
+    assert view.title == "Projets"
+    assert "Quinze projets" in view.text
+    await session.goto(f"http://127.0.0.1:{site}/app")
+    # « Blog » deux fois, vers la même page : c'est le même lien.
+    assert (await session.click("Blog")).url.endswith("/blog")
+    await session.goto(f"http://127.0.0.1:{site}/app")
+    with pytest.raises(NotFoundError, match="ambigu"):
+        await session.click("Aide")  # deux « Aide » vers deux pages : Jarvis ne devine pas
 
 
 async def test_a_redirect_to_a_private_address_is_blocked(browser: Any, site: int) -> None:

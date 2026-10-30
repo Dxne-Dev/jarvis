@@ -38,6 +38,16 @@ MAX_ELEMENTS = 60
 MAX_LINKS = 80
 NAVIGATION_TIMEOUT_MS = 20_000
 ACTION_TIMEOUT_MS = 6_000
+#: Une app web (React…) dessine sa page après le chargement, ou après un clic sans
+#: rechargement : on attend que le texte affiché ne bouge plus (le 30/10, un clic sur
+#: « Projets » relisait encore l'accueil). Les durées sont en secondes.
+SETTLE_MAX_S = 5.0
+SETTLE_STABLE_S = 0.5
+#: Après un clic, le temps laissé à la page pour commencer à changer.
+SETTLE_CHANGE_S = 1.5
+SETTLE_POLL_S = 0.15
+#: Au-delà, des éléments du même nom restent ambigus, même visibles.
+MAX_TWINS = 10
 LOGIN_SNAPSHOT_S = 2.0
 
 _ELEMENTS_SCRIPT = """
@@ -337,6 +347,7 @@ class BrowserSession:
             await self._page.goto(
                 target, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
             )
+            await _settle(self._page)
             view = await self._view(self._page)
             await self._persist()
             await self._watch()
@@ -375,12 +386,15 @@ class BrowserSession:
             )
             await self._watch()
             for locator in candidates:
-                if await locator.count() == 1:
-                    await locator.click()
+                element = await _single(locator, same_link=True)
+                if element is not None:
+                    before = await _signature(page)
+                    await element.click()
                     with contextlib.suppress(Exception):
                         await self._page.wait_for_load_state(
                             "domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
                         )
+                    await _settle(self._page, before=before)
                     view = await self._view(self._page)
                     await self._persist()
                     await self._watch()  # un clic a pu ouvrir un nouvel onglet
@@ -397,15 +411,16 @@ class BrowserSession:
                 page.get_by_role("textbox", name=field_name),
             )
             for locator in candidates:
-                if await locator.count() == 1:
-                    if await locator.evaluate(_PROTECTED_FIELD_JS):
+                field = await _single(locator)
+                if field is not None:
+                    if await field.evaluate(_PROTECTED_FIELD_JS):
                         raise InvalidInputError(
                             "Jarvis ne saisit ni mot de passe ni carte bancaire : connecte-toi "
                             "toi-même (Réglages > Navigateur).",
                             code="secret_field",
                         )
                     await self._watch()
-                    await locator.fill(value)
+                    await field.fill(value)
                     return await self._view(page)
             raise NotFoundError(f"Champ « {field_name} » introuvable (ou ambigu) sur la page.")
 
@@ -454,6 +469,58 @@ class BrowserSession:
         window, self._login = self._login, None
         if window is not None:
             await window.close()
+
+
+#: Le titre et une empreinte du texte affiché : de quoi voir que la page a changé.
+_SIGNATURE_JS = """() => {
+  const text = document.body ? document.body.innerText : "";
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 7) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  return `${document.title}|${text.length}|${hash}`;
+}"""
+
+
+async def _signature(page: Any) -> str | None:
+    try:
+        return str(await page.evaluate(_SIGNATURE_JS))
+    except Exception:  # page en cours de remplacement
+        return None
+
+
+async def _settle(page: Any, *, before: str | None = None) -> None:
+    """Laisse une app web dessiner sa page : son texte ne bouge plus depuis
+    `SETTLE_STABLE_S`. Après un clic (`before`), on lui laisse d'abord le temps de changer.
+    `SETTLE_MAX_S` au plus : une page qui s'anime sans fin est lue telle quelle."""
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    last = await _signature(page)
+    stable_since = start
+    while (now := loop.time()) - start < SETTLE_MAX_S:
+        changed = before is None or last != before
+        if now - stable_since >= SETTLE_STABLE_S and (changed or now - start >= SETTLE_CHANGE_S):
+            return
+        await asyncio.sleep(SETTLE_POLL_S)
+        current = await _signature(page)
+        if current != last:
+            last, stable_since = current, loop.time()
+
+
+async def _single(locator: Any, *, same_link: bool = False) -> Any | None:
+    """L'élément désigné, s'il n'y en a qu'un. Plusieurs du même nom : le seul visible, ou,
+    pour des liens, le premier quand tous mènent au même endroit (« Blog » dans le menu et
+    en bas de page). Sinon, c'est ambigu : rien."""
+    count = await locator.count()
+    if count == 1:
+        return locator
+    if count == 0 or count > MAX_TWINS:
+        return None
+    visible = [locator.nth(i) for i in range(count) if await locator.nth(i).is_visible()]
+    if len(visible) == 1:
+        return visible[0]
+    if not same_link or not visible:
+        return None
+    targets = {await element.get_attribute("href") for element in visible}
+    return visible[0] if len(targets) == 1 and None not in targets else None
 
 
 class _LoginWindow:
