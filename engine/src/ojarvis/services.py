@@ -193,6 +193,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         home=user_home,
         allowed_hosts=config.tool_private_hosts,
         proxy=guard,
+        visible=lambda: prefs().browser_visible,
     )
     await browser.start()
     sandbox = SandboxRunner()

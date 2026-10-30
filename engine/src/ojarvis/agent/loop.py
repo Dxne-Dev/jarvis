@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.measures import MEASURE_AFTER, MEASURE_BEFORE
 from ojarvis.agent.plans import (
+    FINISHED,
     MAX_STEPS,
     PLACEHOLDER,
     PLAN_TOOL,
@@ -154,6 +155,7 @@ PLAN_STATES = {
     "done": "exécuté",
     "failed": "échoué",
     "refused": "refusé",
+    "stopped": "arrêté par l'utilisateur avant la fin",
 }
 
 #: Le modèle annonce un plan à valider (« le plan est prêt », « confirme à l'écran »…), ou
@@ -385,7 +387,7 @@ class Agent:
         plan = await self._plans.get(plan_id)
         if plan.conversation_id != conversation_id:
             raise NotFoundError("Ce plan n'appartient pas à cette conversation.")
-        if plan.status not in ("done", "failed", "refused"):
+        if plan.status not in FINISHED:
             raise ConflictError("Ce plan n'est pas encore terminé.")
         if plan.status == "refused":
             refused = f"L'utilisateur a refusé le plan « {plan.title} » : rien n'a été lancé."

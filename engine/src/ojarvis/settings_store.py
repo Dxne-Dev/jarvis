@@ -65,6 +65,8 @@ class Preferences(BaseModel):
     #: Lecture de l'écran : modèle local (privé, lent ici) ou en ligne (rapide, l'image
     #: part chez le fournisseur). Une capture est une donnée sensible : local par défaut.
     screen_vision: Literal["local", "en_ligne"] = "local"
+    #: Montrer le navigateur de Jarvis : Chromium s'ouvre en fenêtre, on le voit agir.
+    browser_visible: bool = False
 
     @field_validator("voice_stt", mode="before")
     @classmethod

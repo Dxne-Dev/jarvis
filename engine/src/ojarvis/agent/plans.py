@@ -28,7 +28,9 @@ PLAN_TOOL = "proposer_un_plan"
 PLACEHOLDER = re.compile(r"\{\{\s*etape\s+(\d+)\s*\}\}")
 MAX_STEPS = 8
 
-PlanStatus = Literal["proposed", "approved", "running", "done", "failed", "refused"]
+PlanStatus = Literal["proposed", "approved", "running", "done", "failed", "refused", "stopped"]
+#: Un plan dans l'un de ces états ne bougera plus.
+FINISHED: tuple[PlanStatus, ...] = ("done", "failed", "refused", "stopped")
 StepStatus = Literal["pending", "running", "done", "failed", "skipped"]
 
 

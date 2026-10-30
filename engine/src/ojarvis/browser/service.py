@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from ojarvis.browser.cookies import (
     read_cookies,
     safe_storage_password,
 )
+from ojarvis.browser.live import LiveView
 from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.session import BrowserSession
 from ojarvis.browser.vault import CookieVault, normalize_domain
@@ -59,6 +61,7 @@ class BrowserAccess:
         home: Path,
         allowed_hosts: tuple[str, ...] = (),
         proxy: GuardProxy | None = None,
+        visible: Callable[[], bool] = lambda: False,
     ) -> None:
         self._db = db
         self._vault = vault
@@ -69,8 +72,17 @@ class BrowserAccess:
         self._login_domain: str | None = None
         self._finish_lock = asyncio.Lock()
         self.session = BrowserSession(
-            vault, allowed_hosts=allowed_hosts, granted=lambda: set(self._granted), proxy=proxy
+            vault,
+            allowed_hosts=allowed_hosts,
+            granted=lambda: set(self._granted),
+            proxy=proxy,
+            visible=visible,
+            live=LiveView(self._frame_ready),
         )
+
+    async def _frame_ready(self, seq: int, url: str) -> None:
+        """Une nouvelle image de la page de Jarvis attend l'app (GET /v1/browser/live)."""
+        await self._bus.publish("browser.frame", {"seq": seq, "url": url}, persist=False)
 
     async def start(self) -> None:
         self._granted = {g.domain for g in await self.grants()}

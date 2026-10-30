@@ -9,6 +9,8 @@
   désignant par leur nom, comme on le dirait à quelqu'un.
 - Connexion : une fenêtre visible où tu te connectes toi-même ; Jarvis ne tape jamais
   un mot de passe ni un numéro de carte.
+- Voir Jarvis agir (#34) : la page est filmée pour l'app (`live.py`), et l'option
+  « Montrer le navigateur » ouvre Chromium en fenêtre plutôt qu'en arrière-plan.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from urllib.parse import urlsplit
 
 import anyio.to_thread
 
+from ojarvis.browser.live import LiveView
 from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.vault import CookieVault, State, in_domain
 from ojarvis.core.errors import ConflictError, InvalidInputError, NotFoundError, UnavailableError
@@ -147,8 +150,14 @@ class BrowserSession:
         allowed_hosts: tuple[str, ...] = (),
         granted: Callable[[], set[str]] = set,
         proxy: GuardProxy | None = None,
+        visible: Callable[[], bool] = lambda: False,
+        live: LiveView | None = None,
     ) -> None:
         self._vault = vault
+        #: Chromium en fenêtre (option « Montrer le navigateur »), relu à chaque lancement.
+        self._visible = visible
+        self._headless: bool | None = None
+        self.live = live
         self._allowed_hosts = allowed_hosts
         #: Domaines autorisés (non révoqués), relus à chaque décision.
         self._granted = granted
@@ -197,12 +206,17 @@ class BrowserSession:
         )
 
     async def _context(self, identity: bool) -> Any:
+        headless = not self._visible()
+        browser = self._browser
+        if browser is not None and (not browser.is_connected() or self._headless != headless):
+            # Fenêtre fermée à la main, ou l'option « Montrer le navigateur » a changé.
+            await self._drop_browser()
         context = self._contexts.get(identity)
         if context is not None:
             return context
-        if self._browser is None or not self._browser.is_connected():
+        if self._browser is None:
             try:
-                self._browser = await self._launch(headless=True)
+                self._browser = await self._launch(headless=headless)
             except Exception as exc:
                 # App installée : Chromium se télécharge au premier usage (~170 Mo), une fois.
                 if "Executable doesn't exist" not in str(exc) or not await install_chromium():
@@ -210,7 +224,8 @@ class BrowserSession:
                         "Navigateur indisponible (Chromium de Playwright absent ou "
                         "impossible à télécharger)."
                     ) from exc
-                self._browser = await self._launch(headless=True)
+                self._browser = await self._launch(headless=headless)
+            self._headless = headless
         state: State | None = None
         if identity:
             state = await anyio.to_thread.run_sync(self._vault.load)
@@ -250,18 +265,31 @@ class BrowserSession:
                     await context.close()
             return result
 
+    async def _drop_browser(self) -> None:
+        if self.live is not None:
+            await self.live.stop()
+        for context in list(self._contexts.values()):
+            with contextlib.suppress(Exception):
+                await context.close()
+        self._contexts.clear()
+        self._page = None
+        self._page_identity = False
+        browser, self._browser = self._browser, None
+        if browser is not None:
+            with contextlib.suppress(Exception):
+                await browser.close()
+
+    async def _watch(self) -> None:
+        """La page courante est filmée pour l'app (et le reste un moment après l'action)."""
+        if self.live is not None and self._page is not None and not self._page.is_closed():
+            await self.live.follow(self._page)
+
     async def close(self) -> None:
         async with self._lock:
             await self._close_login()
-            for context in list(self._contexts.values()):
-                with contextlib.suppress(Exception):
-                    await context.close()
-            self._contexts.clear()
-            self._page = None
-            browser, self._browser = self._browser, None
-            if browser is not None:
-                with contextlib.suppress(Exception):
-                    await browser.close()
+            if self.live is not None:
+                await self.live.close()
+            await self._drop_browser()
             playwright, self._playwright = self._playwright, None
             if playwright is not None:
                 with contextlib.suppress(Exception):
@@ -305,11 +333,13 @@ class BrowserSession:
                         await self._page.close()
                 self._page = await context.new_page()
                 self._page_identity = identity
+            await self._watch()  # on voit la page se charger
             await self._page.goto(
                 target, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
             )
             view = await self._view(self._page)
             await self._persist()
+            await self._watch()
             return view
 
     def _require_page(self) -> Any:
@@ -343,6 +373,7 @@ class BrowserSession:
                 page.get_by_role("link", name=target),
                 page.get_by_text(target, exact=True),
             )
+            await self._watch()
             for locator in candidates:
                 if await locator.count() == 1:
                     await locator.click()
@@ -352,6 +383,7 @@ class BrowserSession:
                         )
                     view = await self._view(self._page)
                     await self._persist()
+                    await self._watch()  # un clic a pu ouvrir un nouvel onglet
                     return view
             raise NotFoundError(f"Élément « {target} » introuvable (ou ambigu) sur la page.")
 
@@ -372,6 +404,7 @@ class BrowserSession:
                             "toi-même (Réglages > Navigateur).",
                             code="secret_field",
                         )
+                    await self._watch()
                     await locator.fill(value)
                     return await self._view(page)
             raise NotFoundError(f"Champ « {field_name} » introuvable (ou ambigu) sur la page.")

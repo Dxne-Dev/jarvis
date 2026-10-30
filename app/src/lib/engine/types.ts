@@ -62,6 +62,8 @@ export interface Preferences {
   briefing_enabled: boolean;
   os_control_enabled: boolean;
   screen_vision: "local" | "en_ligne";
+  /** Montrer le navigateur de Jarvis : Chromium s'ouvre en fenêtre. */
+  browser_visible: boolean;
 }
 
 export type VoicePhase =
@@ -314,7 +316,8 @@ export interface PlanSummary {
   steps: { position: number; description: string; level: PermissionLevel }[];
 }
 
-export type PlanStatus = "proposed" | "approved" | "running" | "done" | "failed" | "refused";
+export type PlanStatus =
+  "proposed" | "approved" | "running" | "done" | "failed" | "refused" | "stopped";
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
 
 export interface PlanStep {

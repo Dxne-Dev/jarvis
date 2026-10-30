@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   MinusCircle,
   ShieldAlert,
+  Square,
   X,
   XCircle,
 } from "lucide-react";
@@ -15,10 +16,11 @@ import { useId, useState } from "react";
 import { Button } from "../../components/Button";
 import confirmStyles from "../../components/ConfirmDialog.module.css";
 import { describeError } from "../../lib/engine/client";
-import { useDecidePlan, usePlan } from "../../lib/engine/queries";
+import { useDecidePlan, usePlan, useStopPlan } from "../../lib/engine/queries";
 import type { Plan, PlanStep, StepStatus } from "../../lib/engine/types";
 import { formatRelative } from "../../lib/format";
 import styles from "./Actions.module.css";
+import { BrowserLive } from "./BrowserLive";
 import { LEVEL_HINT, LEVEL_NAME, PLAN_STATUS, STEP_STATUS } from "./levels";
 
 function StepIcon({ status }: { status: StepStatus }) {
@@ -148,8 +150,11 @@ export function PlanView({
   showSynthesis?: boolean;
 }) {
   const decide = useDecidePlan();
+  const stop = useStopPlan();
   const titleId = useId();
   const proposed = plan.status === "proposed";
+  const running = plan.status === "approved" || plan.status === "running";
+  const browsing = plan.steps.some((step) => step.tool.startsWith("navigateur_"));
   const approve = (doubleConfirm: boolean) => {
     decide.mutate({ id: plan.id, decision: "approve", doubleConfirm });
   };
@@ -180,8 +185,30 @@ export function PlanView({
           <StepItem key={step.position} step={step} />
         ))}
       </ol>
-      {showSynthesis && plan.result && (plan.status === "done" || plan.status === "failed") && (
-        <p className={styles.synthesis}>{plan.result}</p>
+      {running && browsing && <BrowserLive />}
+      {showSynthesis &&
+        plan.result &&
+        (plan.status === "done" || plan.status === "failed" || plan.status === "stopped") && (
+          <p className={styles.synthesis}>{plan.result}</p>
+        )}
+      {stop.isError && (
+        <p className={styles.decideError} role="alert">
+          {describeError(stop.error)}
+        </p>
+      )}
+      {running && (
+        <div className={styles.decision} role="group" aria-label="Plan en cours">
+          <Button
+            icon={<Square />}
+            busy={stop.isPending}
+            disabled={stop.isSuccess}
+            onClick={() => {
+              stop.mutate(plan.id);
+            }}
+          >
+            {stop.isSuccess ? "Arrêt après cette étape" : "Arrêter"}
+          </Button>
+        </div>
       )}
       {decide.isError && (
         <p className={styles.decideError} role="alert">

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ojarvis.agent.plans import PlanRecord
 from ojarvis.api.deps import ServicesDep
 from ojarvis.audit.journal import AuditRecord
+from ojarvis.core.errors import NotFoundError
 
 router = APIRouter(prefix="/v1")
 
@@ -115,6 +116,12 @@ async def refuse_plan(plan_id: str, services: ServicesDep) -> PlanOut:
     return _plan(await services.executor.refuse(plan_id))
 
 
+@router.post("/plans/{plan_id}/stop")
+async def stop_plan(plan_id: str, services: ServicesDep) -> PlanOut:
+    """« Arrêter » : l'étape en cours se termine, les suivantes ne partent pas."""
+    return _plan(await services.executor.stop(plan_id))
+
+
 # ---------------------------------------------------------------------- journal des actions
 
 
@@ -206,6 +213,20 @@ async def browser_state(services: ServicesDep) -> BrowserOut:
             for g in await access.grants()
         ],
         login_domain=access.login_domain,
+    )
+
+
+@router.get("/browser/live")
+async def browser_live(services: ServicesDep) -> Response:
+    """La dernière image de la page de Jarvis (#34), lue par l'app sur cette machine."""
+    live = services.browser.session.live
+    frame = live.frame if live is not None else None
+    if frame is None:
+        raise NotFoundError("Le navigateur de Jarvis n'a encore rien affiché.")
+    return Response(
+        content=frame.jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store", "X-Frame-Seq": str(frame.seq)},
     )
 
 

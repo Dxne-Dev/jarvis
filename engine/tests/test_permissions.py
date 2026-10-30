@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,7 +12,7 @@ import pytest
 from ojarvis.agent.executor import PlanExecutor, fill_placeholders
 from ojarvis.agent.plans import PlanIn, PlanStore, StepIn
 from ojarvis.audit.journal import AuditJournal
-from ojarvis.core.errors import InvalidInputError
+from ojarvis.core.errors import ConflictError, InvalidInputError
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
 from ojarvis.events.bus import EventBus
@@ -200,3 +201,62 @@ async def test_interrupted_plans_are_never_replayed(setup: Any, db: Database) ->
     assert [s.status for s in after.steps] == ["failed", "skipped"]
     assert act.calls == []
     assert "plan.interrompu" in await actions(journal)
+
+
+async def test_stop_lets_the_running_step_finish_and_launches_no_other(
+    setup: Any, db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gate, journal, _, act, _ = setup
+    store = PlanStore(db, gate)
+    record = await store.create(
+        PlanIn(
+            titre="Commander le thé",
+            etapes=[
+                StepIn(outil="agir", arguments={"cible": "panier"}, pourquoi="x"),
+                StepIn(outil="agir", arguments={"cible": "paiement"}, pourquoi="y"),
+                StepIn(outil="agir", arguments={"cible": "confirmation"}, pourquoi="z"),
+            ],
+        ),
+        conversation_id=None,
+        request="r",
+        tainted=False,
+    )
+    executor = PlanExecutor(
+        plans=store,
+        gate=gate,
+        journal=journal,
+        router=cast(Any, None),
+        conversations=cast(Any, None),
+        bus=EventBus(),
+    )
+    sections: list[list[str]] = []
+
+    async def synthesize(_plan: Any, parts: list[str]) -> str:
+        sections.append(parts)
+        return "Arrêté après le panier."
+
+    monkeypatch.setattr(executor, "_synthesize", synthesize)
+    started, release = asyncio.Event(), asyncio.Event()
+    run = act.run
+
+    async def slow(args: Any, ctx: Any) -> Any:
+        started.set()
+        await release.wait()
+        return await run(args, ctx)
+
+    monkeypatch.setattr(act, "run", slow)
+    with pytest.raises(ConflictError):
+        await executor.stop(record.id)  # pas encore lancé : rien à arrêter
+    await executor.approve(record.id)
+    await started.wait()
+    await executor.stop(record.id)
+    release.set()
+    await executor._running[record.id]
+    after = await store.get(record.id)
+    assert after.status == "stopped"
+    assert [s.status for s in after.steps] == ["done", "skipped", "skipped"]
+    assert act.calls == [("panier", "")]  # l'étape en cours a fini, aucune autre n'est partie
+    assert "Arrêté par l'utilisateur avant l'étape 2." in sections[0]
+    assert "plan.arrete" in await actions(journal)
+    with pytest.raises(ConflictError):
+        await executor.stop(record.id)  # fini : plus rien à arrêter

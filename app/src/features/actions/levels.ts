@@ -20,6 +20,7 @@ export const PLAN_STATUS: Record<PlanStatus, string> = {
   done: "Terminé",
   failed: "Interrompu",
   refused: "Refusé",
+  stopped: "Arrêté par toi",
 };
 
 export const STEP_STATUS: Record<StepStatus, string> = {

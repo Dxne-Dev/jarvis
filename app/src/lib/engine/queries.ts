@@ -408,6 +408,20 @@ export function useDecidePlan() {
   });
 }
 
+/** « Arrêter » : l'étape en cours se termine, les suivantes ne partent pas. */
+export function useStopPlan() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      requireClient(client).post<Plan>(`/v1/plans/${encodeURIComponent(id)}/stop`),
+    onSuccess: (plan) => {
+      queryClient.setQueryData(["plans", "detail", plan.id], plan);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["plans"] }),
+  });
+}
+
 export function useAudit() {
   const client = useEngineStore((s) => s.client);
   return useQuery({
