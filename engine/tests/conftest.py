@@ -93,6 +93,8 @@ def client(
     with TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"}) as test_client:
         # La carte de la machine n'est jamais relevée sur la machine qui lance les tests.
         test_client.app.state.services.machine._collect = fake_machine  # type: ignore[attr-defined]
+        # Les fournisseurs simulés sont ceux du profil « Auto » ; « Tout Meta » a ses tests.
+        test_client.patch("/v1/settings", json={"model_profile": "auto"}).raise_for_status()
         yield test_client
 
 

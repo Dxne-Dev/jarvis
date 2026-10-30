@@ -29,9 +29,10 @@ class Preferences(BaseModel):
     sphere_quality: Literal["auto", "high", "low"] = "auto"
     #: Modèle imposé par type de tâche, sous la forme « fournisseur/modèle » (absent = auto).
     routing: dict[str, str] = Field(default_factory=dict)
-    #: Profil de modèles : « meta » met Muse Spark en tête de chaque tâche (les autres
-    #: fournisseurs restent en secours). Désactivé par défaut.
-    model_profile: Literal["auto", "meta"] = "auto"
+    #: Profil de modèles. « meta » (par défaut) : rien que des modèles de Meta, secours
+    #: compris (texte, écoute, voix), et aucun modèle d'un autre éditeur, même petit et local.
+    #: « auto » : tous les fournisseurs configurés, avec les modèles locaux.
+    model_profile: Literal["auto", "meta"] = "meta"
     #: Profil « Tout Meta » : après ce nombre d'échecs de la même commande (un test toujours
     #: rouge), le tour suivant passe au modèle de relais, plus fort. 0 : relais coupé.
     relay_after: int = Field(default=2, ge=0, le=5)

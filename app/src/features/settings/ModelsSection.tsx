@@ -201,7 +201,7 @@ export function ModelsSection() {
           {
             value: "meta",
             label: "Tout Meta",
-            hint: "Muse Spark pour chaque tâche (la lecture de l'écran aussi, si elle est réglée « En ligne ») ; Muse Spark Open en secours, puis les autres. Clé Meta requise.",
+            hint: "Rien que des modèles de Meta, secours compris : Muse Spark (texte et écran), Muse Spark Open en secours, Muse Wonder en relais, Muse Voice Transcribe (écoute) et MMS (voix). Sans mot de réveil : le raccourci ou le bouton micro. La mémoire change de méthode au prochain démarrage. Clé Meta requise.",
             // Seul ce choix demande la clé : sans elle, on peut toujours revenir en arrière.
             disabled: !configured.has("meta"),
           },
