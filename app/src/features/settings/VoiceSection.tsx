@@ -12,6 +12,7 @@ import {
 import type { Preferences, VoiceStatus } from "../../lib/engine/types";
 import { Choice, PreferenceSwitch } from "./PreferenceControls";
 import styles from "./SettingsScreen.module.css";
+import voiceStyles from "./VoiceSection.module.css";
 
 const STATE_LABEL: Record<VoiceStatus["state"], string> = {
   off: "Coupée",
@@ -51,10 +52,10 @@ function VoiceState() {
     .map(([key, value]) => `${MODEL_LABEL[key] ?? key} : ${value}`)
     .join(" · ");
   return (
-    <div className={styles.voiceStatus} data-tone={statusTone(data)} role="status">
-      <span className={styles.voiceDot} aria-hidden="true" />
-      <div className={styles.voiceStatusText}>
-        <p className={styles.voiceStatusTitle}>{title}</p>
+    <div className={voiceStyles.voiceStatus} data-tone={statusTone(data)} role="status">
+      <span className={voiceStyles.voiceDot} aria-hidden="true" />
+      <div className={voiceStyles.voiceStatusText}>
+        <p className={voiceStyles.voiceStatusTitle}>{title}</p>
         {data.error && <p className={styles.radioHint}>{data.error}</p>}
         {models && <p className={styles.radioHint}>{models}</p>}
         <p className={styles.radioHint}>

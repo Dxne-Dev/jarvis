@@ -1,0 +1,37 @@
+.voiceStatus {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.voiceDot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+
+.voiceStatus[data-tone="ok"] .voiceDot {
+  background: var(--color-accent);
+  box-shadow: var(--glow-accent);
+}
+
+.voiceStatus[data-tone="down"] .voiceDot {
+  background: var(--color-danger);
+}
+
+.voiceStatusText {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.voiceStatusTitle {
+  margin: 0;
+  font-weight: var(--weight-medium);
+}

@@ -10,6 +10,7 @@ import {
 } from "../../lib/engine/queries";
 import type { ModelInfo, ProviderStatus } from "../../lib/engine/types";
 import { Choice, PreferenceSwitch } from "./PreferenceControls";
+import modelStyles from "./ModelsSection.module.css";
 import styles from "./SettingsScreen.module.css";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -60,7 +61,7 @@ function RelaySettings({ models }: { models: ModelInfo[] }) {
   const disabled = update.isPending;
   const known = models.some((m) => `${m.provider}/${m.model}` === prefs.relay_model);
   return (
-    <div className={styles.routing}>
+    <div className={modelStyles.routing}>
       <div className={styles.routingRow}>
         <label htmlFor={`${baseId}-after`} className={styles.routingLabel}>
           <span>Relais</span>
@@ -128,7 +129,7 @@ function TaskRouting({ models }: { models: ModelInfo[] }) {
   };
 
   return (
-    <div className={styles.routing}>
+    <div className={modelStyles.routing}>
       {TASKS.map((task) => {
         const fieldId = `${baseId}-${task.id}`;
         const eligible = models.filter((m) => task.id !== "vision" || m.vision);
@@ -175,16 +176,16 @@ export function ModelsSection() {
   const configured = new Set(status.data.filter((s) => s.configured).map((s) => s.provider));
   return (
     <>
-      <ul className={styles.providers} aria-label="Fournisseurs de modèles">
+      <ul className={modelStyles.providers} aria-label="Fournisseurs de modèles">
         {status.data.map((s) => {
           const state = providerState(s);
           return (
-            <li key={s.provider} className={styles.provider} data-tone={state.tone}>
-              <span className={styles.providerDot} aria-hidden="true" />
-              <span className={styles.providerName}>
+            <li key={s.provider} className={modelStyles.provider} data-tone={state.tone}>
+              <span className={modelStyles.providerDot} aria-hidden="true" />
+              <span className={modelStyles.providerName}>
                 {PROVIDER_LABEL[s.provider] ?? s.provider}
               </span>
-              <span className={styles.providerState}>{state.label}</span>
+              <span className={modelStyles.providerState}>{state.label}</span>
             </li>
           );
         })}
