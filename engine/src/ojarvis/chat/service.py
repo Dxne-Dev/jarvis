@@ -9,26 +9,35 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import re
 import time
 from collections import Counter
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
-
-from ojarvis.agent.loop import MAX_TOOL_ROUNDS, Agent, AgentTurn
+from ojarvis.agent.loop import MAX_TOOL_ROUNDS, Agent
 from ojarvis.agent.reports import PlanReport, RanCommand, plan_summary, urls_in
-from ojarvis.agent.rules import PLAN_MISSING, ROUNDS_EXHAUSTED, claims_missing_plan
-from ojarvis.context.engine import BuiltContext, ContextEngine
+from ojarvis.agent.rules import ROUNDS_EXHAUSTED, claims_missing_plan
+from ojarvis.chat.learning import ChatLearning
+from ojarvis.chat.turns import (
+    TASKS_BY_CHANNEL,
+    TRACE_TITLES,
+    RelayPolicy,
+    _add_to_last_user_message,
+    _context_event,
+    _keep_marks,
+    _remind_plan,
+    _Round,
+    _sentences,
+    _Turn,
+)
+from ojarvis.context.engine import ContextEngine
 from ojarvis.conversations.store import DEFAULT_TITLE, ConversationStore, MessageRecord
 from ojarvis.core.errors import InvalidInputError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.errors import LLMError
-from ojarvis.llm.router import ModelRouter, Relay, Route, RoutedStream
-from ojarvis.llm.structured import generate_structured
+from ojarvis.llm.router import ModelRouter, Relay
 from ojarvis.llm.types import (
     LLMRequest,
     Message,
@@ -62,172 +71,7 @@ class ChatEvent:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-class ExtractedFact(BaseModel):
-    type: Literal["fait", "preference", "profil"]
-    contenu: str = Field(min_length=3, max_length=400)
-    confiance: float = Field(ge=0, le=1)
-    remplace: int | None = Field(default=None, description="id d'un souvenir que ce fait corrige")
-
-
-class ExtractedEntity(BaseModel):
-    nom: str = Field(min_length=1, max_length=120)
-    type: Literal["moi", "personne", "projet", "evenement", "lieu", "organisation", "sujet"]
-    description: str | None = Field(default=None, max_length=300)
-
-
-class ExtractedRelation(BaseModel):
-    source: str = Field(min_length=1, max_length=120)
-    lien: str = Field(min_length=2, max_length=80)
-    cible: str = Field(min_length=1, max_length=120)
-
-
-class Extraction(BaseModel):
-    faits: list[ExtractedFact] = Field(default_factory=list, max_length=8)
-    entites: list[ExtractedEntity] = Field(default_factory=list, max_length=10)
-    relations: list[ExtractedRelation] = Field(default_factory=list, max_length=10)
-
-
-EXTRACTION_PROMPT = (
-    "Tu tiens à jour la mémoire de Jarvis sur l'utilisateur. Lis l'échange ci-dessous et "
-    "relève seulement les informations durables que l'utilisateur donne sur lui-même : "
-    "identité, goûts, habitudes, projets, proches, contraintes. Ignore le temporaire (météo du "
-    "jour, humeur passagère), les suppositions et les connaissances générales. Chaque fait est "
-    "une phrase autonome à la troisième personne ; désigne l'utilisateur par son prénom s'il "
-    "est connu, sinon « L'utilisateur ». « profil » = identité stable (nom, ville, métier) ; "
-    "« preference » = goût ou façon de faire ; « fait » = le reste. Si un fait corrige un "
-    "souvenir existant, mets son id dans « remplace ». Un prénom ne se retient que s'il est "
-    "dit clairement (« je m'appelle… ») ; une phrase confuse ou incomplète ne donne rien. "
-    "Relève aussi, pour la mémoire graphe, les entités durables de sa vie (personnes, projets, "
-    "événements, lieux, organisations, sujets qu'il étudie) et les relations entre elles : "
-    "l'utilisateur est l'entité « moi » (type moi) ; une relation est courte, au présent "
-    "(« travaille sur », « connaît », « habite à », « participe à », « apprend ») et relie deux "
-    "entités de la liste. Réutilise exactement les noms déjà connus. "
-    "S'il n'y a rien à retenir, renvoie des listes vides."
-)
-TITLE_PROMPT = (
-    "Donne un titre de trois à six mots, en français, sans guillemets ni point final, "
-    "pour la conversation suivante."
-)
-
-
-_TITLE_TRIM = " \t\n.!?:;«»\"'“”‘’"
-
-
-def clean_title(raw: str) -> str:
-    """Retire guillemets, ponctuation finale et espaces, dans n'importe quel ordre."""
-    first_line = raw.strip().splitlines()[0] if raw.strip() else ""
-    return " ".join(first_line.strip(_TITLE_TRIM).split())[:80]
-
-
-#: La fin d'une phrase : sa ponctuation (mise en forme comprise), puis un blanc.
-_SENTENCE_END = re.compile(r"[.!?…:][*_`]*\s+")
-
-
-def _plain(sentence: str) -> str:
-    """Une phrase sans mise en forme, casse ni ponctuation finale : pour reconnaître une
-    répétition."""
-    return " ".join(re.sub(r"[*_`]", "", sentence).split()).lower().rstrip(".!?…: ")
-
-
-def _sentences(text: str) -> set[str]:
-    return {plain for part in _SENTENCE_END.split(text) if (plain := _plain(part))}
-
-
-@dataclass
-class _Round:
-    """Un appel au modèle dans un tour : ce qu'il a dit, pensé et demandé."""
-
-    said: list[str] = field(default_factory=list)
-    reasoning: list[str] = field(default_factory=list)
-    calls: list[ToolCall] = field(default_factory=list)
-    #: Après des outils, le début du texte est retenu le temps de vérifier qu'il ne répète
-    #: pas une phrase déjà dite dans ce tour (le 30/10, Muse Spark redisait « Je vais cliquer
-    #: sur Projets, puis sur Blog » après avoir proposé le plan).
-    checking: bool = False
-    held: str = ""
-    known: set[str] = field(default_factory=set)
-
-    def unrepeated(self, *, final: bool) -> str:
-        """Le texte retenu, moins ses premières phrases déjà dites ; « » tant qu'une phrase
-        n'est pas finie (`final` : le modèle a fini d'écrire)."""
-        while self.checking:
-            held = self.held.lstrip()
-            end = _SENTENCE_END.search(held)
-            if end is None and not final:
-                return ""
-            sentence = held[: end.end()] if end else held
-            if _plain(sentence) and _plain(sentence) in self.known:
-                self.held = held[len(sentence) :]
-                continue
-            self.checking = False
-        text, self.held = self.held, ""
-        return text
-
-
-@dataclass
-class _Turn:
-    """État d'un tour en cours (réponse partielle, route, jetons, chronomètre)."""
-
-    assistant: MessageRecord
-    start: float
-    parts: list[str] = field(default_factory=list)
-    route: RouteInfo | None = None
-    usage: Usage = field(default_factory=Usage)
-    state: RoutedStream = field(default_factory=RoutedStream)
-    first_token_ms: float | None = None
-    trace_id: str = ""
-    finished: bool = False
-    agent: AgentTurn = field(default_factory=AgentTurn)
-    #: Un modèle plus fort pour ce tour, après des échecs répétés (profil « Tout Meta »).
-    relay: Relay | None = None
-
-
-TRACE_TITLES = {"voice": "Tour vocal", "shell": "Tour du mode shell"}
-#: Le relais réglé : (modèle de relais, échecs de la même commande avant de l'appeler), ou
-#: None quand il est coupé ou hors du profil « Tout Meta ».
-RelayPolicy = Callable[[], tuple[Route, int] | None]
-TASKS_BY_CHANNEL: dict[str, TaskType] = {"voice": "voice", "shell": "reasoning"}
-
-
-def _remind_plan(request: LLMRequest, said: str) -> None:
-    """Le modèle a annoncé un plan sans le proposer : il est relancé (relance non gardée)."""
-    if said:  # un message vide, sans appel d'outil, serait refusé par l'API
-        request.messages.append(Message("assistant", said))
-    request.messages.append(Message("user", PLAN_MISSING))
-
-
-def _keep_marks(turn: AgentTurn, reports: list[PlanReport]) -> None:
-    """Les sorties revenues d'un plan restent des données pour toute la suite : la garde des
-    adresses inventées, le signalement des plans et l'arrêt de « toujours » tiennent."""
-    for report in reports:
-        turn.tainted = turn.tainted or report.tainted
-        turn.web = turn.web or report.web
-        turn.known_urls |= report.urls
-
-
-def _add_to_last_user_message(request: LLMRequest, text: str) -> None:
-    """Ajoute un bloc (résultats d'un plan) à la demande de l'utilisateur, sans un second
-    message « user » que certains fournisseurs refusent."""
-    last = request.messages[-1]
-    if last.role == "user":
-        request.messages[-1] = Message("user", f"{last.content}\n\n{text}")
-    else:
-        request.messages.append(Message("user", text))
-
-
-def _context_event(context: BuiltContext) -> dict[str, Any]:
-    return {
-        "budget": context.budget,
-        "used": context.used,
-        "items": [
-            {"kind": i.kind, "preview": i.text[:90], "kept": i.kept}
-            for i in context.items
-            if i.kind != "systeme"
-        ],
-    }
-
-
-class ChatService:
+class ChatService(ChatLearning):
     def __init__(
         self,
         *,
@@ -631,104 +475,6 @@ class ChatService:
         return {"tools": turn.agent.tools, "plans": turn.agent.plans}
 
     # ------------------------------------------------------------------ après la réponse
-
-    def _after(
-        self,
-        conversation_id: str,
-        needs_title: bool,
-        user: MessageRecord,
-        reply: MessageRecord,
-        *,
-        learn: bool = True,
-    ) -> None:
-        task = asyncio.create_task(
-            self._learn_from(conversation_id, needs_title, user, reply, learn=learn)
-        )
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
-
-    async def _learn_from(
-        self,
-        conversation_id: str,
-        needs_title: bool,
-        user: MessageRecord,
-        reply: MessageRecord,
-        *,
-        learn: bool = True,
-    ) -> None:
-        await self._conversations.index_exchange(user, reply)
-        if needs_title:
-            await self._title(conversation_id, user, reply)
-        if self.learn and learn:
-            await self._extract(user, reply)
-
-    async def _title(self, conversation_id: str, user: MessageRecord, reply: MessageRecord) -> None:
-        try:
-            result = await self._router.complete(
-                "title",
-                LLMRequest(
-                    messages=[
-                        Message("system", TITLE_PROMPT),
-                        Message(
-                            "user", f"Utilisateur : {user.content}\nJarvis : {reply.content}"[:3000]
-                        ),
-                    ],
-                    max_tokens=30,
-                ),
-            )
-        except LLMError:
-            log.warning("title_generation_failed")
-            return
-        title = clean_title(result.text)
-        if title:
-            await self._conversations.rename(conversation_id, title[:80])
-            await self._bus.publish("conversation.updated", {"id": conversation_id})
-
-    async def _extract(self, user: MessageRecord, reply: MessageRecord) -> None:
-        known = [
-            hit
-            for hit in await self._memory.search(user.content, k=8)
-            if hit.record.kind != "impasse"
-        ]
-        known_lines = "\n".join(
-            f"- id {h.record.id} [{h.record.kind}] {h.record.content}" for h in known
-        )
-        names = await self._graph.known_names() if self._graph else []
-        entity_lines = ", ".join(f"{n} ({k})" for n, k in names)
-        prompt = (
-            f"Souvenirs existants proches :\n{known_lines or '(aucun)'}\n\n"
-            f"Entités déjà connues : {entity_lines or '(aucune)'}\n\n"
-            f"Échange :\nUtilisateur : {user.content}\nJarvis : {reply.content}"
-        )[:6000]
-        try:
-            extraction = await generate_structured(
-                self._router,
-                "extract",
-                [Message("system", EXTRACTION_PROMPT), Message("user", prompt)],
-                Extraction,
-            )
-        except LLMError:
-            log.warning("memory_extraction_failed")
-            return
-        known_ids = {h.record.id for h in known}
-        for fact in extraction.faits:
-            if fact.confiance < 0.6:
-                continue
-            if fact.remplace is not None and fact.remplace in known_ids:
-                await self._memory.update(fact.remplace, content=fact.contenu, kind=fact.type)
-            else:
-                await self._memory.add(
-                    fact.type,
-                    fact.contenu,
-                    source="conversation",
-                    source_message_id=user.id,
-                    confidence=fact.confiance,
-                )
-        if self._graph is not None and (extraction.entites or extraction.relations):
-            await self._graph.remember(
-                [(e.nom, e.type, e.description) for e in extraction.entites],
-                [(r.source, r.lien, r.cible) for r in extraction.relations],
-            )
 
     async def drain(self) -> None:
         """Attend la fin des apprentissages en cours (tests, arrêt propre)."""
