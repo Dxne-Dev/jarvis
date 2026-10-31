@@ -12,7 +12,7 @@ from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ojarvis.agent.loop import RanCommand
+from ojarvis.agent.reports import RanCommand
 from ojarvis.api.deps import ServicesDep
 from ojarvis.chat.service import ChatEvent
 from ojarvis.conversations.store import ConversationRecord, MessageRecord

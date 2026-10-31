@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from ojarvis.agent.loop import PLAN_MISSING
 from ojarvis.agent.plans import PLAN_TOOL
+from ojarvis.agent.rules import PLAN_MISSING
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply, Script
 from ojarvis.llm.structured import TOOL_NAME
 from ojarvis.llm.types import LLMRequest, ToolCall

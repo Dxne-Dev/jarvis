@@ -18,18 +18,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ojarvis.agent.loop import (
-    MAX_TOOL_ROUNDS,
-    PLAN_MISSING,
-    ROUNDS_EXHAUSTED,
-    Agent,
-    AgentTurn,
-    PlanReport,
-    RanCommand,
-    claims_missing_plan,
-    plan_summary,
-    urls_in,
-)
+from ojarvis.agent.loop import MAX_TOOL_ROUNDS, Agent, AgentTurn
+from ojarvis.agent.reports import PlanReport, RanCommand, plan_summary, urls_in
+from ojarvis.agent.rules import PLAN_MISSING, ROUNDS_EXHAUSTED, claims_missing_plan
 from ojarvis.context.engine import BuiltContext, ContextEngine
 from ojarvis.conversations.store import DEFAULT_TITLE, ConversationStore, MessageRecord
 from ojarvis.core.errors import InvalidInputError
