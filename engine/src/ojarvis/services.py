@@ -47,6 +47,7 @@ from ojarvis.desktop.locate import Locator, ScreenMarks
 from ojarvis.desktop.pointer import PortalPointer
 from ojarvis.desktop.sam import SamClient
 from ojarvis.desktop.screen import capture
+from ojarvis.desktop.screencast import ScreenShare, live_or_capture
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.integrations.google import GoogleAccount, attach_agenda
@@ -167,6 +168,7 @@ class _Actions:
     plans: PlanStore
     executor: PlanExecutor
     marks: ScreenMarks
+    share: ScreenShare
 
 
 async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
@@ -222,6 +224,13 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
     desktop = config.paths.state_dir / "desktop"
     marks = ScreenMarks(desktop / "reperes")
     sam = SamClient(lambda: secrets.get("MODEL_API_KEY"), http, tracer)
+
+    async def share_event(event: str, payload: dict[str, Any]) -> None:
+        await bus.publish(event, payload, persist=False)
+
+    # L'écran partagé en direct : les outils lisent sa dernière image au lieu d'une capture.
+    share = ScreenShare(desktop / "partage-ecran.jeton", notify=share_event)
+    screen = live_or_capture(share, capture)
     tools = build_registry(
         browser.session,
         [
@@ -230,8 +239,9 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
             *desktop_tools(
                 router,
                 screen_vision,
-                locator=Locator(sam, router, marks, capture),
+                locator=Locator(sam, router, marks, screen),
                 pointer=PortalPointer(desktop / "controle-a-distance.jeton"),
+                grab=screen,
             ),
             # Proposés seulement en mode shell ; journaux et captures dans l'état du moteur.
             RunCommand(user_home, log_dir=config.paths.state_dir / "shell", sessions=servers),
@@ -293,6 +303,7 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
         plans=plans,
         executor=executor,
         marks=marks,
+        share=share,
     )
 
 
@@ -503,6 +514,8 @@ class Services:
     machine: MachineCard
     #: Les éléments trouvés à l'écran (#48) et leurs captures annotées.
     marks: ScreenMarks
+    #: L'écran partagé en direct (portail ScreenCast).
+    share: ScreenShare
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -652,6 +665,7 @@ class Services:
             anticipation=anticipation,
             machine=machine,
             marks=acts.marks,
+            share=acts.share,
         )
         services._holder = holder
         await acts.executor.recover()
@@ -798,6 +812,7 @@ class Services:
 
     async def stop(self) -> None:
         await self.bus.publish("engine.stopping", {})
+        await self.share.stop()
         await self.voice.close()
         await self.chat.close()
         await self.anticipation.close()

@@ -523,6 +523,7 @@ def desktop_tools(
     *,
     locator: Locator | None = None,
     pointer: Pointer | None = None,
+    grab: Callable[[], Awaitable[bytes]] = capture,
 ) -> list[Tool[Any]]:
     catalog = AppCatalog()
     tools: list[Tool[Any]] = [
@@ -531,11 +532,11 @@ def desktop_tools(
         OpenApp(catalog),
         CloseApp(catalog),
         OpenUrl(),
-        LookAtScreen(router, screen_mode),
+        LookAtScreen(router, screen_mode, grab),
         MoveFile(),
         CopyFile(),
         MakeDir(),
     ]
     if locator is not None and pointer is not None:
-        tools += [FindOnScreen(locator, screen_mode), ClickOnScreen(locator.marks, pointer)]
+        tools += [FindOnScreen(locator, screen_mode), ClickOnScreen(locator.marks, pointer, grab)]
     return tools

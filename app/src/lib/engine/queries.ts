@@ -11,6 +11,7 @@ import type {
   AutomationRun,
   BrowserGrant,
   BrowserState,
+  ScreenShareState,
   CartesiaVoice,
   CheckResult,
   Conversation,
@@ -450,6 +451,28 @@ export function useTools() {
     queryFn: () => requireClient(client).get<ToolInfo[]>("/v1/tools"),
     enabled: client !== null,
     staleTime: 300_000,
+  });
+}
+
+export function useScreenShare() {
+  const client = useEngineStore((s) => s.client);
+  return useQuery({
+    queryKey: ["screen-share"],
+    queryFn: () => requireClient(client).get<ScreenShareState>("/v1/desktop/share"),
+    enabled: client !== null,
+  });
+}
+
+/** Partager l'écran (GNOME demande ton accord la première fois) ou arrêter. */
+export function useToggleScreenShare() {
+  const client = useEngineStore((s) => s.client);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      requireClient(client).post<ScreenShareState>(`/v1/desktop/share/${on ? "start" : "stop"}`),
+    onSuccess: (state) => {
+      queryClient.setQueryData(["screen-share"], state);
+    },
   });
 }
 

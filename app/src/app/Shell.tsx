@@ -16,6 +16,7 @@ import { quitApp } from "../lib/engine/connection";
 import { usePlans } from "../lib/engine/queries";
 import { useEngineStore } from "../lib/engine/store";
 import { useReducedMotion } from "../lib/motion";
+import { ShareBanner } from "../features/desktop/ShareBanner";
 import { Notices } from "./Notices";
 import styles from "./Shell.module.css";
 
@@ -138,6 +139,7 @@ export function Shell() {
       </nav>
       <div className={styles.main}>
         <OfflineBanner />
+        <ShareBanner />
         <main id="contenu" className={styles.content} tabIndex={-1}>
           <Outlet />
         </main>

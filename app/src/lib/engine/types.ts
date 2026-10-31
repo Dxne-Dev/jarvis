@@ -316,6 +316,13 @@ export interface PlanSummary {
   steps: { position: number; description: string; level: PermissionLevel }[];
 }
 
+/** L'écran partagé en direct avec Jarvis (portail ScreenCast de GNOME). */
+export interface ScreenShareState {
+  active: boolean;
+  frames: number;
+  since: number | null;
+}
+
 export type PlanStatus =
   "proposed" | "approved" | "running" | "done" | "failed" | "refused" | "stopped";
 export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
