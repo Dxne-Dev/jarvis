@@ -15,7 +15,7 @@ from ojarvis.browser.live import LiveFrame, LiveView
 from ojarvis.browser.session import BrowserSession
 from ojarvis.browser.vault import CookieVault
 from ojarvis.services import Services
-from tests.test_browser import site  # noqa: F401 - la boutique de test, servie en local
+from tests.test_browser_pages import site  # noqa: F401 - la boutique de test, servie en local
 
 
 class FakeCdp:
