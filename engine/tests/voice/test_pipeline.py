@@ -12,13 +12,8 @@ import pytest
 
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.voice.audio import FileSource, MemorySink, Pcm, VirtualClock
-from ojarvis.voice.pipeline import (
-    SPOKEN_LLM_ERROR,
-    SPOKEN_STT_ERROR,
-    VoiceConfig,
-    VoicePipeline,
-    VoiceState,
-)
+from ojarvis.voice.pipeline import VoicePipeline
+from ojarvis.voice.states import SPOKEN_LLM_ERROR, SPOKEN_STT_ERROR, VoiceConfig, VoiceState
 from ojarvis.voice.stt import SttError, Transcript
 from ojarvis.voice.vad import EndpointConfig, EnergyVad, SpeechDetector
 from tests.voice.fakes import (

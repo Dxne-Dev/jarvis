@@ -9,12 +9,14 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import httpx
 
 from ojarvis.core.downloads import ChecksumError
 from ojarvis.core.logs import get_logger
 from ojarvis.security.redaction import REDACTOR
+from ojarvis.settings_store import Preferences
 from ojarvis.voice.audio import (
     MicrophoneSilentError,
 )
@@ -182,3 +184,12 @@ def _cause(exc: Exception) -> str:
     if len(text) > 160:
         text = text[:159] + "…"
     return f"{type(exc).__name__} : {text}" if text else type(exc).__name__
+
+
+def _device_prefs(prefs: Preferences) -> dict[str, Any]:
+    """Ce qui oblige à relancer la voix : les périphériques, et le profil (autres modèles)."""
+    return {
+        "input": prefs.voice_input_device,
+        "output": prefs.voice_output_device,
+        "profile": prefs.model_profile,
+    }

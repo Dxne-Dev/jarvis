@@ -23,7 +23,7 @@ import anyio.to_thread
 import httpx
 
 from ojarvis.chat.service import ChatService
-from ojarvis.core.downloads import PinnedFile, fetch_pinned, files_present
+from ojarvis.core.downloads import fetch_pinned, files_present
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.security.secrets import SecretStore
@@ -40,44 +40,28 @@ from ojarvis.voice.devices import (
     EC_SOURCE,
     EchoCancel,
     _describe,
+    _device_prefs,
     _portaudio_sees,
     _refresh_devices,
 )
-from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline, VoiceState
-from ojarvis.voice.stt import WHISPER_FILES, CloudTranscriber, WhisperTranscriber
+from ojarvis.voice.model_sets import SENSITIVITY, ModelSets, model_sets
+from ojarvis.voice.pipeline import VoicePipeline
+from ojarvis.voice.states import VoiceConfig, VoiceState
+from ojarvis.voice.stt import CloudTranscriber, WhisperTranscriber
 from ojarvis.voice.stt_online import (
     CartesiaSTT,
     GroqTranscriber,
     MetaTranscriber,
     StreamingTranscriber,
 )
-from ojarvis.voice.tts import CARTESIA_VERSION, PIPER_FILES, CartesiaTTS, FallbackTTS, PiperTTS
-from ojarvis.voice.tts_meta import MMS_FILES, EspeakTTS, MmsTTS
+from ojarvis.voice.tts import CARTESIA_VERSION, CartesiaTTS, FallbackTTS, PiperTTS
+from ojarvis.voice.tts_meta import EspeakTTS, MmsTTS
+from ojarvis.voice.turn import TurnReport
 from ojarvis.voice.vad import EndpointConfig, EnergyVad, SileroVad
-from ojarvis.voice.wake import WAKE_FILES, OpenWakeWord
+from ojarvis.voice.wake import OpenWakeWord
 
 log = get_logger(__name__)
 
-ModelSets = dict[str, tuple[str, dict[str, PinnedFile]]]
-MODEL_SETS: ModelSets = {
-    "reveil": ("openwakeword", WAKE_FILES),
-    "transcription": ("faster-whisper-base", WHISPER_FILES),
-    "voix_locale": ("piper", PIPER_FILES),
-}
-#: « Tout Meta » : seule la voix de Meta se télécharge.
-META_MODEL_SETS: ModelSets = {"voix_meta": ("mms-tts-fra", MMS_FILES)}
-
-
-def model_sets(profile: str) -> ModelSets:
-    return META_MODEL_SETS if profile == "meta" else MODEL_SETS
-
-
-#: Seuils du mot de réveil selon la sensibilité choisie dans Réglages.
-SENSITIVITY: dict[str, tuple[float, float, bool]] = {
-    "basse": (0.6, 0.3, False),
-    "normale": (0.5, 0.15, True),
-    "haute": (0.35, 0.1, True),
-}
 
 RETRY_DELAYS_S: tuple[float, ...] = (5.0, 15.0, 60.0)
 
@@ -511,12 +495,3 @@ class VoiceService:
         ]
         self._voices_cache = (time.monotonic(), voices)
         return voices
-
-
-def _device_prefs(prefs: Preferences) -> dict[str, Any]:
-    """Ce qui oblige à relancer la voix : les périphériques, et le profil (autres modèles)."""
-    return {
-        "input": prefs.voice_input_device,
-        "output": prefs.voice_output_device,
-        "profile": prefs.model_profile,
-    }
