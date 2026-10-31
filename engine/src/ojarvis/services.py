@@ -43,6 +43,7 @@ from ojarvis.core.errors import UnavailableError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
+from ojarvis.desktop.film import Filmer
 from ojarvis.desktop.locate import Locator, ScreenMarks
 from ojarvis.desktop.pointer import PortalPointer
 from ojarvis.desktop.sam import SamClient
@@ -242,6 +243,13 @@ async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
                 locator=Locator(sam, router, marks, screen),
                 pointer=PortalPointer(desktop / "controle-a-distance.jeton"),
                 grab=screen,
+                filmer=Filmer(
+                    share,
+                    lambda: secrets.get("MODEL_API_KEY"),
+                    http,
+                    desktop / "travail",
+                    tracer=tracer,
+                ),
             ),
             # Proposés seulement en mode shell ; journaux et captures dans l'état du moteur.
             RunCommand(user_home, log_dir=config.paths.state_dir / "shell", sessions=servers),

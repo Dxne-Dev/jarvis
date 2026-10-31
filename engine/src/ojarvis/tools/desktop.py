@@ -22,6 +22,7 @@ from pydantic import Field
 from ojarvis.context.engine import PERSONA
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
 from ojarvis.desktop import apps as applications
+from ojarvis.desktop.film import Filmer
 from ojarvis.desktop.locate import Kind, Locator, Mark, ScreenMarks, unchanged
 from ojarvis.desktop.pointer import Pointer
 from ojarvis.desktop.screen import capture, shrink
@@ -517,6 +518,54 @@ class ClickOnScreen(Tool[ClickArgs]):
         )
 
 
+class FilmArgs(ToolArgs):
+    question: str = Field(
+        min_length=2,
+        max_length=500,
+        description="Ce que l'utilisateur veut comprendre de ce qui va se passer à l'écran.",
+    )
+    duree_s: int = Field(
+        default=15, ge=3, le=30, description="Durée de l'extrait, en secondes (30 au plus)."
+    )
+
+
+class FilmScreen(Tool[FilmArgs]):
+    name: ClassVar[str] = "filmer_ecran"
+    description: ClassVar[str] = (
+        "Filme l'écran quelques secondes (30 au plus), seulement quand l'utilisateur le "
+        "demande (« filme pendant que je reproduis le bug »), puis Muse Spark explique ce qui "
+        "s'est passé. Dis-lui avant que l'enregistrement commence. La vidéo n'est gardée nulle "
+        "part."
+    )
+    Args: ClassVar[type[ToolArgs]] = FilmArgs
+    level: ClassVar[Level] = Level.LIRE
+    os_control: ClassVar[bool] = True
+
+    def __init__(self, filmer: Filmer, mode: Callable[[], ScreenMode]) -> None:
+        self._filmer = filmer
+        self._mode = mode
+
+    def describe(self, args: FilmArgs) -> str:
+        return f"Filmer ton écran pendant {args.duree_s} s : « {args.question} »"
+
+    async def run(self, args: FilmArgs, ctx: ToolContext) -> ToolOutput:
+        del ctx
+        if self._mode() == "local":
+            raise InvalidInputError(
+                "Filmer envoie la vidéo à Muse Spark (Meta), et ta lecture de l'écran est "
+                "réglée « sur ce PC » : rien n'est filmé. Change-la dans Réglages › Contrôle "
+                "du PC si tu veux t'en servir.",
+                code="screen_local_only",
+            )
+        text = await self._filmer.film(args.question, args.duree_s)
+        return ToolOutput(
+            text,
+            {"duree_s": args.duree_s, "modele": "muse-spark-1.3"},
+            external=True,
+            source="ton écran (vidéo)",
+        )
+
+
 def desktop_tools(
     router: ModelRouter,
     screen_mode: Callable[[], ScreenMode],
@@ -524,6 +573,7 @@ def desktop_tools(
     locator: Locator | None = None,
     pointer: Pointer | None = None,
     grab: Callable[[], Awaitable[bytes]] = capture,
+    filmer: Filmer | None = None,
 ) -> list[Tool[Any]]:
     catalog = AppCatalog()
     tools: list[Tool[Any]] = [
@@ -539,4 +589,6 @@ def desktop_tools(
     ]
     if locator is not None and pointer is not None:
         tools += [FindOnScreen(locator, screen_mode), ClickOnScreen(locator.marks, pointer, grab)]
+    if filmer is not None:
+        tools.append(FilmScreen(filmer, screen_mode))
     return tools

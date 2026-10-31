@@ -124,7 +124,9 @@ OS_CONTROL_ON = (
     "bureau : trouve d'abord l'élément avec trouver_a_l_ecran, puis propose aussitôt un plan "
     "avec cliquer_ecran et le repère rendu (il reste valable 10 minutes : ne cherche pas une "
     "seconde fois). Si l'utilisateur doit d'abord mettre la fenêtre devant, utilise "
-    "attendre_s. Si l'élément est introuvable ou ambigu, demande-lui au lieu de deviner. Tu "
+    "attendre_s. Si l'élément est introuvable ou ambigu, demande-lui au lieu de deviner. Pour "
+    "un problème qui passe vite à l'écran, filmer_ecran filme un extrait, seulement sur sa "
+    "demande. Tu "
     "peux toujours capturer l'écran avec ces outils : n'invente jamais un réglage ou une "
     "permission qui t'en empêcherait, appelle l'outil et rapporte sa réponse."
 )
