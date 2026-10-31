@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import os
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -19,12 +18,21 @@ from ojarvis import __version__
 from ojarvis.agent.executor import PlanExecutor
 from ojarvis.agent.loop import Agent
 from ojarvis.agent.plans import PlanStore
+from ojarvis.agent.review import CodeReviewer
 from ojarvis.agents.orchestrator import Orchestrator
-from ojarvis.agents.specialists import STARTERS
-from ojarvis.anticipation.predictor import Predictor
-from ojarvis.anticipation.repetition import RepetitionWatcher
 from ojarvis.anticipation.service import AnticipationService
-from ojarvis.anticipation.store import SuggestionStore
+from ojarvis.assembly import (
+    _assemble_actions,
+    _assemble_agents,
+    _assemble_anticipation,
+    _assemble_mcp,
+    _assemble_memory,
+    _assemble_remote,
+    _build_router,
+    _memory_tools,
+    _open_secrets,
+    relay_policy,
+)
 from ojarvis.audit.journal import AuditJournal
 from ojarvis.automations.scheduler import AutomationScheduler
 from ojarvis.automations.steps import AutomationSteps
@@ -32,16 +40,16 @@ from ojarvis.automations.store import AutomationStore
 from ojarvis.briefing.service import BriefingService
 from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.service import BrowserAccess
-from ojarvis.browser.vault import CookieVault
 from ojarvis.chat.service import ChatService
 from ojarvis.config import EngineConfig
 from ojarvis.context.engine import ContextEngine
 from ojarvis.conversations.store import ConversationStore
-from ojarvis.core.clock import local_timezone, utc_now
-from ojarvis.core.errors import UnavailableError
+from ojarvis.core.clock import utc_now
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
+from ojarvis.desktop.locate import ScreenMarks
+from ojarvis.desktop.screencast import ScreenShare
 from ojarvis.events.bus import Event, EventBus
 from ojarvis.events.store import EventStore
 from ojarvis.integrations.google import GoogleAccount, attach_agenda
@@ -52,37 +60,24 @@ from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.fake import FakeProvider, e2e_script
 from ojarvis.llm.providers.registry import OllamaProvider, build_providers, discover_openrouter_free
 from ojarvis.llm.router import ModelRouter
-from ojarvis.memory.embeddings import E5Embedder, Embedder
+from ojarvis.memory.embeddings import E5Embedder, Embedder, HashEmbedder
 from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
 from ojarvis.notifications import Notifier
 from ojarvis.permissions.gate import PermissionGate
 from ojarvis.sandbox.runner import SandboxRunner
 from ojarvis.security.secrets import (
-    LOCAL_KEY_NAME,
-    KeyringBackend,
-    MemoryBackend,
     SecretBackend,
     SecretStore,
 )
 from ojarvis.settings_store import Preferences, SettingsStore
-from ojarvis.skills.runner import SkillRunner
+from ojarvis.shell.machine import MachineCard
 from ojarvis.skills.service import SkillService
-from ojarvis.skills.store import SkillStore
 from ojarvis.telegram.bot import TelegramService
-from ojarvis.tools.agents import agent_tools
-from ojarvis.tools.automations import automation_tools
-from ojarvis.tools.base import ToolContext, ToolRegistry
-from ojarvis.tools.catalog import build_registry
-from ojarvis.tools.code import ListCapabilities
-from ojarvis.tools.desktop import desktop_tools
-from ojarvis.tools.integrations import integration_tools
-from ojarvis.tools.mcp import mcp_tools
-from ojarvis.tools.skills import skill_tools
+from ojarvis.tools.base import ToolRegistry
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
-from ojarvis.voice.stt import GroqTranscriber
 from ojarvis.workflows.engine import WorkflowEngine
 
 log = get_logger(__name__)
@@ -90,305 +85,6 @@ log = get_logger(__name__)
 #: Modèle local de repli (voir la politique du routeur) et fréquence maximale de préchargement.
 LOCAL_MODEL = "ministral-3:3b"
 LOCAL_PRELOAD_EVERY_S = 300.0
-
-
-class UnavailableBackend:
-    """Trousseau absent : le moteur démarre quand même, l'interface affiche l'erreur."""
-
-    name = "indisponible"
-
-    def get(self, key: str) -> str | None:
-        del key
-        return None
-
-    def set(self, key: str, value: str) -> None:
-        del key, value
-        raise UnavailableError("Trousseau du système indisponible.", code="keyring_unavailable")
-
-    def delete(self, key: str) -> None:
-        self.set(key, "")
-
-
-async def _open_secrets(
-    config: EngineConfig, db: Database, secret_backend: SecretBackend | None
-) -> tuple[SecretStore, SecretBackend, str | None, list[str]]:
-    """Trousseau du système (ou de test), clé locale, import des clés présentes dans .env."""
-    keyring_error: str | None = None
-    backend: SecretBackend
-    if secret_backend is not None:
-        backend = secret_backend
-    elif config.dev_mode and os.environ.get("OJARVIS_MEMORY_KEYRING") == "1":
-        # Tests de bout en bout : trousseau en mémoire, jamais le vrai, jamais sur disque.
-        backend = MemoryBackend()
-    else:
-        try:
-            backend = await anyio.to_thread.run_sync(KeyringBackend)
-        except UnavailableError as exc:
-            keyring_error = exc.message
-            backend = UnavailableBackend()
-            log.error("keyring_unavailable")
-    secrets = SecretStore(db, backend)
-    imported: list[str] = []
-    if keyring_error is None:
-        await anyio.to_thread.run_sync(secrets.ensure_local_key)
-        if config.dotenv_path is not None:
-            imported = await anyio.to_thread.run_sync(secrets.import_dotenv, config.dotenv_path)
-    await anyio.to_thread.run_sync(secrets.load_into_redactor)
-    return secrets, backend, keyring_error, imported
-
-
-@dataclass
-class _Actions:
-    """Ce qui permet à Jarvis d'agir et de s'organiser (assemblé à part, pour la lisibilité)."""
-
-    journal: AuditJournal
-    integrity_ok: bool
-    guard: GuardProxy
-    browser: BrowserAccess
-    sandbox: SandboxRunner
-    notifier: Notifier
-    automations: AutomationStore
-    workflows: WorkflowEngine
-    scheduler: AutomationScheduler
-    integrations: IntegrationManager
-    tools: ToolRegistry
-    skills: SkillService
-    gate: PermissionGate
-    plans: PlanStore
-    executor: PlanExecutor
-
-
-async def _assemble_actions(  # noqa: PLR0917 - un assemblage, pas une logique
-    config: EngineConfig,
-    db: Database,
-    bus: EventBus,
-    secrets: SecretStore,
-    http: httpx.AsyncClient,
-    router: ModelRouter,
-    conversations: ConversationStore,
-    prefs: Callable[[], Preferences],
-) -> _Actions:
-    # Jarvis agit : journal immuable vérifié au démarrage, outils derrière une seule porte.
-    journal = AuditJournal(db, bus)
-    integrity = await journal.verify()
-    user_home = config.user_home or Path.home()
-    vault = CookieVault(
-        config.paths.data_dir / "navigateur" / "coffre.bin",
-        lambda: secrets.get(LOCAL_KEY_NAME),
-    )
-    # Toute lecture du web (navigateur, pages) passe par ce proxy : adresses publiques.
-    guard = GuardProxy(allowed_hosts=config.tool_private_hosts)
-    await guard.start()
-    browser = BrowserAccess(
-        db=db,
-        vault=vault,
-        journal=journal,
-        bus=bus,
-        home=user_home,
-        allowed_hosts=config.tool_private_hosts,
-        proxy=guard,
-    )
-    await browser.start()
-    sandbox = SandboxRunner()
-    # Jarvis s'organise : automatisations, workflows persistés, notifications.
-    notifier = Notifier(bus)
-    automations = AutomationStore(db, local_timezone)
-    workflows = WorkflowEngine(db, bus)
-    scheduler = AutomationScheduler(store=automations, workflows=workflows, bus=bus)
-    integrations = IntegrationManager(secrets.get)
-    tools = build_registry(
-        browser.session,
-        [
-            *automation_tools(automations, scheduler),
-            *integration_tools(integrations),
-            *desktop_tools(router, lambda: prefs().screen_vision),
-        ],
-    )
-    # Jarvis s'étend : les skills actifs apportent leurs outils, testés en bac à sable.
-    skills = SkillService(SkillStore(db), SkillRunner(sandbox), tools, bus)
-    for tool in skill_tools(skills):
-        tools.register(tool)
-    capabilities = tools.get("lister_capacites")
-    if isinstance(capabilities, ListCapabilities):
-        capabilities.add_section("Skills", skills.capabilities)
-    await skills.start()
-
-    def tool_context() -> ToolContext:
-        return ToolContext(
-            http=http,
-            secret=secrets.get,
-            home=user_home,
-            sandbox=sandbox,
-            allowed_private_hosts=config.tool_private_hosts,
-            fetch_proxy=f"http://127.0.0.1:{guard.port}",
-        )
-
-    gate = PermissionGate(
-        tools, journal, tool_context, os_control=lambda: prefs().os_control_enabled
-    )
-    plans = PlanStore(db, gate)
-    executor = PlanExecutor(
-        plans=plans,
-        gate=gate,
-        journal=journal,
-        router=router,
-        conversations=conversations,
-        bus=bus,
-    )
-    return _Actions(
-        journal=journal,
-        integrity_ok=integrity.ok,
-        guard=guard,
-        browser=browser,
-        sandbox=sandbox,
-        notifier=notifier,
-        automations=automations,
-        workflows=workflows,
-        scheduler=scheduler,
-        integrations=integrations,
-        tools=tools,
-        skills=skills,
-        gate=gate,
-        plans=plans,
-        executor=executor,
-    )
-
-
-def _assemble_anticipation(
-    chat: ChatService,
-    conversations: ConversationStore,
-    graph: GraphStore,
-    *,
-    db: Database,
-    bus: EventBus,
-    embedder: Embedder,
-) -> AnticipationService:
-    """Apprendre de tes demandes répétées, anticiper d'après tes habitudes (lecture seule)."""
-    store = SuggestionStore(db, bus)
-    return AnticipationService(
-        store=store,
-        watcher=RepetitionWatcher(
-            conversations, store, embedder_id=embedder.model_id, timezone=local_timezone
-        ),
-        predictor=Predictor(graph, store),
-        chat=chat,
-        conversations=conversations,
-        bus=bus,
-    )
-
-
-async def _assemble_memory(
-    db: Database, bus: EventBus, embedder: Embedder
-) -> tuple[MemoryStore, ConversationStore, GraphStore, ContextEngine]:
-    """Mémoire (faits, conversations, graphe) et moteur de contexte qui y puise."""
-    memory = MemoryStore(db, embedder, bus)
-    await memory.start()
-    conversations = ConversationStore(db, embedder)
-    await conversations.start()
-    graph = GraphStore(db, bus)
-    context = ContextEngine(memory, conversations, embedder_id=embedder.model_id, graph=graph)
-    return memory, conversations, graph, context
-
-
-def _build_router(
-    providers: dict[str, Provider],
-    catalog: Catalog,
-    *,
-    bus: EventBus,
-    tracer: Tracer,
-    holder: dict[str, Preferences],
-    http: httpx.AsyncClient,
-) -> ModelRouter:
-    ollama = providers.get("ollama")
-    return ModelRouter(
-        providers,
-        catalog,
-        bus=bus,
-        tracer=tracer,
-        overrides=lambda: holder["value"].routing,
-        # Avant une demande « locale seulement », au plus une fois par minute.
-        refresh_local=(
-            functools.partial(ollama.refresh, http) if isinstance(ollama, OllamaProvider) else None
-        ),
-    )
-
-
-async def _assemble_agents(
-    acts: _Actions,
-    core: Agent,
-    *,
-    router: ModelRouter,
-    db: Database,
-    bus: EventBus,
-    tracer: Tracer,
-) -> Orchestrator:
-    """Les agents (dev, recherche, coach) passent par le même cœur : même porte, mêmes plans."""
-    orchestrator = Orchestrator(
-        {a.name: a(router=router, core=core) for a in STARTERS},
-        db=db,
-        bus=bus,
-        tracer=tracer,
-    )
-    for tool in agent_tools(orchestrator):
-        acts.tools.register(tool)
-    await orchestrator.recover()
-    return orchestrator
-
-
-async def _assemble_mcp(
-    acts: _Actions,
-    *,
-    http: httpx.AsyncClient,
-    db: Database,
-    backend: SecretBackend,
-    config: EngineConfig,
-    bus: EventBus,
-) -> McpRegistryService:
-    """Jarvis s'étend aussi par les serveurs MCP du registre officiel (installés isolés)."""
-    mcp = McpRegistryService(
-        http=http,
-        db=db,
-        manager=acts.integrations,
-        backend=backend,
-        data_dir=config.paths.data_dir,
-        bus=bus,
-    )
-    for tool in mcp_tools(mcp):
-        acts.tools.register(tool)
-    capabilities = acts.tools.get("lister_capacites")
-    if isinstance(capabilities, ListCapabilities):
-        capabilities.add_section("Serveurs MCP installés", mcp.capabilities)
-    await mcp.start()
-    return mcp
-
-
-async def _assemble_remote(  # noqa: PLR0917 - un assemblage, pas une logique
-    acts: _Actions,
-    http: httpx.AsyncClient,
-    secrets: SecretStore,
-    backend: SecretBackend,
-    bus: EventBus,
-    chat: ChatService,
-) -> tuple[GoogleAccount, TelegramService]:
-    """Ce qui relie Jarvis à tes comptes : Google (agenda) et Telegram (téléphone)."""
-    google = GoogleAccount(http=http, secret=secrets.get, backend=backend, bus=bus)
-    await anyio.to_thread.run_sync(google.load_into_redactor)
-
-    async def google_connected() -> None:
-        await attach_agenda(google, acts.integrations, http)
-
-    google.on_connected = google_connected
-    telegram = TelegramService(
-        http=http,
-        secret=secrets.get,
-        chat=chat,
-        plans=acts.plans,
-        executor=acts.executor,
-        notifier=acts.notifier,
-        bus=bus,
-        transcriber=GroqTranscriber(lambda: secrets.get("GROQ_API_KEY"), http),
-    )
-    return google, telegram
 
 
 @dataclass
@@ -435,6 +131,11 @@ class Services:
     orchestrator: Orchestrator
     graph: GraphStore
     anticipation: AnticipationService
+    machine: MachineCard
+    #: Les éléments trouvés à l'écran (#48) et leurs captures annotées.
+    marks: ScreenMarks
+    #: L'écran partagé en direct (portail ScreenCast).
+    share: ScreenShare
     briefing: BriefingService = field(init=False)
     background: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -468,15 +169,34 @@ class Services:
         providers = providers if providers is not None else build_providers(secrets)
         holder: dict[str, Preferences] = {"value": preferences}
         router = _build_router(providers, catalog, bus=bus, tracer=tracer, holder=holder, http=http)
-        embedder = embedder or E5Embedder(
-            config.paths.cache_dir / "models" / "multilingual-e5-small"
+        # « Tout Meta » n'appelle aucun modèle d'un autre éditeur : la mémoire y cherche par
+        # mots hachés plutôt qu'avec e5. Le changement de profil vaut au prochain démarrage.
+        embedder = embedder or (
+            HashEmbedder()
+            if preferences.model_profile == "meta"
+            else E5Embedder(config.paths.cache_dir / "models" / "multilingual-e5-small")
         )
         memory, conversations, graph, context = await _assemble_memory(db, bus, embedder)
 
         acts = await _assemble_actions(
-            config, db, bus, secrets, http, router, conversations, lambda: holder["value"]
+            config,
+            db,
+            bus,
+            secrets,
+            http,
+            router,
+            conversations,
+            lambda: holder["value"],
+            tracer=tracer,
         )
-        core = Agent(gate=acts.gate, plans=acts.plans, bus=bus, executor=acts.executor)
+        machine = _memory_tools(acts, memory, embedder, config.user_home or Path.home())
+        core = Agent(
+            gate=acts.gate,
+            plans=acts.plans,
+            bus=bus,
+            executor=acts.executor,
+            reviewer=CodeReviewer(router),
+        )
         chat = ChatService(
             conversations=conversations,
             memory=memory,
@@ -487,6 +207,8 @@ class Services:
             learn=preferences.learn_from_conversations,
             agent=core,
             graph=graph,
+            relay=lambda: relay_policy(holder["value"]),
+            machine=machine,
         )
         orchestrator = await _assemble_agents(
             acts, core, router=router, db=db, bus=bus, tracer=tracer
@@ -561,6 +283,9 @@ class Services:
             orchestrator=orchestrator,
             graph=graph,
             anticipation=anticipation,
+            machine=machine,
+            marks=acts.marks,
+            share=acts.share,
         )
         services._holder = holder
         await acts.executor.recover()
@@ -647,7 +372,13 @@ class Services:
         self.preferences = preferences
         self._holder["value"] = preferences
         self.chat.learn = preferences.learn_from_conversations
-        voice_keys = [k for k in Preferences.model_fields if k.startswith(("voice_", "wake_"))]
+        # La voix suit aussi le profil : couper « Tout Meta » cesse tout de suite d'envoyer ta
+        # voix à Meta.
+        voice_keys = [
+            k
+            for k in Preferences.model_fields
+            if k.startswith(("voice_", "wake_")) or k == "model_profile"
+        ]
         if any(getattr(previous, k) != getattr(preferences, k) for k in voice_keys):
             self.spawn(self.voice.apply(preferences))
 
@@ -701,6 +432,7 @@ class Services:
 
     async def stop(self) -> None:
         await self.bus.publish("engine.stopping", {})
+        await self.share.stop()
         await self.voice.close()
         await self.chat.close()
         await self.anticipation.close()

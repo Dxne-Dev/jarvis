@@ -67,7 +67,7 @@ def test_status(client: TestClient) -> None:
     assert body["version"] == __version__
     assert body["keyring"] == "memoire"
     assert body["keyring_error"] is None
-    assert body["secrets_total"] == 13
+    assert body["secrets_total"] == 15  # BASETEN_API_KEY, ajoutée le 27/10
     assert body["secrets_configured"] == 0
     assert body["events_published"] >= 1
 

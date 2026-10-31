@@ -7,6 +7,7 @@ import type { Preferences } from "../../lib/engine/types";
 import styles from "./SettingsScreen.module.css";
 
 type ChoiceKey =
+  | "model_profile"
   | "reduced_motion"
   | "sphere_quality"
   | "wake_sensitivity"
@@ -18,7 +19,8 @@ type SwitchKey =
   | "voice_enabled"
   | "voice_follow_up"
   | "voice_barge_in"
-  | "voice_headset";
+  | "voice_headset"
+  | "browser_visible";
 
 /** Un réglage à choix unique, en boutons radio accessibles. */
 export function Choice<K extends ChoiceKey>({
@@ -29,7 +31,7 @@ export function Choice<K extends ChoiceKey>({
 }: {
   name: K;
   label: string;
-  options: { value: Preferences[K]; label: string; hint: string }[];
+  options: { value: Preferences[K]; label: string; hint: string; disabled?: boolean }[];
   disabled?: boolean;
 }) {
   const preferences = usePreferences();
@@ -51,7 +53,12 @@ export function Choice<K extends ChoiceKey>({
         }}
       >
         {options.map((option) => (
-          <RadioGroup.Item key={option.value} value={option.value} className={styles.radio}>
+          <RadioGroup.Item
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className={styles.radio}
+          >
             <span className={styles.radioDot} aria-hidden="true">
               <RadioGroup.Indicator className={styles.radioIndicator} />
             </span>

@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from ojarvis.agent.loop import PLAN_MISSING
 from ojarvis.agent.plans import PLAN_TOOL
+from ojarvis.agent.rules import PLAN_MISSING
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply, Script
 from ojarvis.llm.structured import TOOL_NAME
 from ojarvis.llm.types import LLMRequest, ToolCall
@@ -92,6 +92,38 @@ def test_reading_tools_run_directly_and_their_output_is_data(
     conversation_id = events[0][1]["conversation_id"]
     messages = client.get(f"/v1/conversations/{conversation_id}").json()["messages"]
     assert messages[-1]["meta"]["tools"][0]["name"] == "echo"
+
+
+def test_a_sentence_already_said_in_the_turn_is_not_said_again(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    """Le 30/10, Muse Spark redisait « Je vais cliquer sur Projets, puis sur Blog » après
+    avoir proposé son plan : la phrase n'apparaît qu'une fois."""
+    del tools
+    announce = "Je vais cliquer sur **Projets**, puis sur **Blog**."
+
+    def script(request: LLMRequest) -> FakeReply:
+        if request.tools and request.tools[0].name == TOOL_NAME:
+            return FakeReply(tool_calls=[ToolCall("m", TOOL_NAME, {"faits": []})])
+        if "titre" in request.messages[0].content:
+            return FakeReply(text="Clics")
+        if not any(m.role == "tool" for m in request.messages):
+            return FakeReply(text=announce, tool_calls=[ToolCall("c1", "echo", {"texte": "a"})])
+        # Le modèle reprend sa phrase (autrement écrite), puis dit enfin du neuf.
+        return FakeReply(
+            text="Je vais cliquer sur Projets, puis sur Blog !\n\nLe plan attend ta "
+            "validation. Je vais cliquer sur Projets, puis sur Blog."
+        )
+
+    llm["deepseek"]._script = script
+    events = chat(client, "Va sur mon site.")
+    text = "".join(d["text"] for e, d in events if e == "delta")
+    # Seul le début d'un nouveau tour est vérifié : une redite plus loin reste.
+    assert text == (
+        f"{announce}\n\nLe plan attend ta validation. Je vais cliquer sur Projets, puis sur Blog."
+    )
+    conversation = client.get(f"/v1/conversations/{events[0][1]['conversation_id']}").json()
+    assert conversation["messages"][-1]["content"] == text
 
 
 def test_an_action_called_directly_becomes_a_plan_that_waits(
@@ -351,6 +383,27 @@ def test_an_invalid_plan_is_sent_back_to_the_model(
     assert "Outil inconnu" in failed[0]["error"]
     assert not [e for e, _ in events if e == "plan"]
     assert tool_messages(llm["deepseek"])[0].startswith("Échec : Plan refusé")
+
+
+def test_outside_shell_mode_a_command_is_neither_offered_nor_run(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    del tools
+    command = {"commande": "ls", "dossier": "~"}
+    step = {"outil": "executer_commande", "arguments": command, "pourquoi": "x"}
+    llm["deepseek"]._script = scripted(
+        [
+            [ToolCall("c", "executer_commande", command)],
+            [ToolCall("p", PLAN_TOOL, {"titre": "Lister", "etapes": [step]})],
+        ]
+    )
+    events = chat(client, "Liste mes fichiers avec ls.")
+    offered = {t.name for request, _ in llm["deepseek"].requests for t in request.tools or []}
+    assert "executer_commande" not in offered
+    failed = [d for e, d in events if e == "tool" and d["status"] == "failed"]
+    assert len(failed) == 2  # l'appel direct, puis le plan
+    assert all("mode shell" in d["error"] for d in failed)
+    assert not [e for e, _ in events if e == "plan"]
 
 
 def test_secrets_in_tool_output_never_reach_the_model(

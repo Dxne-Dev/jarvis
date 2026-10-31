@@ -30,7 +30,8 @@ from ojarvis.core.errors import EngineError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.notifications import Notice, Notifier
-from ojarvis.voice.stt import GroqTranscriber, SttError
+from ojarvis.voice.stt import SttError
+from ojarvis.voice.stt_online import GroqTranscriber
 
 log = get_logger(__name__)
 

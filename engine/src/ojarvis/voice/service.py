@@ -3,15 +3,16 @@
 Il est découplé du chat : sans micro, sans modèle ou sur une erreur, le reste du moteur
 continue ; l'état et la raison sont visibles dans l'interface. Les modèles locaux
 (mot de réveil, transcription, voix de secours) sont téléchargés une fois et vérifiés.
+
+Profil « Tout Meta » : aucun modèle qui ne soit pas de Meta. L'écoute passe par Muse Voice
+Transcribe, la voix est MMS (Meta, lancée ici) puis espeak-ng (la voix du système), la parole
+est reconnue à son volume, et l'on parle après le raccourci, le bouton micro ou « /voix ».
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
-import shutil
-import subprocess
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import asdict, dataclass, field
@@ -22,56 +23,46 @@ import anyio.to_thread
 import httpx
 
 from ojarvis.chat.service import ChatService
-from ojarvis.core.downloads import ChecksumError, PinnedFile, fetch_pinned, files_present
+from ojarvis.core.downloads import fetch_pinned, files_present
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
-from ojarvis.security.redaction import REDACTOR
 from ojarvis.security.secrets import SecretStore
 from ojarvis.settings_store import Preferences
 from ojarvis.tracing.tracer import Tracer
 from ojarvis.voice.audio import (
     AudioSink,
     AudioSource,
-    MicrophoneSilentError,
     MicrophoneSource,
     SpeakerSink,
 )
-from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline, VoiceState
-from ojarvis.voice.stt import (
-    WHISPER_FILES,
+from ojarvis.voice.devices import (
+    EC_SINK,
+    EC_SOURCE,
+    EchoCancel,
+    _describe,
+    _device_prefs,
+    _portaudio_sees,
+    _refresh_devices,
+)
+from ojarvis.voice.model_sets import SENSITIVITY, ModelSets, model_sets
+from ojarvis.voice.pipeline import VoicePipeline
+from ojarvis.voice.states import VoiceConfig, VoiceState
+from ojarvis.voice.stt import CloudTranscriber, WhisperTranscriber
+from ojarvis.voice.stt_online import (
     CartesiaSTT,
-    CloudTranscriber,
     GroqTranscriber,
+    MetaTranscriber,
     StreamingTranscriber,
-    WhisperTranscriber,
 )
-from ojarvis.voice.tts import (
-    CARTESIA_VERSION,
-    PIPER_FILES,
-    CartesiaTTS,
-    FallbackTTS,
-    PiperTTS,
-)
-from ojarvis.voice.vad import EndpointConfig, SileroVad
-from ojarvis.voice.wake import WAKE_FILES, OpenWakeWord
+from ojarvis.voice.tts import CARTESIA_VERSION, CartesiaTTS, FallbackTTS, PiperTTS
+from ojarvis.voice.tts_meta import EspeakTTS, MmsTTS
+from ojarvis.voice.turn import TurnReport
+from ojarvis.voice.vad import EndpointConfig, EnergyVad, SileroVad
+from ojarvis.voice.wake import OpenWakeWord
 
 log = get_logger(__name__)
 
-MODEL_SETS: dict[str, tuple[str, dict[str, PinnedFile]]] = {
-    "reveil": ("openwakeword", WAKE_FILES),
-    "transcription": ("faster-whisper-base", WHISPER_FILES),
-    "voix_locale": ("piper", PIPER_FILES),
-}
 
-#: Seuils du mot de réveil selon la sensibilité choisie dans Réglages.
-SENSITIVITY: dict[str, tuple[float, float, bool]] = {
-    "basse": (0.6, 0.3, False),
-    "normale": (0.5, 0.15, True),
-    "haute": (0.35, 0.1, True),
-}
-
-EC_SOURCE = "ojarvis_micro"
-EC_SINK = "ojarvis_sortie"
 RETRY_DELAYS_S: tuple[float, ...] = (5.0, 15.0, 60.0)
 
 
@@ -89,122 +80,6 @@ class VoiceStatus:
     stt_fallback: bool = False
     last_latency_ms: float | None = None
     last_turn_at: float | None = None
-
-
-class EchoCancel:
-    """Annulation d'écho de PipeWire : Jarvis ne s'entend pas parler et peut être coupé à la voix.
-
-    Le module crée un micro et une sortie virtuels ; les périphériques par défaut du
-    système ne changent pas. Il est déchargé à l'arrêt du moteur.
-    """
-
-    def __init__(self) -> None:
-        self.module_id: str | None = None
-
-    @staticmethod
-    def _pactl(*args: str) -> str:
-        pactl = shutil.which("pactl")
-        if pactl is None:
-            raise RuntimeError("pactl absent")
-        done = subprocess.run(  # noqa: S603 — binaire système, arguments fixes
-            [pactl, *args], check=True, capture_output=True, text=True, timeout=5
-        )
-        return done.stdout
-
-    def _existing(self) -> str | None:
-        for line in self._pactl("list", "short", "modules").splitlines():
-            parts = line.split("\t")
-            if len(parts) >= 3 and "module-echo-cancel" in parts[1] and EC_SOURCE in parts[2]:
-                return parts[0]
-        return None
-
-    def load(self, source: str | None, sink: str | None) -> bool:
-        try:
-            existing = self._existing()
-            if existing is not None:
-                self.module_id = existing
-                return True
-            args = [
-                "load-module",
-                "module-echo-cancel",
-                "aec_method=webrtc",
-                f"source_name={EC_SOURCE}",
-                f"sink_name={EC_SINK}",
-                'source_properties=device.description="O-jarvis micro"',
-                'sink_properties=device.description="O-jarvis sortie"',
-            ]
-            if source:
-                args.append(f"source_master={source}")
-            if sink:
-                args.append(f"sink_master={sink}")
-            self.module_id = self._pactl(*args).strip() or None
-        except Exception as exc:
-            log.warning("echo_cancel_unavailable", error=type(exc).__name__)
-            return False
-        return self.module_id is not None
-
-    def unload(self) -> None:
-        module, self.module_id = self.module_id, None
-        if module is None:
-            return
-        with contextlib.suppress(Exception):
-            self._pactl("unload-module", module)
-
-
-def _refresh_devices() -> None:
-    """PortAudio ne voit les nouveaux périphériques qu'après une réinitialisation.
-
-    À n'appeler que micro et sortie fermés : réinitialiser PortAudio pendant l'écoute
-    coupe le micro sans prévenir.
-    """
-    try:
-        import sounddevice as sd  # noqa: PLC0415
-    except (ImportError, OSError):  # pas de PortAudio sur la machine : rien à rafraîchir
-        return
-    with contextlib.suppress(Exception):
-        sd._terminate()
-        sd._initialize()
-
-
-def _portaudio_sees(name: str, kind: str) -> bool:
-    """Vrai si PortAudio trouve ce micro (`input`) ou cette sortie (`output`) par son nom."""
-    try:
-        import sounddevice as sd  # noqa: PLC0415
-
-        sd.query_devices(name, kind)
-    except Exception:
-        return False
-    return True
-
-
-def _pactl_devices(kind: str) -> list[dict[str, str]]:
-    """Micros (`sources`) ou sorties (`sinks`) vus par PipeWire, avec un nom lisible."""
-    pactl = shutil.which("pactl")
-    if pactl is None:
-        raise RuntimeError("pactl absent")
-    done = subprocess.run(  # noqa: S603 — binaire système, arguments fixes
-        [pactl, "--format=json", "list", kind],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    devices = []
-    for item in json.loads(done.stdout):
-        name = str(item.get("name", ""))
-        props = item.get("properties", {})
-        if not name or name.startswith("ojarvis_") or props.get("device.class") == "monitor":
-            continue
-        label = item.get("description")
-        if not label or label == "(null)":
-            label = props.get("device.description") or props.get("node.nick") or name
-        devices.append({"name": name, "label": str(label)})
-    return devices
-
-
-def list_devices() -> dict[str, list[dict[str, str]]]:
-    """Ne touche jamais à PortAudio : le réinitialiser couperait le micro en cours d'écoute."""
-    return {"inputs": _pactl_devices("sources"), "outputs": _pactl_devices("sinks")}
 
 
 class VoiceService:
@@ -247,8 +122,9 @@ class VoiceService:
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._echo = echo or EchoCancel()
-        #: Composants chargés une fois (modèles) ; fournis directement par les tests.
+        #: Composants chargés une fois par profil (modèles) ; fournis directement par les tests.
         self._parts: dict[str, Any] = dict(parts or {})
+        self._parts_profile: str | None = None
         self._preloaded = parts is not None
         self._applied: dict[str, Any] = {}
         self._voices_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -272,10 +148,10 @@ class VoiceService:
     async def _publish(self) -> None:
         await self._bus.publish("voice.status", self.snapshot(), persist=False)
 
-    def _model_status(self) -> dict[str, str]:
+    def _model_status(self, profile: str) -> dict[str, str]:
         return {
             key: "prêt" if files_present(self._models / folder, files) else "absent"
-            for key, (folder, files) in MODEL_SETS.items()
+            for key, (folder, files) in model_sets(profile).items()
         }
 
     # ------------------------------------------------------------------ démarrage
@@ -287,8 +163,11 @@ class VoiceService:
     async def _start_locked(self) -> None:
         prefs = self._preferences()
         self.status.enabled = prefs.voice_enabled
+        sets = model_sets(prefs.model_profile)
         self.status.models = (
-            dict.fromkeys(MODEL_SETS, "simulé") if self._preloaded else self._model_status()
+            dict.fromkeys(sets, "simulé")
+            if self._preloaded
+            else self._model_status(prefs.model_profile)
         )
         if not prefs.voice_enabled or not self._audio:
             self.status.state = VoiceState.OFF.value
@@ -300,8 +179,8 @@ class VoiceService:
         await self._publish()
         try:
             if not self._preloaded:
-                await self._ensure_models()
-                await self._load_parts()
+                await self._ensure_models(sets)
+                await self._load_parts(prefs.model_profile)
             await self._launch(prefs)
         except Exception as exc:
             log.exception("voice_start_failed")
@@ -309,8 +188,8 @@ class VoiceService:
             self.status.error = _describe(exc)
             await self._publish()
 
-    async def _ensure_models(self) -> None:
-        for key, (folder, files) in MODEL_SETS.items():
+    async def _ensure_models(self, sets: ModelSets) -> None:
+        for key, (folder, files) in sets.items():
             target = self._models / folder
             if files_present(target, files):
                 continue
@@ -330,9 +209,28 @@ class VoiceService:
             self.status.models[key] = "prêt"
         await self._publish()
 
-    async def _load_parts(self) -> None:
-        if self._parts:
+    async def _load_parts(self, profile: str) -> None:
+        if self._parts and self._parts_profile == profile:
             return
+        tts = self._parts.get("tts")
+        if tts is not None:
+            await tts.close()
+        # Un seul jeu en mémoire : celui de l'autre profil est libéré.
+        self._parts = {}
+        self._parts = await (self._meta_parts() if profile == "meta" else self._auto_parts())
+        self._parts_profile = profile
+
+    async def _meta_parts(self) -> dict[str, Any]:
+        mms = MmsTTS(self._models / "mms-tts-fra")
+        await mms.warm_up()
+        return {
+            "wake": None,
+            "vad": EnergyVad(),
+            "stt": MetaTranscriber(lambda: self._secrets.get("MODEL_API_KEY"), self._http),
+            "tts": FallbackTTS(mms, EspeakTTS(), on_fallback=self._on_tts_fallback),
+        }
+
+    async def _auto_parts(self) -> dict[str, Any]:
         wake = await anyio.to_thread.run_sync(OpenWakeWord, self._models / "openwakeword")
         vad = await anyio.to_thread.run_sync(SileroVad)
         stt = WhisperTranscriber(self._models / "faster-whisper-base")
@@ -349,7 +247,7 @@ class VoiceService:
             on_fallback=self._on_tts_fallback,
             prefer_secondary=lambda: self._preferences().voice_engine == "piper",
         )
-        self._parts = {
+        return {
             "wake": wake,
             "vad": vad,
             "stt": stt,
@@ -360,7 +258,9 @@ class VoiceService:
 
     def _on_tts_fallback(self, reason: str) -> None:
         self.status.tts_fallback = reason
-        self._spawn(self._bus.publish("voice.tts_fallback", {"reason": reason, "engine": "piper"}))
+        tts = self._parts.get("tts")
+        engine = getattr(getattr(tts, "secondary", None), "name", "piper")
+        self._spawn(self._bus.publish("voice.tts_fallback", {"reason": reason, "engine": engine}))
 
     def _config(self, prefs: Preferences, *, echo_cancel: bool) -> VoiceConfig:
         threshold, candidate, verify = SENSITIVITY[prefs.wake_sensitivity]
@@ -462,16 +362,18 @@ class VoiceService:
 
     def _streaming_for(self, prefs: Preferences) -> StreamingTranscriber | None:
         """Cartesia en flux : choisi, ou en relais de Groq si sa clé manque."""
-        if prefs.voice_stt == "local":
+        if prefs.voice_stt == "local" or prefs.model_profile == "meta":
             return None
         engine: StreamingTranscriber | None = self._parts.get("streaming_stt")
         return engine
 
     def _cloud_for(self, prefs: Preferences) -> CloudTranscriber | None:
-        """Groq (Whisper large-v3) par phrase ; Whisper local reste le dernier secours."""
-        if prefs.voice_stt != "groq":
+        """Par phrase : Groq (Whisper large-v3), Whisper local restant le dernier secours.
+        En « Tout Meta », Muse Voice Transcribe est la seule transcription : rien en plus."""
+        if prefs.voice_stt != "groq" or prefs.model_profile == "meta":
             return None
-        engine: CloudTranscriber | None = self._parts.get("cloud_stt")
+        engine: CloudTranscriber | None
+        engine = self._parts.get("cloud_stt")
         return engine
 
     def _on_turn(self, report: TurnReport) -> None:
@@ -484,7 +386,7 @@ class VoiceService:
             pipeline.streaming_stt is not None or pipeline.cloud_stt is not None
         )
         self.status.stt_fallback = wanted and report.stt_engine != "cartesia"
-        if report.tts_engine == "cartesia":
+        if report.tts_engine in ("cartesia", "mms"):
             self.status.tts_fallback = None
 
     # ------------------------------------------------------------------ arrêt et réglages
@@ -541,6 +443,19 @@ class VoiceService:
             self._on_listen()
         return True
 
+    async def dictate(self, timeout_s: float) -> str | None:
+        """Une phrase dite pour le terminal (#10) : None si la voix ne tourne pas, « » si rien
+        n'a été entendu à temps."""
+        pipeline = self._pipeline
+        if pipeline is None:
+            return None
+        future = pipeline.dictate()
+        try:
+            return await asyncio.wait_for(asyncio.shield(future), timeout_s)
+        except TimeoutError:
+            pipeline.cancel_dictation()
+            return ""
+
     def say(self, text: str) -> bool:
         """Faire dire un texte à Jarvis (briefing) ; faux si la voix est éteinte ou occupée."""
         if self._pipeline is None:
@@ -580,49 +495,3 @@ class VoiceService:
         ]
         self._voices_cache = (time.monotonic(), voices)
         return voices
-
-
-def _device_prefs(prefs: Preferences) -> dict[str, Any]:
-    return {"input": prefs.voice_input_device, "output": prefs.voice_output_device}
-
-
-#: Erreurs audio reconnues à leur texte, la plus précise d'abord.
-_AUDIO_ERRORS: tuple[tuple[str, str], ...] = (
-    (
-        "PortAudio library not found",
-        "La bibliothèque audio manque : installe-la avec « sudo apt install libportaudio2 ».",
-    ),
-    ("PortAudio", "Micro ou haut-parleur introuvable."),
-    ("Invalid device", "Micro ou haut-parleur introuvable."),
-    ("No Default", "Micro ou haut-parleur introuvable."),
-)
-
-
-def _describe(exc: Exception) -> str:
-    if isinstance(exc, MicrophoneSilentError):
-        return "Le micro ne transmet plus rien. Nouvel essai en cours…"
-    text = str(exc)
-    for needle, message in _AUDIO_ERRORS:
-        if needle in text:
-            return message
-    if isinstance(exc, httpx.HTTPError):
-        return (
-            "Téléchargement d'un modèle vocal impossible (réseau). "
-            "Réessaie ou télécharge-le à la main : Réglages › Modèles locaux."
-        )
-    if isinstance(exc, ChecksumError):
-        return "Un modèle vocal reçu était abîmé : il a été supprimé. Réessaie."
-    if isinstance(exc, ImportError):
-        missing = exc.name or _cause(exc)
-        return f"Une bibliothèque de la voix manque ({missing}) : réinstalle O-jarvis."
-    return f"Le pipeline vocal n'a pas pu démarrer ({_cause(exc)})."
-
-
-def _cause(exc: Exception) -> str:
-    """Première ligne de l'erreur, sans dossier personnel ni secret, assez courte pour l'écran."""
-    lines = str(exc).strip().splitlines()
-    text = lines[0] if lines else ""
-    text = REDACTOR.redact(text.replace(str(Path.home()), "~"))
-    if len(text) > 160:
-        text = text[:159] + "…"
-    return f"{type(exc).__name__} : {text}" if text else type(exc).__name__

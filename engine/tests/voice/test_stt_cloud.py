@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 
 from ojarvis.voice.audio import FRAME_SAMPLES
-from ojarvis.voice.stt import CartesiaSTT, SttError
+from ojarvis.voice.stt import SttError
+from ojarvis.voice.stt_online import CartesiaSTT
 
 
 class FakeSttSocket:

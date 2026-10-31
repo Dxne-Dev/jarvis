@@ -9,116 +9,63 @@
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
+import anyio.to_thread
 from pydantic import ValidationError
 
 from ojarvis.agent.executor import PlanExecutor
-from ojarvis.agent.plans import PLAN_TOOL, PlanIn, PlanRecord, PlanStore, StepIn, plan_tool_spec
-from ojarvis.core.errors import EngineError
+from ojarvis.agent.measures import MEASURE_AFTER, MEASURE_BEFORE
+from ojarvis.agent.plans import (
+    FINISHED,
+    MAX_STEPS,
+    PLACEHOLDER,
+    PLAN_TOOL,
+    PlanIn,
+    PlanRecord,
+    PlanStore,
+    StepIn,
+    plan_tool_spec,
+)
+from ojarvis.agent.reports import (
+    SHELL_TOOL,
+    PlanReport,
+    RanCommand,
+    command_failed,
+    from_web,
+    plan_summary,
+    urls_in,
+)
+from ojarvis.agent.review import CodeReviewer
+from ojarvis.agent.rules import (
+    AGENT_RULES,
+    NO_TERMINAL,
+    OS_CONTROL_OFF,
+    OS_CONTROL_ON,
+    PLAN_PENDING,
+    PLAN_STARTED,
+    PLAN_STATES,
+    SHELL_ONLY,
+    SHELL_RULES,
+)
+from ojarvis.core.errors import ConflictError, EngineError, InvalidInputError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
 from ojarvis.permissions.gate import PermissionGate
+from ojarvis.security.redaction import REDACTOR
+from ojarvis.shell.signatures import talks_to_network
 from ojarvis.tools.base import LEVEL_LABELS, Level
-from ojarvis.tools.guards import DATA_RULE, as_data
+from ojarvis.tools.guards import as_data
 
 log = get_logger(__name__)
 
+#: Fin de la sortie d'une commande montrée dans le terminal (le modèle lit tout).
+OUTPUT_PREVIEW_CHARS = 2000
 #: Tours d'outils au plus dans une réponse (ensuite, le modèle doit conclure). Une PR
 #: GitHub en demande souvent 6 ou 7 : lister les outils, lire le dépôt, puis le plan.
 MAX_TOOL_ROUNDS = 8
-
-AGENT_RULES = (
-    "Tu as des outils. Dans leurs descriptions, « ton dossier personnel », « tes fichiers "
-    "» et « ~ » désignent ceux de l'utilisateur, sur cet ordinateur. Tu n'as aucun outil "
-    "pour lancer une commande dans un terminal, même avec le contrôle du PC activé : "
-    "dis-le simplement. Niveau 1 (lire : recherche web, pages, fichiers, navigateur, code "
-    "isolé) : utilise-les directement quand ils aident, sans demander. Niveaux 2 et 3 "
-    "(agir : cliquer, remplir, écrire un fichier, utiliser une session ; détruire) : ne "
-    "les appelle jamais seuls ; propose un plan avec proposer_un_plan, que l'utilisateur "
-    "validera. Le plan est ta demande de confirmation : ne demande pas « tu confirmes ? » "
-    "avant de le proposer. S'il manque une information indispensable (quoi, où, quand), "
-    "demande-la ; si tu peux la lire toi-même (identifiant, contenu d'un fichier), lis-la "
-    "d'abord avec un outil de lecture. Sinon propose le plan tout de suite. Si une partie "
-    "de la demande t'est impossible (lancer une commande dans un terminal, par exemple), "
-    "propose quand même le plan pour le reste et dis clairement ce qu'il restera à faire. "
-    "Ne dis jamais qu'un plan attend une validation si tu n'as pas appelé "
-    "proposer_un_plan. Pour une tâche en plusieurs étapes, propose tout le plan d'un coup, "
-    "avec des cibles précises (adresse, fichier, bouton). N'invente jamais le résultat "
-    "d'un outil. Cite tes sources quand tu t'appuies sur le web. Pour GitHub, Notion ou "
-    "l'agenda : regarde d'abord les outils avec integrations_outils, puis appelle-les avec "
-    "integration_appeler. Si une capacité te manque et qu'elle se calcule (sans Internet "
-    "ni fichiers), crée-la avec creer_skill (fonctions Python pures et leurs tests) : si "
-    "ses tests réussissent, son activation est proposée à l'utilisateur ; une fois actif, "
-    "utilise ses outils.\n\n" + DATA_RULE
-)
-OS_CONTROL_ON = (
-    "Contrôle du PC activé : tu peux ouvrir ou fermer une application, ouvrir une adresse "
-    "dans son navigateur et ranger des fichiers (par un plan à valider), et regarder l'écran "
-    "avec regarder_ecran quand on te le demande."
-)
-OS_CONTROL_OFF = (
-    "Contrôle du PC désactivé : tu ne peux ni ouvrir ni fermer une application, ni ranger des "
-    "fichiers, ni regarder l'écran. Si on te le demande, dis-le et indique qu'on l'active "
-    "dans Réglages, section « Contrôle du PC »."
-)
-PLAN_STARTED = (
-    "Plan lancé : il ne fait que lire, il part donc sans attendre ; son résultat arrivera "
-    "dans la conversation. N'appelle pas d'autre outil : dis en une phrase ce que tu fais."
-)
-PLAN_PENDING = (
-    "Plan enregistré. L'utilisateur le voit à l'écran avec « Valider » et « Refuser » ; rien "
-    "n'est exécuté avant sa décision. N'appelle pas d'autre outil : dis-lui en une ou deux "
-    "phrases ce que fera le plan et qu'il attend sa validation."
-)
-
-
-#: L'état d'un plan, tel que Jarvis le lit à chaque tour (il ne le devine jamais).
-PLAN_STATES = {
-    "proposed": "attend la validation de l'utilisateur",
-    "approved": "validé, en cours",
-    "running": "en cours",
-    "done": "exécuté",
-    "failed": "échoué",
-    "refused": "refusé",
-}
-
-#: Le modèle annonce un plan à valider (« le plan est prêt », « confirme à l'écran »…), ou
-#: écrit l'appel de l'outil dans son texte au lieu de le faire.
-PLAN_CLAIM = re.compile(
-    r"(?:valid|confirm)\w*\s*(?:-le)?\s+(?:le\s+plan|à\s+l['’]écran)|plan\s+est\s+prêt"
-    r"|attend\w*\s+ta\s+validation|passe\s+par\s+un\s+plan|voici\s+le\s+plan"
-    r"|je\s+(?:te\s+)?(?:prépare|propose)\s+(?:le|ce|un)\s+plan|<\s*/?\s*proposer_un_plan",
-    re.IGNORECASE,
-)
-PLAN_MISSING = (
-    "[Note du système] Tu viens d'annoncer un plan à valider, mais tu n'as pas appelé "
-    "proposer_un_plan : aucun plan n'existe et l'utilisateur ne verra rien à valider. Propose-le "
-    "maintenant (lis d'abord avec un outil de lecture ce qui te manque, un identifiant par "
-    "exemple), ou dis en une phrase que tu ne peux pas."
-)
-
-
-def claims_missing_plan(text: str, proposed: list[str]) -> bool:
-    """Un plan annoncé dans la réponse alors qu'aucun n'a été proposé pendant le tour."""
-    return not proposed and PLAN_CLAIM.search(text) is not None
-
-
-_URL = re.compile(r"https?://[^\s<>\"'()\[\]{}«»]+")
-
-
-def urls_in(value: Any) -> set[str]:
-    """Adresses web citées dans un texte (ou dans les valeurs d'un résultat structuré)."""
-    if isinstance(value, str):
-        return {u.rstrip(".,;:!?").rstrip("/") for u in _URL.findall(value)}
-    if isinstance(value, dict):
-        return set().union(*(urls_in(v) for v in value.values())) if value else set()
-    if isinstance(value, list | tuple):
-        return set().union(*(urls_in(v) for v in value)) if value else set()
-    return set()
 
 
 @dataclass
@@ -127,6 +74,11 @@ class AgentTurn:
 
     #: Un contenu externe a été lu : un plan proposé ensuite est signalé à la validation.
     tainted: bool = False
+    #: Tour du mode shell : seul à pouvoir lancer une commande (`executer_commande`).
+    shell: bool = False
+    #: Un contenu venu d'ailleurs a été lu (page, recherche, intégration, curl…) : « toujours »
+    #: ne s'applique pas.
+    web: bool = False
     tools: list[dict[str, Any]] = field(default_factory=list)
     plans: list[str] = field(default_factory=list)
     #: Adresses connues pendant ce tour : celles de ta demande et celles lues (liens, résultats).
@@ -134,6 +86,11 @@ class AgentTurn:
 
     def knows(self, url: str) -> bool:
         return url.strip().rstrip("/") in self.known_urls
+
+
+class ShellOnlyError(EngineError):
+    status_code = 403
+    code = "shell_only"
 
 
 @dataclass(frozen=True)
@@ -144,20 +101,6 @@ class CallOutcome:
     plan: PlanRecord | None = None
 
 
-def plan_summary(plan: PlanRecord) -> dict[str, Any]:
-    return {
-        "id": plan.id,
-        "title": plan.title,
-        "status": plan.status,
-        "max_level": plan.max_level,
-        "tainted": plan.tainted,
-        "steps": [
-            {"position": s.position, "description": s.description, "level": s.level}
-            for s in plan.steps
-        ],
-    }
-
-
 class Agent:
     def __init__(
         self,
@@ -166,11 +109,14 @@ class Agent:
         plans: PlanStore,
         bus: EventBus,
         executor: PlanExecutor | None = None,
+        reviewer: CodeReviewer | None = None,
     ) -> None:
         self._gate = gate
         self._plans = plans
         self._bus = bus
         self._executor = executor
+        #: Mode shell : relit chaque modification de code avant ta validation.
+        self._reviewer = reviewer
 
     async def plan_states(self, conversation_id: str) -> str:
         """L'état réel des plans de la conversation, du plus ancien au plus récent."""
@@ -185,16 +131,178 @@ class Agent:
             "\n".join(lines)
         )
 
-    def rules(self) -> str:
+    async def plan_report(self, plan_id: str, conversation_id: str) -> PlanReport:
+        """Les résultats d'un plan fini de cette conversation, marqués comme données : en mode
+        shell, Jarvis les lit pour continuer (corriger, relancer, vérifier)."""
+        plan = await self._plans.get(plan_id)
+        if plan.conversation_id != conversation_id:
+            raise NotFoundError("Ce plan n'appartient pas à cette conversation.")
+        if plan.status not in FINISHED:
+            raise ConflictError("Ce plan n'est pas encore terminé.")
+        if plan.status == "refused":
+            refused = f"L'utilisateur a refusé le plan « {plan.title} » : rien n'a été lancé."
+            return PlanReport(refused, plan.request, tainted=plan.tainted)
+        ran = [step for step in plan.steps if step.status == "done"]
+        commands = [str(s.arguments.get("commande", "")) for s in ran if s.tool == SHELL_TOOL]
+        report = PlanReport(
+            "",
+            plan.request,
+            # Des sorties de commandes ou de fichiers : des données, jamais des consignes.
+            tainted=plan.tainted or bool(ran),
+            web=any(talks_to_network(command) for command in commands if command),
+            urls=frozenset(urls_in([step.result or "" for step in ran])),
+            commands=tuple(
+                (" ".join(str(step.arguments.get("commande", "")).split()), command_failed(step))
+                for step in plan.steps
+                if step.tool == SHELL_TOOL and step.status in ("done", "failed")
+            ),
+        )
+        sections = []
+        measured = any(step.why == MEASURE_BEFORE for step in plan.steps)
+        for step in plan.steps:
+            if step.why in (MEASURE_BEFORE, MEASURE_AFTER) and step.status == "done":
+                label = "Mesure avant" if step.why == MEASURE_BEFORE else "Mesure après"
+                body = as_data(step.result or "", origin="commande")
+                sections.append(f"{label} ({step.description}) :\n{body}")
+            elif step.status == "done":
+                body = as_data(step.result or "", origin="commande")
+                sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
+            elif step.status == "failed":
+                sections.append(f"Étape {step.position}, échec ({step.description}) : {step.error}")
+            else:
+                sections.append(f"Étape {step.position}, non lancée ({step.description}).")
+        state = PLAN_STATES.get(plan.status, plan.status)
+        text = (
+            f"Le plan validé « {plan.title} » est {state}. Résultats :\n\n"
+            + "\n\n".join(sections)
+            + "\n\nContinue la tâche à partir de ces résultats, ou conclus si elle est finie."
+        )
+        if measured:
+            text += (
+                " Compare la mesure d'avant et celle d'après : si l'après confirme le résultat, "
+                "dis « vérifié » avec les deux chiffres ; sinon dis « non vérifié » et ce qui "
+                "manque, jamais « fait »."
+            )
+        elif any(step.level >= Level.AGIR and step.tool == SHELL_TOOL for step in ran):
+            text += (
+                " Ce plan n'avait pas de mesure : ne dis pas « fait ». Vérifie par une lecture, "
+                "ou dis « non vérifié »."
+            )
+        return replace(report, text=text)
+
+    async def user_ran(self, ran: RanCommand) -> PlanReport:
+        """Une commande lancée par l'utilisateur lui-même : au journal, puis rendue au modèle
+        comme une donnée, masquée, pour qu'il continue."""
+        await self._gate.note_user_command(ran.command, ran.code)
+        output = REDACTOR.redact(ran.output)
+        body = as_data(
+            f"$ {ran.command}\ncode de sortie {ran.code}\n--- sortie ---\n{output}",
+            origin="commande lancée par l’utilisateur",
+        )
+        text = (
+            f"L'utilisateur a lancé lui-même la commande proposée (code de sortie {ran.code}). "
+            f"Résultat :\n\n{body}\n\nContinue la tâche à partir de ce résultat, ou conclus si "
+            "elle est finie."
+        )
+        return PlanReport(
+            text,
+            "",
+            tainted=True,
+            web=talks_to_network(ran.command),
+            urls=frozenset(urls_in(output)),
+            commands=((" ".join(ran.command.split()), ran.code != 0),),
+        )
+
+    def rules(self, *, shell_folder: str | None = None) -> str:
         """Consignes du tour, selon ce que Jarvis a le droit de faire en ce moment."""
         os_control = OS_CONTROL_ON if self._gate.os_control() else OS_CONTROL_OFF
-        return f"{AGENT_RULES}\n\n{os_control}"
+        terminal = NO_TERMINAL if shell_folder is None else SHELL_RULES.format(folder=shell_folder)
+        return f"{AGENT_RULES}\n\n{terminal}\n\n{os_control}"
 
-    def specs(self) -> list[ToolSpec]:
+    def specs(self, *, shell_mode: bool = False) -> list[ToolSpec]:
         specs = self._gate.registry.specs(
-            max_level=Level.DETRUIRE, os_control=self._gate.os_control()
+            max_level=Level.DETRUIRE, os_control=self._gate.os_control(), shell_mode=shell_mode
         )
         return [*specs, plan_tool_spec()]
+
+    async def _previews(self, plan_in: PlanIn) -> dict[int, str]:
+        previews: dict[int, str] = {}
+        touched: set[str] = set()
+        after_command = False
+        for position, step in enumerate(plan_in.etapes, 1):
+            target = str(step.arguments.get("chemin", ""))
+            if step.outil == SHELL_TOOL:
+                # Une mesure ne change rien : les retouches qui la suivent gardent leur diff.
+                after_command = after_command or step.pourquoi != MEASURE_BEFORE
+                continue
+            if (
+                PLACEHOLDER.search(str(step.arguments))
+                or (target and target in touched)
+                or after_command
+            ):
+                # Cible connue seulement à l'exécution, ou fichier qu'une étape précédente a
+                # pu changer ou créer : son aperçu ne serait pas juste, le résultat le montrera.
+                continue
+            preview = await anyio.to_thread.run_sync(self._gate.preview, step.outil, step.arguments)
+            if preview is not None:
+                previews[position] = preview
+                touched.add(target)
+        return previews
+
+    def _measured(self, plan_in: PlanIn, turn: AgentTurn) -> PlanIn:
+        """La mesure d'un plan (#15) : une lecture prise avant les étapes, puis après. Sans
+        elle, Jarvis ne peut pas montrer la preuve de l'effet."""
+        measure = plan_in.mesure
+        if measure is None:
+            return self._final_read_as_measure(plan_in, turn)
+        self._require_shell(SHELL_TOOL, turn)
+        folders = [
+            str(s.arguments["dossier"]) for s in plan_in.etapes if s.arguments.get("dossier")
+        ]
+        folder = measure.dossier or (folders[0] if folders else "~")
+        arguments = {"commande": measure.commande, "dossier": folder}
+        _tool, _args, level = self._gate.check(SHELL_TOOL, arguments)
+        if level != Level.LIRE:
+            raise InvalidInputError(
+                "La mesure d'un plan est une simple lecture (df, ls, systemctl status…)."
+            )
+        if len(plan_in.etapes) + 2 > MAX_STEPS:
+            raise InvalidInputError(
+                f"Avec la mesure avant et après, le plan dépasserait {MAX_STEPS} étapes."
+            )
+        before = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_BEFORE)
+        after = StepIn(outil=SHELL_TOOL, arguments=arguments, pourquoi=MEASURE_AFTER)
+        return PlanIn(titre=plan_in.titre, etapes=[before, *plan_in.etapes, after])
+
+    def _final_read_as_measure(self, plan_in: PlanIn, turn: AgentTurn) -> PlanIn:
+        """Un plan d'actions qui finit par une lecture (« touch a.txt » puis « ls -l a.txt ») :
+        cette vérification devient sa mesure, prise aussi avant les actions (#15). Muse Spark
+        écrit ainsi sa preuve plus souvent qu'il ne remplit la mesure (essai du 28/10/2026)."""
+        last = plan_in.etapes[-1]
+        if (
+            not turn.shell
+            or len(plan_in.etapes) < 2
+            or len(plan_in.etapes) + 1 > MAX_STEPS
+            or last.outil != SHELL_TOOL
+            or PLACEHOLDER.search(str(last.arguments))
+        ):
+            return plan_in
+        try:
+            levels = [self._gate.check(s.outil, s.arguments)[2] for s in plan_in.etapes]
+        except EngineError:
+            return plan_in  # la proposition dira l'erreur
+        if levels[-1] != Level.LIRE or max(levels[:-1]) < Level.AGIR:
+            return plan_in
+        before = StepIn(outil=SHELL_TOOL, arguments=last.arguments, pourquoi=MEASURE_BEFORE)
+        after = StepIn(outil=SHELL_TOOL, arguments=last.arguments, pourquoi=MEASURE_AFTER)
+        return PlanIn(titre=plan_in.titre, etapes=[before, *plan_in.etapes[:-1], after])
+
+    def _require_shell(self, name: str, turn: AgentTurn) -> None:
+        """Hors du mode shell, une commande n'est ni lancée ni proposée, même si le modèle
+        appelle l'outil sans l'avoir vu, ou le glisse dans un plan."""
+        registry = self._gate.registry
+        if not turn.shell and name in registry and registry.get(name).shell_only:
+            raise ShellOnlyError(SHELL_ONLY.format(tool=name))
 
     def describe(self, call: ToolCall) -> str:
         """Ce que fait l'appel, en clair (pour l'interface), sans rien exécuter."""
@@ -223,6 +331,7 @@ class Agent:
                 return self._failed(call, f"Plan invalide ({where} : {first.get('msg')}).")
             return await self._propose(call, plan_in, turn, conversation_id, request)
         try:
+            self._require_shell(call.name, turn)
             tool, args, level = self._gate.check(call.name, call.arguments)
         except EngineError as exc:
             return self._failed(call, exc.message)
@@ -292,10 +401,19 @@ class Agent:
             "status": "done",
             "source": output.source,
         }
+        if self._gate.registry.get(call.name).shell_only:
+            # Le terminal montre la fin de la sortie ; le modèle, lui, la lit en entier.
+            event["output"] = REDACTOR.redact(output.text[-OUTPUT_PREVIEW_CHARS:])
+        if isinstance(output.data, dict) and output.data.get("sudo"):
+            event["sudo"] = output.data["sudo"]  # le terminal la propose : tu la lances
         turn.tools.append(event)
         turn.known_urls |= urls_in(output.text) | urls_in(output.data)
         if output.external:
             turn.tainted = True
+            command = call.arguments.get("commande")
+            turn.web = turn.web or from_web(
+                output.source, command if isinstance(command, str) else None
+            )
         content = as_data(output.text, origin=output.source) if output.external else output.text
         if output.follow_up is None:
             return CallOutcome(content, event)
@@ -318,6 +436,12 @@ class Agent:
         request: str,
     ) -> CallOutcome:
         try:
+            plan_in = self._measured(plan_in, turn)
+            for step in plan_in.etapes:
+                self._require_shell(step.outil, turn)
+            # Le diff de chaque modification, montré avant ta validation. Une retouche qui ne
+            # s'appliquerait pas (passage introuvable) revient au modèle, pas à toi.
+            previews = await self._previews(plan_in)
             plan = await self._plans.create(
                 plan_in, conversation_id=conversation_id, request=request, tainted=turn.tainted
             )
@@ -336,7 +460,10 @@ class Agent:
             }
             turn.tools.append({k: v for k, v in event.items() if k != "plan"})
             return CallOutcome(PLAN_STARTED, event, plan=plan)
-        summary = plan_summary(plan)
+        review = None
+        if previews and turn.shell and self._reviewer is not None:
+            review = await self._reviewer.review(request, list(previews.values()))
+        summary = plan_summary(plan, previews, review, web=turn.web)
         await self._bus.publish(
             "plan.proposed",
             {"id": plan.id, "title": plan.title, "max_level": plan.max_level},
@@ -345,6 +472,9 @@ class Agent:
             f"{s.position}. {s.description} (niveau {s.level} : {LEVEL_LABELS[Level(s.level)]})"
             for s in plan.steps
         )
+        if review is not None:
+            # L'auteur lit l'avis : s'il signale un problème, il peut proposer un plan corrigé.
+            steps += f"\n\n{review.for_author()}"
         event = {
             "id": call.id,
             "name": PLAN_TOOL,

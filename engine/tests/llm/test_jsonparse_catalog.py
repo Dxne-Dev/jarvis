@@ -65,6 +65,23 @@ def test_cost_uses_cached_tokens_and_deepseek_peak_hours() -> None:
     assert catalog.cost_usd("inconnu", "x", input_tokens=10, output_tokens=10) is None
 
 
+def test_meta_cost_counts_the_hidden_reasoning_as_output() -> None:
+    catalog = Catalog()
+    # 800 000 jetons neufs, 200 000 en cache, 100 000 en sortie (réflexion comprise).
+    cost = catalog.cost_usd(
+        "meta",
+        "muse-spark-1.3",
+        input_tokens=1_000_000,
+        output_tokens=100_000,
+        cached_input_tokens=200_000,
+    )
+    assert cost == pytest.approx(1.0 + 0.03 + 0.425)
+    wonder = catalog.get("meta", "muse-wonder-1.0")
+    assert wonder is not None
+    assert wonder.vision
+    assert wonder.price is not None
+
+
 def test_catalog_replace_provider() -> None:
     catalog = Catalog()
     catalog.replace_provider(

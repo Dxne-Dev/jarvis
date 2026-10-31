@@ -7,6 +7,7 @@ import { describeError } from "../../lib/engine/client";
 import { useCheckSecret, useDeleteSecret, useSaveSecret } from "../../lib/engine/queries";
 import type { SecretStatus } from "../../lib/engine/types";
 import { formatDuration, formatRelative } from "../../lib/format";
+import dialogStyles from "./SecretRow.module.css";
 import styles from "./SettingsScreen.module.css";
 
 const SOURCE_LABEL = { env: "importée du .env", ui: "saisie ici", generated: "générée" } as const;
@@ -103,17 +104,17 @@ export function SecretRow({ secret, disabled }: { secret: SecretStatus; disabled
                   </Button>
                 </AlertDialog.Trigger>
                 <AlertDialog.Portal>
-                  <AlertDialog.Overlay className={styles.overlay} />
-                  <AlertDialog.Content className={styles.dialog}>
-                    <ShieldAlert className={styles.dialogIcon} aria-hidden="true" />
-                    <AlertDialog.Title className={styles.dialogTitle}>
+                  <AlertDialog.Overlay className={dialogStyles.overlay} />
+                  <AlertDialog.Content className={dialogStyles.dialog}>
+                    <ShieldAlert className={dialogStyles.dialogIcon} aria-hidden="true" />
+                    <AlertDialog.Title className={dialogStyles.dialogTitle}>
                       Supprimer la clé {secret.label} ?
                     </AlertDialog.Title>
-                    <AlertDialog.Description className={styles.dialogText}>
+                    <AlertDialog.Description className={dialogStyles.dialogText}>
                       Elle sera retirée du trousseau du système. Les fonctions qui en dépendent
                       s'arrêteront jusqu'à ce que tu en saisisses une nouvelle.
                     </AlertDialog.Description>
-                    <div className={styles.dialogActions}>
+                    <div className={dialogStyles.dialogActions}>
                       <AlertDialog.Cancel asChild>
                         <Button>Garder la clé</Button>
                       </AlertDialog.Cancel>

@@ -19,7 +19,7 @@ from ojarvis.core.clock import utc_now
 from ojarvis.core.errors import InvalidInputError, NotFoundError
 from ojarvis.core.logs import get_logger
 from ojarvis.db.engine import Database
-from ojarvis.db.models import MemoryItem
+from ojarvis.db.models import Embedding, MemoryItem
 from ojarvis.events.bus import EventBus
 from ojarvis.memory.embeddings import Embedder, Vectors
 from ojarvis.memory.vectors import VectorIndex
@@ -27,8 +27,13 @@ from ojarvis.security.redaction import REDACTOR
 
 log = get_logger(__name__)
 
-MemoryKind = Literal["fait", "preference", "profil"]
-MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil")
+#: « impasse » : un correctif qui a échoué, noté par le mode shell (`ojarvis.tools.impasses`) ;
+#: jamais injecté d'office dans le contexte.
+MemoryKind = Literal["fait", "preference", "profil", "impasse", "machine"]
+MEMORY_KINDS: tuple[MemoryKind, ...] = ("fait", "preference", "profil", "impasse", "machine")
+#: Ne se fondent jamais dans un souvenir d'un autre type, ni l'inverse : une impasse, une
+#: ligne de la carte de la machine.
+SEPARATE_KINDS = frozenset({"impasse", "machine"})
 #: Au-delà de cette similarité, un nouveau souvenir met à jour l'ancien au lieu de doublonner.
 DUPLICATE_SIMILARITY = 0.95
 MAX_CONTENT = 1000
@@ -96,6 +101,27 @@ class MemoryStore:
 
     async def start(self) -> None:
         await self.index.ensure()
+        await self._embed_missing()
+
+    async def _embed_missing(self) -> None:
+        """Les souvenirs sans vecteur pour ce modèle (le profil « Tout Meta » change de
+        modèle d'embeddings) le reçoivent au démarrage."""
+
+        def missing(session: Session) -> list[tuple[int, str]]:
+            indexed = select(Embedding.owner_id).where(
+                Embedding.owner_type == self.index.owner_type,
+                Embedding.model == self.index.model_id,
+            )
+            rows = session.execute(
+                select(MemoryItem.id, MemoryItem.content).where(MemoryItem.id.not_in(indexed))
+            ).all()
+            return [(row.id, row.content) for row in rows]
+
+        for item_id, content in await self._db.run(missing):
+            vector = await self._embed_passage(content)
+            if vector is None:
+                return  # le modèle n'est pas prêt : on réessaiera au prochain démarrage
+            await self.index.upsert(item_id, vector)
 
     async def _publish(self, event: str, payload: dict[str, object]) -> None:
         if self._bus is not None:
@@ -128,9 +154,9 @@ class MemoryStore:
         cleaned = _clean(content)
         vector = await self._embed_passage(cleaned)
         if vector is not None:
-            near = await self.index.search(vector, 1)
-            if near and near[0][1] >= DUPLICATE_SIMILARITY:
-                updated = await self.update(near[0][0], content=cleaned, kind=kind)
+            duplicate = await self._duplicate(kind, cleaned, vector)
+            if duplicate is not None:
+                updated = await self.update(duplicate, content=cleaned, kind=kind)
                 return updated, False
         now = utc_now()
 
@@ -156,6 +182,23 @@ class MemoryStore:
             await self.index.upsert(record.id, vector)
         await self._publish("memory.added", {"id": record.id, "kind": kind, "source": source})
         return record, True
+
+    async def _duplicate(self, kind: MemoryKind, cleaned: str, vector: Vectors) -> int | None:
+        """Le souvenir que celui-ci répète, s'il y en a un. Une impasse ne se fond que dans
+        la même impasse : deux correctifs tentés pour une même erreur, ou la même erreur dans
+        deux projets, se ressemblent beaucoup, et chacun compte."""
+        for item_id, score in await self.index.search(vector, 5):
+            if score < DUPLICATE_SIMILARITY:
+                break
+            existing = await self.get(item_id)
+            if (
+                existing.kind in SEPARATE_KINDS or kind in SEPARATE_KINDS
+            ) and existing.kind != kind:
+                continue
+            if kind == "impasse" and existing.content != cleaned:
+                continue
+            return item_id
+        return None
 
     async def update(
         self,

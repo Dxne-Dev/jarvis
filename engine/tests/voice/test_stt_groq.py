@@ -10,7 +10,8 @@ import httpx
 import numpy as np
 import pytest
 
-from ojarvis.voice.stt import GROQ_STT_URL, GroqTranscriber, SttError
+from ojarvis.voice.stt import SttError
+from ojarvis.voice.stt_online import GROQ_STT_URL, GroqTranscriber
 
 
 def answer(request: httpx.Request) -> httpx.Response:

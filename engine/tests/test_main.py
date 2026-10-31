@@ -10,11 +10,13 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import ANY
 
 import httpx
 import pytest
 
-from ojarvis.__main__ import EXIT_BAD_TOKEN, EXIT_LOCKED, READY_PREFIX, acquire_lock, parse_args
+from ojarvis.__main__ import acquire_lock, parse_args
+from ojarvis.shell.connection import EXIT_BAD_TOKEN, EXIT_LOCKED, READY_PREFIX
 
 TOKEN = "s" * 43
 
@@ -25,6 +27,8 @@ def engine_env(home: Path) -> dict[str, str]:
     # Trousseau neutre : le test ne touche jamais au vrai trousseau de l'utilisateur.
     env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
     env["OJARVIS_SKIP_WARMUP"] = "1"
+    # La connexion du mode shell va dans un dossier du test, jamais dans le vrai.
+    env["XDG_RUNTIME_DIR"] = str(home / "run")
     env.pop("OJARVIS_DOTENV", None)
     return env
 
@@ -86,6 +90,22 @@ def test_handshake_serves_and_stops_when_stdin_closes(
     assert proc.stdin is not None
     proc.stdin.close()
     assert proc.wait(15) == 0
+
+
+def test_the_shell_connection_is_private_and_removed_at_stop(
+    engine: tuple[subprocess.Popen[bytes], dict[str, int]], tmp_path: Path
+) -> None:
+    proc, info = engine
+    files = list((tmp_path / "run" / "o-jarvis").glob("moteur-*.json"))
+    assert len(files) == 1
+    assert files[0].stat().st_mode & 0o777 == 0o600
+    assert files[0].parent.stat().st_mode & 0o777 == 0o700
+    published = json.loads(files[0].read_text())
+    assert published == {"port": info["port"], "pid": proc.pid, "token": TOKEN, "version": ANY}
+    assert proc.stdin is not None
+    proc.stdin.close()
+    assert proc.wait(15) == 0
+    assert not files[0].exists()
 
 
 def test_engine_listens_only_on_loopback(

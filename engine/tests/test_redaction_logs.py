@@ -23,6 +23,10 @@ def test_longest_value_wins() -> None:
     assert redactor.redact("x abcdefghij y") == f"x {MASK} y"
 
 
+#: En deux morceaux : le garde-fou du dépôt refuse un en-tête de clé privée écrit d'un bloc.
+BEGIN = "-----BEGIN "
+
+
 @pytest.mark.parametrize(
     "secret",
     [
@@ -37,10 +41,24 @@ def test_longest_value_wins() -> None:
         "1234567890:AA" + "h" * 33,
         "bot1234567890:AA" + "i" * 33,
         "AKIA" + "Z" * 16,
+        "ya29.a0AfH6SMBx" + "j" * 150,
+        "ya29.a0AfH6SMBx1234",  # le début seul (« cut -c1-20 »)
+        "1//0g" + "k" * 40,
+        "AIza" + "l" * 35,
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLWRlLXRlc3Q",
+        "xoxb-" + "1" * 12 + "-" + "m" * 24,
+        "glpat-" + "n" * 20,
+        "hf_" + "o" * 34,
+        BEGIN + "OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjE\n-----END OPENSSH PRIVATE KEY-----",
     ],
 )
 def test_key_formats_are_masked(secret: str) -> None:
     assert secret not in Redactor().redact(f"avant {secret} après")
+
+
+def test_a_truncated_private_key_is_masked_to_the_end() -> None:
+    text = "voici :\n" + BEGIN + "RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA1234"
+    assert Redactor().redact(text) == "voici :\n***"
 
 
 def test_redact_obj_walks_structures() -> None:

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,9 @@ PLAN_TOOL = "proposer_un_plan"
 PLACEHOLDER = re.compile(r"\{\{\s*etape\s+(\d+)\s*\}\}")
 MAX_STEPS = 8
 
-PlanStatus = Literal["proposed", "approved", "running", "done", "failed", "refused"]
+PlanStatus = Literal["proposed", "approved", "running", "done", "failed", "refused", "stopped"]
+#: Un plan dans l'un de ces états ne bougera plus.
+FINISHED: tuple[PlanStatus, ...] = ("done", "failed", "refused", "stopped")
 StepStatus = Literal["pending", "running", "done", "failed", "skipped"]
 
 
@@ -40,11 +42,36 @@ class StepIn(BaseModel):
     pourquoi: str = Field(min_length=1, max_length=300, description="Pourquoi cette étape.")
 
 
+class MeasureIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    commande: str = Field(
+        min_length=1,
+        max_length=1000,
+        description="Une lecture qui mesure le résultat attendu (df -h /, systemctl is-active "
+        "nginx, ls build/…).",
+    )
+    dossier: str | None = Field(
+        default=None, min_length=1, max_length=1000, description="Son dossier (celui des étapes)."
+    )
+
+
 class PlanIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     titre: str = Field(min_length=3, max_length=120, description="Titre court du plan.")
     etapes: list[StepIn] = Field(min_length=1, max_length=MAX_STEPS)
+    mesure: MeasureIn | None = Field(
+        default=None,
+        description="Mode shell : une lecture prise avant puis après les étapes, la preuve "
+        "que l'action a produit son effet.",
+    )
+
+    @field_validator("mesure", mode="before")
+    @classmethod
+    def _measure_as_text(cls, value: Any) -> Any:
+        # « "mesure": "ls -l preuve.txt" » : Muse Spark l'écrit souvent ainsi (28/10/2026).
+        return {"commande": value} if isinstance(value, str) else value
 
 
 def plan_tool_spec() -> ToolSpec:
@@ -55,7 +82,8 @@ def plan_tool_spec() -> ToolSpec:
         "Propose un plan d'étapes (outils et arguments) que l'utilisateur validera avant "
         "exécution. Obligatoire pour toute action de niveau 2 ou 3 et pour enchaîner "
         "plusieurs actions. Une étape peut reprendre le résultat d'une étape précédente "
-        "avec {{etape N}} dans un argument texte.",
+        "avec {{etape N}} dans un argument texte. En mode shell, quand l'action doit changer "
+        "un chiffre ou un état, ajoute une mesure : elle est prise avant et après.",
         schema,
     )
 

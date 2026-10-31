@@ -1,0 +1,35 @@
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  font-size: var(--text-sm);
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  color: var(--color-accent);
+}
+
+.preview {
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.text {
+  flex: 1;
+  min-width: 14rem;
+  color: var(--color-text);
+}
+
+.error {
+  flex-basis: 100%;
+  color: var(--color-danger);
+}

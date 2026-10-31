@@ -24,12 +24,16 @@ const KINDS: { value: MemoryKind | "tout"; label: string }[] = [
   { value: "profil", label: "Profil" },
   { value: "preference", label: "Préférences" },
   { value: "fait", label: "Faits" },
+  { value: "impasse", label: "Impasses" },
+  { value: "machine", label: "Machine" },
 ];
 
 const KIND_LABEL: Record<MemoryKind, string> = {
   profil: "Profil",
   preference: "Préférence",
   fait: "Fait",
+  impasse: "Impasse",
+  machine: "Machine",
 };
 
 function MemoryRow({ item }: { item: MemoryItem }) {

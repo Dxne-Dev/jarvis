@@ -234,6 +234,75 @@ describe("Réglages", () => {
     });
   });
 
+  it("propose le profil « Tout Meta » seulement avec une clé Meta", async () => {
+    const user = userEvent.setup();
+    let metaConfigured = false;
+    const provider = (configured: boolean) => ({
+      provider: "meta",
+      configured,
+      local: false,
+      available: configured,
+      degraded: false,
+      last_error: null,
+    });
+    const { client, calls } = fakeEngine((method, path, body) => {
+      if (path === "/v1/llm/status") return [200, [provider(metaConfigured)]];
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/settings" && method === "PATCH") return [200, body];
+      if (path === "/v1/settings") return [200, { model_profile: "auto", routing: {} }];
+      if (path === "/v1/status") return [200, STATUS];
+      return [200, []];
+    });
+    const { unmount } = renderScreen(<SettingsScreen />, { client });
+    const models = await screen.findByRole("region", { name: "Modèles" });
+    expect(await within(models).findByRole("radio", { name: /Tout Meta/ })).toBeDisabled();
+    unmount();
+    metaConfigured = true;
+    renderScreen(<SettingsScreen />, { client });
+    const withKey = await screen.findByRole("region", { name: "Modèles" });
+    await waitFor(() => {
+      expect(within(withKey).getByRole("radio", { name: /Tout Meta/ })).toBeEnabled();
+    });
+    await user.click(within(withKey).getByRole("radio", { name: /Tout Meta/ }));
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ model_profile: "meta" });
+    });
+  });
+
+  it("règle le relais vers Muse Wonder avec le profil « Tout Meta »", async () => {
+    const user = userEvent.setup();
+    const { client, calls } = fakeEngine((method, path, body) => {
+      const shared = common(path);
+      if (shared) return shared;
+      if (path === "/v1/settings" && method === "PATCH") return [200, body];
+      if (path === "/v1/settings") {
+        return [
+          200,
+          {
+            model_profile: "meta",
+            relay_after: 2,
+            relay_model: "meta/muse-wonder-1.0",
+            routing: {},
+          },
+        ];
+      }
+      if (path === "/v1/status") return [200, STATUS];
+      return [200, []];
+    });
+    renderScreen(<SettingsScreen />, { client });
+    const models = await screen.findByRole("region", { name: "Modèles" });
+    const relay = await within(models).findByLabelText(/^Relais/);
+    expect(relay).toHaveDisplayValue("Après 2 échecs (recommandé)");
+    expect(within(models).getByLabelText(/^Modèle de relais/)).toHaveDisplayValue(
+      "meta/muse-wonder-1.0",
+    );
+    await user.selectOptions(relay, "0");
+    await waitFor(() => {
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ relay_after: 0 });
+    });
+  });
+
   it("n'active le contrôle du PC qu'après confirmation", async () => {
     const user = userEvent.setup();
     let prefs = { os_control_enabled: false, screen_vision: "local" };

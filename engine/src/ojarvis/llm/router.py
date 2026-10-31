@@ -2,6 +2,7 @@
 
 - Chaque type de tâche a une liste ordonnée de routes (fournisseur, modèle, réflexion).
 - Les données sensibles et le mode hors ligne ne passent que par un modèle local.
+- Profil « Tout Meta » : seuls les modèles de Meta, secours compris.
 - Réglages : l'utilisateur peut imposer un modèle par type de tâche.
 - Un fournisseur qui échoue est mis de côté un temps (disjoncteur) ; l'interface est
   prévenue par un événement, et la requête bascule sur la route suivante tant
@@ -24,9 +25,20 @@ from ojarvis.llm.errors import (
     ContentRefusedError,
     FirstTokenTimeoutError,
     LLMError,
+    NoMetaModelError,
     NoRouteAvailableError,
     NotConfiguredError,
     QuotaExhaustedError,
+)
+from ojarvis.llm.policy import (
+    ANY_MODEL,
+    DEFAULT_POLICY,
+    FIRST_EVENT_TIMEOUT_S,
+    LOCAL_FIRST_EVENT_TIMEOUT_S,
+    PROFILES,
+    Relay,
+    Route,
+    is_meta,
 )
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.types import (
@@ -46,85 +58,6 @@ from ojarvis.security.redaction import REDACTOR
 from ojarvis.tracing.tracer import Tracer
 
 log = get_logger(__name__)
-
-
-#: « N'importe quel modèle de ce fournisseur qui convient », dans l'ordre du catalogue
-#: (utile pour les modèles gratuits d'OpenRouter, qui changent souvent).
-ANY_MODEL = "*"
-
-
-@dataclass(frozen=True, slots=True)
-class Route:
-    provider: str
-    model: str
-    thinking: bool = False
-
-    @property
-    def key(self) -> str:
-        return f"{self.provider}/{self.model}"
-
-
-#: Politique par défaut. Rapide et bon marché pour la voix et le chat courant.
-DEFAULT_POLICY: Mapping[TaskType, tuple[Route, ...]] = {
-    "voice": (
-        Route("deepseek", "deepseek-flash"),
-        Route("anthropic", "claude-opus-5-5"),
-        Route("openai", "gpt-5-mini"),
-        Route("openrouter", ANY_MODEL),
-        Route("ollama", "ministral-3:3b"),
-    ),
-    "chat": (
-        Route("deepseek", "deepseek-flash"),
-        Route("anthropic", "claude-opus-5-5"),
-        Route("openai", "gpt-5"),
-        Route("openrouter", ANY_MODEL),
-        Route("ollama", "ministral-3:3b"),
-    ),
-    "reasoning": (
-        Route("deepseek", "deepseek-v4-pro", thinking=True),
-        Route("anthropic", "claude-opus-5-5", thinking=True),
-        Route("openai", "gpt-5", thinking=True),
-        Route("deepseek", "deepseek-flash", thinking=True),
-        Route("openrouter", ANY_MODEL),
-        Route("ollama", "ministral-3:3b"),
-    ),
-    "extract": (
-        Route("deepseek", "deepseek-flash"),
-        Route("anthropic", "claude-haiku-5-5"),
-        Route("openai", "gpt-5-mini"),
-        Route("openrouter", ANY_MODEL),
-        Route("ollama", "ministral-3:3b"),
-    ),
-    "title": (
-        Route("deepseek", "deepseek-flash"),
-        Route("anthropic", "claude-haiku-5-5"),
-        Route("openai", "gpt-5-mini"),
-        Route("openrouter", ANY_MODEL),
-        Route("ollama", "ministral-3:3b"),
-    ),
-    "vision": (
-        # Réflexion coupée : 1,5 s au lieu de 2,3 s à l'essai, pour la même lecture.
-        Route("deepseek", "deepseek-v4-flash-vision-exp"),
-        Route("openrouter", ANY_MODEL),
-        Route("anthropic", "claude-opus-5-5"),
-        Route("openai", "gpt-5"),
-        Route("ollama", "ministral-3:3b"),
-    ),
-}
-
-
-#: Délai maximal avant le premier morceau de réponse, par tâche (fournisseurs en ligne).
-#: Au-delà, on bascule : à la voix, attendre 30 s un premier mot n'a pas de sens.
-FIRST_EVENT_TIMEOUT_S: Mapping[TaskType, float] = {
-    "voice": 5.0,
-    "chat": 20.0,
-    "reasoning": 60.0,
-    "extract": 30.0,
-    "title": 20.0,
-    "vision": 45.0,
-}
-#: Un modèle local peut devoir se charger en mémoire (jusqu'à ~50 s sur cette machine).
-LOCAL_FIRST_EVENT_TIMEOUT_S = 120.0
 
 
 @dataclass
@@ -156,6 +89,8 @@ class RoutedStream:
 
 
 Overrides = Callable[[], Mapping[str, str]]
+#: Nom du profil choisi dans Réglages (« auto » : la politique par défaut seule).
+Profile = Callable[[], str]
 
 
 class ModelRouter:
@@ -167,6 +102,7 @@ class ModelRouter:
         bus: EventBus | None = None,
         tracer: Tracer | None = None,
         overrides: Overrides | None = None,
+        profile: Profile | None = None,
         policy: Mapping[TaskType, tuple[Route, ...]] = DEFAULT_POLICY,
         clock: Callable[[], float] = time.monotonic,
         first_event_timeout: Mapping[TaskType, float] = FIRST_EVENT_TIMEOUT_S,
@@ -182,6 +118,7 @@ class ModelRouter:
         self._bus = bus
         self._tracer = tracer
         self._overrides = overrides or dict
+        self._profile = profile or (lambda: "auto")
         self._clock = clock
         self.health: dict[str, ProviderHealth] = {name: ProviderHealth() for name in providers}
 
@@ -205,25 +142,33 @@ class ModelRouter:
             return False
         return not (constraints.needs_vision and not spec.vision)
 
-    def routes(self, task: TaskType, constraints: Constraints | None = None) -> list[Route]:
-        """Routes candidates, dans l'ordre, déjà filtrées (clé, capacités, sensibilité)."""
+    def routes(
+        self, task: TaskType, constraints: Constraints | None = None, *, first: Route | None = None
+    ) -> list[Route]:
+        """Routes candidates, dans l'ordre, déjà filtrées (clé, capacités, sensibilité).
+        `first` : un relais, essayé avant tout le reste."""
         constraints = constraints or Constraints()
-        candidates: list[Route] = []
+        candidates: list[Route] = [first] if first is not None else []
         override = self._overrides().get(task)
         if override and "/" in override:
             provider, model = override.split("/", 1)
             default_thinking = any(r.thinking for r in self.policy.get(task, ()))
             candidates.append(Route(provider, model, thinking=default_thinking))
-        candidates.extend(self.policy.get(task, ()))
-        if constraints.sensitive or constraints.offline:
-            candidates.extend(
-                Route(spec.provider, spec.model) for spec in self.catalog.all() if spec.local
-            )
+        meta_only = self._profile() == "meta"
+        candidates.extend(PROFILES.get(self._profile(), {}).get(task, ()))
+        if not meta_only:
+            candidates.extend(self.policy.get(task, ()))
+            if constraints.sensitive or constraints.offline:
+                candidates.extend(
+                    Route(spec.provider, spec.model) for spec in self.catalog.all() if spec.local
+                )
         seen: set[str] = set()
         result: list[Route] = []
         for candidate in candidates:
             route = self._resolve(candidate, constraints)
             if route is None or route.key in seen or not self._fits(route, constraints):
+                continue
+            if meta_only and not is_meta(route):
                 continue
             seen.add(route.key)
             result.append(route)
@@ -302,6 +247,7 @@ class ModelRouter:
         constraints: Constraints | None = None,
         *,
         state: RoutedStream | None = None,
+        relay: Relay | None = None,
     ) -> AsyncIterator[StreamEvent | RouteInfo]:
         """Flux d'événements, précédé d'un `RouteInfo`.
 
@@ -317,7 +263,9 @@ class ModelRouter:
         if self._refresh_local and (constraints.sensitive or constraints.offline):
             # Seul le local convient : Ollama a pu démarrer après le moteur.
             await self._refresh_local()
-        routes = self.routes(task, constraints)
+        routes = self.routes(task, constraints, first=relay.route if relay else None)
+        if not routes and self._profile() == "meta":
+            raise NoMetaModelError(f"aucun modèle Meta pour {task}")
         if not routes:
             raise NoRouteAvailableError(f"aucune route pour {task}")
         now = self._clock()
@@ -389,9 +337,12 @@ class ModelRouter:
         constraints: Constraints | None = None,
         *,
         state: RoutedStream | None = None,
+        relay: Relay | None = None,
     ) -> AsyncIterator[StreamEvent | RouteInfo]:
         """Comme `stream`, dans une étape de trace « appel LLM » (jetons, coût, latence)."""
         state = state or RoutedStream()
+        # Un tour peut faire plusieurs appels avec le même état : chacun montre ses essais.
+        tried = len(state.attempts)
         start = time.perf_counter()
         first_token: float | None = None
         usage = Usage()
@@ -399,7 +350,7 @@ class ModelRouter:
 
         async def events() -> AsyncIterator[StreamEvent | RouteInfo]:
             nonlocal first_token, usage, finish
-            async for event in self.stream(task, request, constraints, state=state):
+            async for event in self.stream(task, request, constraints, state=state, relay=relay):
                 if isinstance(event, TextDelta | ToolCallReady) and first_token is None:
                     first_token = time.perf_counter()
                 elif isinstance(event, StreamEnd):
@@ -422,7 +373,7 @@ class ModelRouter:
                     provider=route.provider if route else None,
                     model=route.model if route else None,
                     thinking=(request.thinking or route.thinking) if route else None,
-                    attempts=list(state.attempts),
+                    attempts=state.attempts[tried:],
                     tokens_in=usage.input_tokens,
                     tokens_out=usage.output_tokens,
                     tokens_cached=usage.cached_input_tokens,
@@ -430,6 +381,8 @@ class ModelRouter:
                     ttft_ms=round((first_token - start) * 1000, 1) if first_token else None,
                     finish_reason=finish,
                 )
+                if relay is not None and route == relay.route:
+                    span.set(relais=relay.reason)
 
     def cost(self, route: Route | None, usage: Usage) -> float | None:
         if route is None:

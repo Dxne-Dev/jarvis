@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from ojarvis.chat.service import clean_title
+from ojarvis.chat.learning import clean_title
 from ojarvis.llm.errors import ProviderUnavailableError
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply, e2e_script
 from ojarvis.llm.structured import TOOL_NAME

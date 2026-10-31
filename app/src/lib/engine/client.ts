@@ -91,6 +91,27 @@ export class EngineClient {
     return data as T;
   }
 
+  /** Un fichier (une image) : `null` s'il n'existe pas encore (404). */
+  async blob(path: string): Promise<Blob | null> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(this.endpoint.baseUrl + path, {
+        headers: { Authorization: `Bearer ${this.endpoint.token}` },
+      });
+    } catch {
+      throw new EngineUnreachableError();
+    }
+    if (response.status === 404) return null;
+    if (!response.ok)
+      throw new EngineApiError(
+        response.status,
+        "http_error",
+        `Erreur HTTP ${response.status}.`,
+        null,
+      );
+    return response.blob();
+  }
+
   /** Requête POST dont la réponse est lue au fil de l'eau (flux SSE). */
   async stream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     let response: Response;

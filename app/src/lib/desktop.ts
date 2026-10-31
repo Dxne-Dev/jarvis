@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import {
   isPermissionGranted,
@@ -74,4 +75,15 @@ export async function autostartEnabled(): Promise<boolean | null> {
 export async function setAutostart(on: boolean): Promise<void> {
   if (runtime !== "tauri") return;
   await (on ? enable() : disable());
+}
+
+/** Jarvis se met de côté (#48) : sa fenêtre est réduite pour que l'application où il va
+ * cliquer repasse devant. Le moteur attend de revoir l'élément avant de cliquer. */
+export async function stepAside(): Promise<void> {
+  if (runtime !== "tauri") return;
+  try {
+    await getCurrentWindow().minimize();
+  } catch (error) {
+    uiLog("warn", `réduction de la fenêtre impossible : ${String(error)}`);
+  }
 }

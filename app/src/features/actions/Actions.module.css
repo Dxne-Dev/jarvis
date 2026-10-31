@@ -289,6 +289,30 @@
   white-space: pre-wrap;
 }
 
+/* La page que Jarvis manipule, en direct (#34). */
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.liveImage {
+  width: 100%;
+  aspect-ratio: 1280 / 900;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.liveWaiting,
+.liveUrl {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
 .decideError {
   color: var(--color-danger);
   font-size: var(--text-sm);

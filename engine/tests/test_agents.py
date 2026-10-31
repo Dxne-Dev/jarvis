@@ -163,3 +163,95 @@ def test_an_interrupted_mission_is_never_replayed(client: TestClient, services: 
 
     assert client.portal is not None
     assert client.portal.call(scenario) == "interrompu"
+
+
+# --------------------------------------------------------------------------- garde-fous (#15)
+
+
+def wait_run(client: TestClient, run_id: str) -> dict[str, Any]:
+    run: dict[str, Any] = {}
+    for _ in range(200):
+        run = client.get(f"/v1/agents/runs/{run_id}").json()
+        if run["status"] != "en_cours":
+            break
+        time.sleep(0.05)
+    return run
+
+
+def endless(request: LLMRequest) -> FakeReply:
+    """L'agent lit sans fin : seul un garde-fou l'arrête."""
+    if is_agent(request, "Recherche"):
+        call = ToolCall(f"e{len(request.messages)}", "echo", {"texte": "encore"})
+        return FakeReply(text="Je lis encore.", tool_calls=[call])
+    return FakeReply(text="Fini.")
+
+
+def test_a_mission_over_budget_is_suspended_and_you_are_told(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    echo, _act, _destroy = tools
+    llm["deepseek"]._script = endless
+    body = {"task": "Cherche sans t'arrêter.", "budget_dollars": 0.000001}
+    run = wait_run(client, client.post("/v1/agents/recherche/runs", json=body).json()["id"])
+    assert run["status"] == "suspendue"
+    assert run["result"].startswith("Mission suspendue : budget de ")
+    assert len(echo.calls) == 1  # arrêtée dès le premier tour, sans nouvel appel au modèle
+    notices = [
+        e["payload"]
+        for e in client.get("/v1/events", params={"limit": 50}).json()
+        if e["type"] == "notification"
+    ]
+    assert [n["title"] for n in notices] == ["Mission suspendue : Recherche"]
+    assert notices[0]["body"].startswith("budget de ")
+
+
+def test_repeated_failures_suspend_a_mission(
+    client: TestClient, llm: dict[str, FakeProvider], tools: tuple[Echo, Act, Destroy]
+) -> None:
+    del tools
+
+    def stuck(request: LLMRequest) -> FakeReply:
+        if is_agent(request, "Recherche"):
+            calls = [ToolCall(f"x{i}", "inconnu", {}) for i in range(3)]  # hors de ses outils
+            return FakeReply(text="J'essaie.", tool_calls=calls)
+        return FakeReply(text="Fini.")
+
+    llm["deepseek"]._script = stuck
+    started = client.post("/v1/agents/recherche/runs", json={"task": "Fais l'impossible."})
+    run = wait_run(client, started.json()["id"])
+    assert run["status"] == "suspendue"
+    assert run["result"].startswith("Mission suspendue : 3 échecs d'affilée.")
+
+
+def test_a_mission_never_runs_an_action_or_a_destruction_on_its_own(
+    client: TestClient,
+    services: Services,
+    llm: dict[str, FakeProvider],
+    tools: tuple[Echo, Act, Destroy],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _echo, act, destroy = tools
+    monkeypatch.setattr(services.orchestrator.agents["recherche"], "tools", ("agir", "detruire"))
+
+    def bold(request: LLMRequest) -> FakeReply:
+        done = sum(1 for m in request.messages if m.role == "assistant" and m.tool_calls)
+        if is_agent(request, "Recherche") and done == 0:
+            calls = [
+                ToolCall("a", "agir", {"cible": "fiche", "contenu": "modifiée"}),
+                ToolCall("d", "detruire", {"chemin": "~/projet/a.txt"}),
+            ]
+            return FakeReply(text="J'agis.", tool_calls=calls)
+        return FakeReply(text="J'ai proposé deux plans.")
+
+    llm["deepseek"]._script = bold
+    started = client.post("/v1/agents/recherche/runs", json={"task": "Range et supprime."})
+    run = wait_run(client, started.json()["id"])
+    # Rien n'est lancé : chaque action devient un plan qui attend ta validation.
+    assert act.calls == []
+    assert destroy.calls == []
+    assert [s["status"] for s in run["steps"]] == ["proposed", "proposed"]
+    plans = [client.get(f"/v1/plans/{p}").json() for p in run["plans"]]
+    assert sorted((p["max_level"], p["status"]) for p in plans) == [
+        (2, "proposed"),
+        (3, "proposed"),
+    ]

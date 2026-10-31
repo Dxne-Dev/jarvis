@@ -12,7 +12,9 @@ from ojarvis.llm.catalog import Catalog, openrouter_free_specs
 from ojarvis.llm.providers.anthropic_provider import AnthropicProvider
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.openai_compat import (
+    BASETEN,
     DEEPSEEK,
+    META,
     OLLAMA,
     OPENAI,
     OPENROUTER,
@@ -81,6 +83,8 @@ def build_providers(secrets: SecretStore) -> dict[str, Provider]:
         "anthropic": AnthropicProvider(key("ANTHROPIC_API_KEY")),
         "openai": OpenAICompatibleProvider(OPENAI, key("OPENAI_API_KEY")),
         "openrouter": OpenAICompatibleProvider(OPENROUTER, key("OPENROUTER_API_KEY")),
+        "meta": OpenAICompatibleProvider(META, key("MODEL_API_KEY")),
+        "baseten": OpenAICompatibleProvider(BASETEN, key("BASETEN_API_KEY")),
         "ollama": OllamaProvider(),
     }
 

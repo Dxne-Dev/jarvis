@@ -12,6 +12,7 @@ import {
   useRevokeCookies,
 } from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
+import { PreferenceSwitch } from "./PreferenceControls";
 import type { BrowserGrant, BrowserState } from "../../lib/engine/types";
 import { formatRelative } from "../../lib/format";
 import styles from "./SettingsScreen.module.css";
@@ -261,6 +262,11 @@ export function BrowserSection() {
         autorises ici, il utilise ta session : chaque visite devient une action (niveau 2) que tu
         valides.
       </p>
+      <PreferenceSwitch
+        name="browser_visible"
+        label="Montrer le navigateur de Jarvis"
+        hint="Chromium s'ouvre en fenêtre : tu vois chaque page, chaque clic, chaque champ rempli. Rien ne change aux validations."
+      />
       <div className={styles.group}>
         <div>
           <h3 className={styles.groupTitle}>Autoriser un domaine</h3>

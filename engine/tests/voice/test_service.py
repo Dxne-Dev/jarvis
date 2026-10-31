@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx
 import numpy as np
 import pytest
@@ -19,7 +20,9 @@ from ojarvis.events.bus import EventBus
 from ojarvis.services import Services
 from ojarvis.settings_store import Preferences
 from ojarvis.voice.audio import FileSource, Frame, MemorySink, VirtualClock
-from ojarvis.voice.service import SENSITIVITY, EchoCancel, VoiceService, list_devices
+from ojarvis.voice.devices import EchoCancel, list_devices
+from ojarvis.voice.model_sets import SENSITIVITY
+from ojarvis.voice.service import VoiceService
 from tests.conftest import Router
 from tests.voice.fakes import (
     FakeChat,
@@ -208,6 +211,22 @@ async def test_service_runs_a_turn_and_follows_settings() -> None:
     await service.close()
 
 
+def test_the_meta_profile_listens_with_muse_voice_transcribe_alone() -> None:
+    prefs = {"value": Preferences(model_profile="auto")}
+    service, _bus, _chat = make_service(prefs, echo=FakeEcho(available=True), sources=[])
+    groq, cartesia = object(), object()
+    service._parts.update({"cloud_stt": groq, "streaming_stt": cartesia})
+    auto = Preferences(model_profile="auto")
+    assert service._cloud_for(auto) is groq
+    assert service._streaming_for(auto) is cartesia
+    assert service._cloud_for(Preferences(model_profile="auto", voice_stt="local")) is None
+    # « Tout Meta » : Muse Voice Transcribe est le moteur du jeu, sans Groq ni Cartesia en plus.
+    for stt in ("groq", "cartesia", "local"):
+        meta = Preferences(model_profile="meta", voice_stt=stt)
+        assert service._cloud_for(meta) is None
+        assert service._streaming_for(meta) is None
+
+
 async def test_an_echo_micro_invisible_to_portaudio_falls_back_to_the_default() -> None:
     """Ubuntu 24.04 : PortAudio sans PulseAudio ne voit pas les micros virtuels de PipeWire."""
     prefs = {"value": Preferences(voice_input_device="alsa_input.usb")}
@@ -271,3 +290,27 @@ def test_devices_come_from_pipewire_with_readable_names(monkeypatch: pytest.Monk
         "inputs": [{"name": "alsa_input.pci", "label": "Audio interne"}],
         "outputs": [{"name": "alsa_output.pci", "label": "Haut-parleurs"}],
     }
+
+
+def test_switching_the_model_profile_reapplies_the_voice(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Revue du 27/10/2026 : couper « Tout Meta » laissait ta voix partir chez Meta.
+    applied: list[str] = []
+
+    async def record(prefs: Preferences) -> None:
+        applied.append(prefs.model_profile)
+
+    monkeypatch.setattr(services.voice, "apply", record)
+    assert client.patch("/v1/settings", json={"model_profile": "meta"}).status_code == 200
+    assert client.portal is not None
+    client.portal.call(anyio.sleep, 0.05)  # la mise à jour part en arrière-plan
+    assert applied == ["meta"]
+
+
+def test_dictation_needs_the_voice_to_run(client: TestClient) -> None:
+    # #10 : sans voix allumée (ici, pas d'audio), le terminal reçoit une explication claire.
+    response = client.post("/v1/voice/dictate", json={})
+    assert response.status_code == 409
+    assert "La voix est éteinte" in response.json()["error"]["message"]
+    assert client.post("/v1/voice/say", json={"text": "Bonjour."}).json() == {"spoken": False}

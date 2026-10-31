@@ -1,12 +1,59 @@
-import { MonitorCog } from "lucide-react";
+import { MonitorCog, MonitorUp } from "lucide-react";
 
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { describeError } from "../../lib/engine/client";
-import { usePreferences, useUpdatePreferences } from "../../lib/engine/queries";
+import {
+  usePreferences,
+  useScreenShare,
+  useToggleScreenShare,
+  useUpdatePreferences,
+} from "../../lib/engine/queries";
 import { useEngineOnline } from "../../lib/engine/store";
 import { Choice } from "./PreferenceControls";
 import styles from "./SettingsScreen.module.css";
+
+/** Partager l'écran en direct : les outils d'écran lisent le flux au lieu d'une capture. */
+function ScreenShareRow({ enabled, online }: { enabled: boolean; online: boolean }) {
+  const share = useScreenShare();
+  const toggle = useToggleScreenShare();
+  const active = share.data?.active ?? false;
+  return (
+    <li className={styles.secret}>
+      <div className={styles.grantHead}>
+        <MonitorUp className={styles.secretIcon} aria-hidden="true" />
+        <div className={styles.secretText}>
+          <p className={styles.secretLabel}>Partager mon écran en direct</p>
+          <p className={styles.secretHelp}>
+            Jarvis voit ton écran en continu (deux images par seconde, gardées en mémoire, jamais
+            enregistrées) au lieu d&apos;une capture à chaque fois. GNOME te demande ton accord la
+            première fois et affiche son indicateur tant que dure le partage.
+          </p>
+          <p className={styles.integrationStatus} data-tone={active ? "ok" : "idle"}>
+            {active ? "Écran partagé." : "Écran non partagé."}
+          </p>
+        </div>
+        <div className={styles.actions}>
+          <Button
+            size="sm"
+            busy={toggle.isPending}
+            disabled={!online || (!enabled && !active)}
+            onClick={() => {
+              toggle.mutate(!active);
+            }}
+          >
+            {active ? "Arrêter" : "Partager…"}
+          </Button>
+        </div>
+      </div>
+      {toggle.isError && (
+        <p className={styles.ko} role="alert">
+          {describeError(toggle.error)}
+        </p>
+      )}
+    </li>
+  );
+}
 
 /** Contrôle du PC : désactivé par défaut ; l'activer demande une confirmation. */
 export function DesktopSection() {
@@ -70,6 +117,7 @@ export function DesktopSection() {
             </p>
           )}
         </li>
+        <ScreenShareRow enabled={enabled} online={online} />
       </ul>
       <Choice
         name="screen_vision"

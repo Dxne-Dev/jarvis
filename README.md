@@ -6,7 +6,8 @@ Assistant personnel desktop pour Ubuntu. On lui parle à voix haute (« Hey Jarv
 
 - **App** : Tauri v2 (Rust) + React + TypeScript.
 - **Cerveau** : moteur Python (FastAPI) lancé par l'app, sur `127.0.0.1` uniquement, protégé par un jeton tiré à chaque lancement.
-- **Voix** : « Hey Jarvis » reconnu en local, transcription Groq (français imposé, Whisper local en secours), voix Cartesia ou Piper ; réponse parlée en moins de 2 s ; on peut l'interrompre en parlant. Raccourci global : `Ctrl+Alt+J`.
+- **Modèles** : profil « Tout Meta » par défaut, rien que des modèles de Meta (voir [Meta models](#meta-models-meta-global-ai-developer-hackathon)) ; le profil « Automatique » ouvre aux autres fournisseurs et aux modèles locaux.
+- **Voix** : en « Tout Meta », on parle après le raccourci global (`Ctrl+Alt+J`) ou le bouton micro ; Muse Voice Transcribe écoute, MMS répond. En « Automatique » : « Hey Jarvis » reconnu en local, transcription Groq (Whisper local en secours), voix Cartesia ou Piper, réponse parlée en moins de 2 s. On peut l'interrompre en parlant.
 - **Mémoire** : ce que Jarvis sait de toi est visible, modifiable et supprimable.
 - **Actions** : il cherche sur le web, lit pages et fichiers, lance du code en bac à sable et pilote son propre navigateur. Toute action (cliquer, écrire, utiliser ta session) passe par un plan que tu valides ; chaque action est écrite dans un journal impossible à effacer. Détails : [`docs/securite.md`](./docs/securite.md).
 - **Organisation** : rappels et tâches à l'heure dite ou sur un événement, qui survivent à un redémarrage ; briefing du matin ; GitHub, Notion et Google Agenda par leurs serveurs MCP officiels ; Telegram pour lui parler depuis ton téléphone.
@@ -19,6 +20,33 @@ Assistant personnel desktop pour Ubuntu. On lui parle à voix haute (« Hey Jarv
 | ![Une conversation avec un plan à valider](docs/captures/plan.webp) | ![Les agents dev, recherche et coach](docs/captures/agents.webp) | ![La mémoire graphe](docs/captures/memoire-graphe.webp) |
 
 Le projet s'est construit phase par phase. L'état du travail est dans [`PROGRESS.md`](./PROGRESS.md), les choix dans [`DECISIONS.md`](./DECISIONS.md), le journal dans [`docs/journal/`](./docs/journal/README.md), le schéma dans [`docs/architecture.md`](./docs/architecture.md).
+
+## Meta models (Meta Global AI Developer Hackathon)
+
+With the default **"All Meta"** profile, every model O-jarvis calls at runtime is a Meta model, fallbacks included. If no Meta model can answer, Jarvis says so; it never falls back to another provider. What was built during the hackathon is listed in [`HACKATHON.md`](./HACKATHON.md).
+
+| Meta model | Where it runs | What it does in O-jarvis |
+|---|---|---|
+| **Muse Spark 1.3** | Meta Model API | Every answer: chat, voice, shell mode and its plans, screen and web page reading (vision), choosing what to click on screen, watching a short screen recording (video), memory extraction, titles |
+| **Muse Spark Open** (`muse-spark-open-1026`) | Baseten | Takes over every task when Muse Spark does not answer |
+| **Muse Wonder 1.0** | Meta Model API | Reviews each code edit in shell mode; takes over when the same command fails twice |
+| **Muse Voice Transcribe 1.0** | Meta Model API | Speech to text, after the shortcut, the mic button or `/voix` in the terminal |
+| **MMS TTS, French** (`facebook/mms-tts-fra`) | On the user's PC (ONNX Runtime, CPU) | Jarvis's voice; numbers, units and acronyms are spelled out first by plain code |
+| **SAM 3.1** | Meta Model API | Frames the buttons and icons of a desktop app on a screenshot, so Jarvis can click the one Muse Spark picked |
+
+Operating system features and plain code (no AI model):
+
+- **espeak-ng**, the Ubuntu system voice: fallback voice if MMS fails.
+- **Speech detection**: the sound volume compared with the room's background noise.
+- **Listening starts** with the global shortcut (GNOME desktop portal), the mic button or `/voix`: there is no wake word, and no sound leaves the PC before that.
+- **Echo cancellation**: PipeWire's `module-echo-cancel`.
+- **Clicking in a desktop app**: GNOME's remote desktop portal moves the pointer, after the user allows it once.
+- **Live screen share and recordings**: GNOME's ScreenCast portal, read by GStreamer (two images per second, kept in memory only); ffmpeg turns a recording into an MP4 clip, deleted once Muse Spark has watched it.
+- **Memory search**: SQLite full-text search and hashed word vectors.
+- **Browser actions**: Playwright drives Chromium; screenshots use the desktop portal.
+- **Safety**: command classification and secret masking are rules in code.
+
+The "Automatic" profile, outside the submission, can also use DeepSeek, Anthropic, OpenAI, OpenRouter, Ollama, Groq, Cartesia, Piper, Whisper, openWakeWord, Silero VAD and multilingual-e5.
 
 ## Ce que Jarvis sait faire
 

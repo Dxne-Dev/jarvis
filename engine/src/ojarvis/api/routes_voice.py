@@ -7,10 +7,11 @@ from typing import Any
 import anyio.to_thread
 import httpx
 from fastapi import APIRouter, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from ojarvis.api.deps import ServicesDep
 from ojarvis.core.errors import ConflictError, UnavailableError, UpstreamError
-from ojarvis.voice.service import list_devices
+from ojarvis.voice.devices import list_devices
 
 router = APIRouter(prefix="/v1/voice")
 
@@ -50,3 +51,32 @@ async def voices(services: ServicesDep) -> list[dict[str, Any]]:
         return await services.voice.voices()
     except httpx.HTTPError as exc:
         raise UpstreamError("Liste des voix Cartesia indisponible.", code="cartesia_error") from exc
+
+
+class DictateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeout_s: int = Field(default=30, ge=5, le=120)
+
+
+@router.post("/dictate")
+async def dictate(body: DictateIn, services: ServicesDep) -> dict[str, str]:
+    """Le terminal écoute une phrase (#10) : elle lui revient, au lieu d'une réponse parlée."""
+    text = await services.voice.dictate(body.timeout_s)
+    if text is None:
+        raise ConflictError(
+            "La voix est éteinte : allume-la dans Réglages (Voix), avec l'app ouverte."
+        )
+    return {"text": text}
+
+
+class SayIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/say")
+async def say(body: SayIn, services: ServicesDep) -> dict[str, bool]:
+    """Dire à voix haute une réponse du terminal, si la voix est en veille."""
+    return {"spoken": services.voice.say(body.text)}
