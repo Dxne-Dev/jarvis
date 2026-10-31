@@ -245,7 +245,7 @@ async def screen(services: Services, home: Path, port: int) -> Outcome:
 
     from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
 
-    from ojarvis.tools.desktop import LookAtScreen  # noqa: PLC0415
+    from ojarvis.tools.screen import LookAtScreen  # noqa: PLC0415
 
     del home, port
     image = Image.new("RGB", (1366, 768), (245, 246, 248))
