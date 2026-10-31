@@ -38,7 +38,7 @@ from ojarvis.events.bus import EventBus
 from ojarvis.llm.types import ToolCall, ToolSpec
 from ojarvis.permissions.gate import PermissionGate
 from ojarvis.security.redaction import REDACTOR
-from ojarvis.shell.commands import talks_to_network
+from ojarvis.shell.signatures import talks_to_network
 from ojarvis.tools.base import LEVEL_LABELS, Level
 from ojarvis.tools.guards import DATA_RULE, as_data
 
