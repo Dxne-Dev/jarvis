@@ -34,14 +34,8 @@ from ojarvis.llm.types import LLMRequest, ToolCall
 from ojarvis.permissions.gate import OsControlDisabledError
 from ojarvis.services import Services
 from ojarvis.tools.base import Level
-from ojarvis.tools.desktop import (
-    AppCatalog,
-    CloseApp,
-    LookAtScreen,
-    OpenUrl,
-    RunningApps,
-    UrlArgs,
-)
+from ojarvis.tools.desktop import AppCatalog, CloseApp, OpenUrl, RunningApps, UrlArgs
+from ojarvis.tools.screen import LookAtScreen
 from tests.test_chat import read_sse
 
 ENTRY = """[Desktop Entry]

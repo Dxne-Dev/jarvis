@@ -84,12 +84,13 @@ from ojarvis.tools.automations import automation_tools
 from ojarvis.tools.base import ToolContext, ToolRegistry
 from ojarvis.tools.catalog import build_registry
 from ojarvis.tools.code import ListCapabilities
-from ojarvis.tools.desktop import ScreenMode, desktop_tools
+from ojarvis.tools.desktop import desktop_tools
 from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.machine import ReadMachineMap
 from ojarvis.tools.mcp import mcp_tools
 from ojarvis.tools.page_view import LookAtPage
+from ojarvis.tools.screen import ScreenMode
 from ojarvis.tools.shell import RunCommand
 from ojarvis.tools.skills import skill_tools
 from ojarvis.tools.sudo import ProposeAdmin
