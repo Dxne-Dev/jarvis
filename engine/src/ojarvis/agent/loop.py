@@ -347,6 +347,12 @@ def plan_summary(
                     else {}
                 ),
                 **({"preview": previews[s.position]} if s.position in previews else {}),
+                # Un clic à l'écran : le terminal montre où (la capture annotée du repère).
+                **(
+                    {"repere": str(s.arguments["repere"])}
+                    if s.tool == "cliquer_ecran" and "repere" in s.arguments
+                    else {}
+                ),
                 **(
                     {"measure": "avant" if s.why == MEASURE_BEFORE else "après"}
                     if s.why in (MEASURE_BEFORE, MEASURE_AFTER)
