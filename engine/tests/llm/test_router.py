@@ -17,8 +17,9 @@ from ojarvis.llm.errors import (
     ProviderUnavailableError,
     StructuredOutputError,
 )
+from ojarvis.llm.policy import Relay, Route
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
-from ojarvis.llm.router import Constraints, ModelRouter, Relay, Route, RoutedStream
+from ojarvis.llm.router import Constraints, ModelRouter, RoutedStream
 from ojarvis.llm.structured import TOOL_NAME, generate_structured
 from ojarvis.llm.types import (
     ImagePart,

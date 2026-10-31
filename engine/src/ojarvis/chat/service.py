@@ -37,7 +37,8 @@ from ojarvis.core.errors import InvalidInputError
 from ojarvis.core.logs import get_logger
 from ojarvis.events.bus import EventBus
 from ojarvis.llm.errors import LLMError
-from ojarvis.llm.router import ModelRouter, Relay
+from ojarvis.llm.policy import Relay
+from ojarvis.llm.router import ModelRouter
 from ojarvis.llm.types import (
     LLMRequest,
     Message,

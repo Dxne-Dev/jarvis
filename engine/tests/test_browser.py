@@ -555,7 +555,7 @@ async def test_the_login_window_keeps_the_last_state_when_you_close_it(
 async def test_the_installed_app_downloads_chromium_with_the_playwright_driver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ojarvis.browser.session import install_chromium  # noqa: PLC0415
+    from ojarvis.browser.login import install_chromium  # noqa: PLC0415
 
     calls = tmp_path / "args"
     cli = tmp_path / "cli.py"

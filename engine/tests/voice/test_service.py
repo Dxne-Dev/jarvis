@@ -20,7 +20,8 @@ from ojarvis.events.bus import EventBus
 from ojarvis.services import Services
 from ojarvis.settings_store import Preferences
 from ojarvis.voice.audio import FileSource, Frame, MemorySink, VirtualClock
-from ojarvis.voice.service import SENSITIVITY, EchoCancel, VoiceService, list_devices
+from ojarvis.voice.devices import EchoCancel, list_devices
+from ojarvis.voice.service import SENSITIVITY, VoiceService
 from tests.conftest import Router
 from tests.voice.fakes import (
     FakeChat,

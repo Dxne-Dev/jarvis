@@ -143,7 +143,7 @@ def test_the_api_lists_and_imports_models(
 
 
 def test_a_voice_failure_says_why_without_the_home_folder() -> None:
-    from ojarvis.voice.service import _describe  # noqa: PLC0415
+    from ojarvis.voice.devices import _describe  # noqa: PLC0415
 
     home = str(Path.home())
     message = _describe(RuntimeError(f"Unable to open file {home}/.cache/model.bin\ndétail"))

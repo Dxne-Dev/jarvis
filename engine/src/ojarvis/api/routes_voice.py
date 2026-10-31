@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ojarvis.api.deps import ServicesDep
 from ojarvis.core.errors import ConflictError, UnavailableError, UpstreamError
-from ojarvis.voice.service import list_devices
+from ojarvis.voice.devices import list_devices
 
 router = APIRouter(prefix="/v1/voice")
 

@@ -49,9 +49,10 @@ from ojarvis.integrations.google import GoogleAccount, attach_agenda
 from ojarvis.integrations.manager import IntegrationManager
 from ojarvis.integrations.mcp_registry import McpRegistryService
 from ojarvis.llm.catalog import Catalog
+from ojarvis.llm.policy import Route
 from ojarvis.llm.providers.base import Provider
 from ojarvis.llm.providers.registry import OllamaProvider
-from ojarvis.llm.router import ModelRouter, Route
+from ojarvis.llm.router import ModelRouter
 from ojarvis.memory.embeddings import Embedder
 from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryStore
