@@ -66,7 +66,7 @@ from ojarvis.security.secrets import (
     SecretBackend,
     SecretStore,
 )
-from ojarvis.settings_store import Preferences
+from ojarvis.settings_store import Preferences, SettingsStore
 from ojarvis.shell.machine import MachineCard
 from ojarvis.shell.servers import BackgroundSessions
 from ojarvis.skills.runner import SkillRunner
@@ -139,6 +139,23 @@ async def _open_secrets(
             imported = await anyio.to_thread.run_sync(secrets.import_dotenv, config.dotenv_path)
     await anyio.to_thread.run_sync(secrets.load_into_redactor)
     return secrets, backend, keyring_error, imported
+
+
+async def _startup_preferences(
+    settings: SettingsStore,
+    config: EngineConfig,
+    providers: dict[str, Provider] | None,
+) -> Preferences:
+    """Préférences au démarrage ; en e2e, le profil « Auto » des fournisseurs simulés."""
+    preferences = await settings.get()
+    if (
+        providers is None
+        and config.dev_mode
+        and os.environ.get("OJARVIS_FAKE_LLM") == "1"
+        and preferences.model_profile != "auto"
+    ):
+        preferences, _ = await settings.update({"model_profile": "auto"})
+    return preferences
 
 
 @dataclass
