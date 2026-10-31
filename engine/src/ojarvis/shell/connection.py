@@ -25,6 +25,8 @@ from ojarvis.config import APP_DIR_NAME, Paths
 
 #: Poignée de main du moteur (voir `ojarvis.__main__`), lue aussi par le terminal.
 READY_PREFIX = "OJARVIS_READY "
+#: Un moteur tourne déjà (lancé par un terminal) : sa connexion, pour que l'app le rejoigne.
+RUNNING_PREFIX = "OJARVIS_RUNNING "
 EXIT_LOCKED = 3
 EXIT_BAD_TOKEN = 4
 

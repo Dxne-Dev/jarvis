@@ -3,7 +3,8 @@
 //! Poignée de main : l'app écrit un jeton neuf sur l'entrée standard du moteur et la
 //! garde ouverte ; le moteur répond `OJARVIS_READY {"port": ...}` sur sa sortie
 //! standard. Fermer l'entrée standard arrête le moteur proprement : si l'app meurt,
-//! le moteur s'arrête aussi.
+//! le moteur s'arrête aussi. Si un terminal a déjà lancé le moteur, l'app le rejoint
+//! (voir `join`).
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, oneshot, watch};
+
+use crate::join;
 
 const READY_PREFIX: &str = "OJARVIS_READY ";
 const READY_TIMEOUT: Duration = Duration::from_secs(90);
@@ -70,11 +73,21 @@ impl EngineInfo {
 
 type StdoutLines = Lines<BufReader<ChildStdout>>;
 
+/// Ce que le moteur dit au démarrage : il est prêt, ou un autre tourne déjà (à rejoindre).
+#[derive(Debug, PartialEq)]
+enum Handshake {
+    Ready(u16),
+    Joined(join::Running),
+}
+
 /// Lit la sortie du moteur jusqu'à sa poignée de main ; `None` s'il s'arrête avant.
-async fn wait_ready(lines: &mut StdoutLines) -> Option<u16> {
+async fn wait_ready(lines: &mut StdoutLines) -> Option<Handshake> {
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(port) = parse_ready(&line) {
-            return Some(port);
+            return Some(Handshake::Ready(port));
+        }
+        if let Some(running) = join::parse_running(&line) {
+            return Some(Handshake::Joined(running));
         }
     }
     None
@@ -175,6 +188,8 @@ pub struct EngineManager {
     restarts: AtomicU32,
     /// Numéro du lancement en cours : un ancien moteur qui s'arrête ne relance rien.
     generation: AtomicU64,
+    /// L'app s'est branchée sur le moteur d'un terminal, qu'elle ne possède pas.
+    joined: AtomicBool,
     perf_probe: bool,
 }
 
@@ -187,6 +202,7 @@ impl EngineManager {
             quitting: AtomicBool::new(false),
             restarts: AtomicU32::new(0),
             generation: AtomicU64::new(0),
+            joined: AtomicBool::new(false),
             perf_probe,
         })
     }
@@ -318,10 +334,11 @@ impl EngineManager {
 
         let mut lines = BufReader::new(stdout).lines();
         match tokio::time::timeout(READY_TIMEOUT, wait_ready(&mut lines)).await {
-            Ok(Some(port)) => {
+            Ok(Some(Handshake::Ready(port))) => {
                 tokio::spawn(drain(lines));
                 Ok((port, token))
             }
+            Ok(Some(Handshake::Joined(running))) => Ok(self.join(app, generation, running)),
             Ok(None) => {
                 Err("le moteur s'est arrêté pendant son démarrage (voir les logs)".to_string())
             }
@@ -331,7 +348,7 @@ impl EngineManager {
                 let manager = Arc::clone(self);
                 let app = app.clone();
                 tokio::spawn(async move {
-                    let Some(port) = wait_ready(&mut lines).await else {
+                    let Some(Handshake::Ready(port)) = wait_ready(&mut lines).await else {
                         return;
                     };
                     if manager.generation.load(Ordering::SeqCst) == generation {
@@ -349,6 +366,33 @@ impl EngineManager {
         }
     }
 
+    /// Le moteur d'un terminal tourne déjà : l'app s'y branche, et relance le sien s'il
+    /// s'arrête (le terminal se ferme).
+    fn join(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        generation: u64,
+        running: join::Running,
+    ) -> (u16, String) {
+        log::info!("moteur du terminal rejoint (pid {})", running.pid);
+        self.joined.store(true, Ordering::SeqCst);
+        let manager = Arc::clone(self);
+        let app = app.clone();
+        let pid = running.pid;
+        tokio::spawn(async move {
+            join::wait_gone(pid).await;
+            if manager.generation.load(Ordering::SeqCst) != generation
+                || manager.quitting.load(Ordering::SeqCst)
+            {
+                return;
+            }
+            log::warn!("le moteur du terminal s'est arrêté : l'app relance le sien");
+            manager.joined.store(false, Ordering::SeqCst);
+            manager.start(app).await;
+        });
+        (running.port, running.token)
+    }
+
     async fn on_exit(self: Arc<Self>, app: AppHandle, generation: u64, code: Option<i32>) {
         if generation != self.generation.load(Ordering::SeqCst) {
             return;
@@ -359,6 +403,11 @@ impl EngineManager {
         }
         log::warn!("le moteur s'est arrêté (code {code:?})");
         if code == Some(EXIT_LOCKED) {
+            // Il a d'abord donné la connexion du moteur déjà lancé : l'app le rejoint.
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if self.joined.load(Ordering::SeqCst) {
+                return;
+            }
             // Pas une panne : relancer ne servirait à rien tant que ce terminal est ouvert.
             self.publish(
                 &app,
@@ -433,107 +482,5 @@ impl EngineManager {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn token_is_64_hex_chars_and_unique() {
-        let a = new_token().unwrap();
-        let b = new_token().unwrap();
-        assert_eq!(a.len(), 64);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn ready_line_is_parsed() {
-        assert_eq!(
-            parse_ready(r#"OJARVIS_READY {"port": 4242, "pid": 1, "version": "0.1.0"}"#),
-            Some(4242)
-        );
-        assert_eq!(parse_ready("autre chose"), None);
-        assert_eq!(parse_ready("OJARVIS_READY {pas du json}"), None);
-    }
-
-    #[test]
-    fn command_prefers_bundled_engine() {
-        let dir = std::env::temp_dir().join(format!("ojarvis-test-{}", std::process::id()));
-        let bundled = dir.join("engine");
-        std::fs::create_dir_all(&bundled).unwrap();
-        std::fs::write(bundled.join("ojarvis-engine"), b"").unwrap();
-        let cmd = resolve_command(Some(&dir), None, false).unwrap();
-        assert_eq!(cmd.program, bundled.join("ojarvis-engine"));
-        assert!(cmd.args.is_empty());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn command_uses_engine_dir_venv() {
-        let dir = std::env::temp_dir().join(format!("ojarvis-src-{}", std::process::id()));
-        let bin = dir.join(".venv").join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("python"), b"").unwrap();
-        let cmd = resolve_command(None, dir.to_str(), true).unwrap();
-        assert_eq!(cmd.program, bin.join("python"));
-        assert_eq!(cmd.args, vec!["-m", "ojarvis", "--dev"]);
-        assert_eq!(cmd.cwd.as_deref(), Some(dir.as_path()));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn engine_from_sources_reads_the_repository_dotenv() {
-        let root = std::env::temp_dir().join(format!("ojarvis-depot-{}", std::process::id()));
-        let engine = root.join("engine");
-        let bin = engine.join(".venv").join("bin");
-        std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("python"), b"").unwrap();
-        let without = resolve_command(None, engine.to_str(), false).unwrap();
-        assert!(without.env.is_empty());
-        std::fs::write(root.join(".env"), b"GROQ_API_KEY=\n").unwrap();
-        let with = resolve_command(None, engine.to_str(), false).unwrap();
-        if std::env::var_os("OJARVIS_DOTENV").is_none() {
-            let (key, value) = &with.env[0];
-            assert_eq!(key, "OJARVIS_DOTENV");
-            assert!(std::path::Path::new(value).is_file());
-        }
-        std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn missing_engine_is_a_clear_error() {
-        let error = resolve_command(None, Some("/chemin/inexistant"), false).unwrap_err();
-        assert!(error.contains("moteur introuvable"));
-    }
-
-    #[tokio::test]
-    async fn late_handshake_is_still_read_after_a_timeout() {
-        let mut child = Command::new("sh")
-            .args([
-                "-c",
-                "echo démarrage; sleep 0.3; echo 'OJARVIS_READY {\"port\": 4321}'; echo suite",
-            ])
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        // Le délai expire d'abord…
-        let early = tokio::time::timeout(Duration::from_millis(50), wait_ready(&mut lines)).await;
-        assert!(early.is_err());
-        // …puis la poignée de main arrive : rien n'a été perdu entre-temps.
-        assert_eq!(wait_ready(&mut lines).await, Some(4321));
-        drain(lines).await;
-        child.wait().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn engine_exiting_before_handshake_is_reported() {
-        let mut child = Command::new("sh")
-            .args(["-c", "echo erreur"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        assert_eq!(wait_ready(&mut lines).await, None);
-        child.wait().await.unwrap();
-    }
-}
+#[path = "engine_tests.rs"]
+mod tests;

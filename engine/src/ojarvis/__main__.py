@@ -33,8 +33,10 @@ from ojarvis.shell.connection import (
     EXIT_BAD_TOKEN,
     EXIT_LOCKED,
     READY_PREFIX,
+    RUNNING_PREFIX,
     EngineInfo,
     info_path,
+    read_info,
     remove_info,
     write_info,
 )
@@ -106,6 +108,18 @@ def watch_parent(server: uvicorn.Server, stream: IO[bytes]) -> None:
     threading.Thread(target=watch_ppid, name="ppid-watch", daemon=True).start()
 
 
+def announce_running(connection: Path | None) -> None:
+    """Un moteur tourne déjà sur ces données (lancé par un terminal) : sa connexion part vers
+    celui qui nous a lancés (l'app), qui le rejoint au lieu d'échouer. Rien s'il n'est pas
+    sûr de le lire (voir `read_info`)."""
+    running = read_info(connection) if connection is not None else None
+    if running is None:
+        return
+    line = {"port": running.port, "pid": running.pid, "token": running.token}
+    sys.stdout.write(RUNNING_PREFIX + json.dumps(line) + "\n")
+    sys.stdout.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["shell"]:
@@ -136,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     lock = acquire_lock(config.paths.lock_path)
     if lock is None:
         log.error("engine_already_running", lock=str(config.paths.lock_path))
+        announce_running(info_path(config.paths))
         return EXIT_LOCKED
 
     sock = bind_socket(args.port)
