@@ -25,5 +25,3 @@ export function noticeFor(event: EngineEvent): string | null {
   }
   return null;
 }
-
-export { Notices } from "./Notices.tsx";
