@@ -89,7 +89,7 @@ from ojarvis.tools.skills import skill_tools
 from ojarvis.tools.sudo import ProposeAdmin
 from ojarvis.tools.terminal import OpenShell
 from ojarvis.tracing.tracer import Tracer
-from ojarvis.voice.stt import GroqTranscriber
+from ojarvis.voice.stt_online import GroqTranscriber
 from ojarvis.workflows.engine import WorkflowEngine
 
 log = get_logger(__name__)

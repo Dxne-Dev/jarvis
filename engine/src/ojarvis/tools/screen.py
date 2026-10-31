@@ -17,7 +17,8 @@ from pydantic import Field
 from ojarvis.context.engine import PERSONA
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UpstreamError
 from ojarvis.desktop.film import Filmer
-from ojarvis.desktop.locate import Kind, Locator, Mark, ScreenMarks, unchanged
+from ojarvis.desktop.images import unchanged
+from ojarvis.desktop.locate import Kind, Locator, Mark, ScreenMarks
 from ojarvis.desktop.pointer import Pointer
 from ojarvis.desktop.screen import capture, shrink
 from ojarvis.llm.errors import LLMError

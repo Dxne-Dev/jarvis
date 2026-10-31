@@ -29,13 +29,8 @@ from ojarvis.events.bus import EventBus
 from ojarvis.tracing.tracer import Tracer
 from ojarvis.voice.audio import FRAME_S, FRAME_SAMPLES, AudioSink, AudioSource, Frame, Pcm, level
 from ojarvis.voice.sentences import SentenceSplitter
-from ojarvis.voice.stt import (
-    CloudTranscriber,
-    StreamingTranscriber,
-    SttStream,
-    Transcriber,
-    Transcript,
-)
+from ojarvis.voice.stt import CloudTranscriber, Transcriber, Transcript
+from ojarvis.voice.stt_online import StreamingTranscriber, SttStream
 from ojarvis.voice.tts import Synthesizer, TTSError
 from ojarvis.voice.vad import Endpoint, EndpointConfig, Endpointer, SpeechDetector
 from ojarvis.voice.wake import WakeDetector, mentions_jarvis, strip_wake_words

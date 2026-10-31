@@ -19,7 +19,8 @@ import anyio
 from ojarvis.core.downloads import ChecksumError, PinnedFile, files_present
 from ojarvis.memory.embeddings import E5_FILES
 from ojarvis.voice.stt import WHISPER_FILES
-from ojarvis.voice.tts import MMS_FILES, PIPER_FILES
+from ojarvis.voice.tts import PIPER_FILES
+from ojarvis.voice.tts_meta import MMS_FILES
 from ojarvis.voice.wake import WAKE_FILES
 
 
