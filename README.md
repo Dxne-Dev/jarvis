@@ -27,11 +27,12 @@ With the default **"All Meta"** profile, every model O-jarvis calls at runtime i
 
 | Meta model | Where it runs | What it does in O-jarvis |
 |---|---|---|
-| **Muse Spark 1.3** | Meta Model API | Every answer: chat, voice, shell mode and its plans, screen and web page reading (vision), memory extraction, titles |
+| **Muse Spark 1.3** | Meta Model API | Every answer: chat, voice, shell mode and its plans, screen and web page reading (vision), choosing what to click on screen, memory extraction, titles |
 | **Muse Spark Open** (`muse-spark-open-1026`) | Baseten | Takes over every task when Muse Spark does not answer |
 | **Muse Wonder 1.0** | Meta Model API | Reviews each code edit in shell mode; takes over when the same command fails twice |
 | **Muse Voice Transcribe 1.0** | Meta Model API | Speech to text, after the shortcut, the mic button or `/voix` in the terminal |
 | **MMS TTS, French** (`facebook/mms-tts-fra`) | On the user's PC (ONNX Runtime, CPU) | Jarvis's voice; numbers, units and acronyms are spelled out first by plain code |
+| **SAM 3.1** | Meta Model API | Frames the buttons and icons of a desktop app on a screenshot, so Jarvis can click the one Muse Spark picked |
 
 Operating system features and plain code (no AI model):
 
@@ -39,6 +40,7 @@ Operating system features and plain code (no AI model):
 - **Speech detection**: the sound volume compared with the room's background noise.
 - **Listening starts** with the global shortcut (GNOME desktop portal), the mic button or `/voix`: there is no wake word, and no sound leaves the PC before that.
 - **Echo cancellation**: PipeWire's `module-echo-cancel`.
+- **Clicking in a desktop app**: GNOME's remote desktop portal moves the pointer, after the user allows it once.
 - **Memory search**: SQLite full-text search and hashed word vectors.
 - **Browser actions**: Playwright drives Chromium; screenshots use the desktop portal.
 - **Safety**: command classification and secret masking are rules in code.

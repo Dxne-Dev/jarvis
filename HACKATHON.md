@@ -89,6 +89,14 @@ The full list of Meta models and of OS features is in the [README](./README.md#m
 - **Found during the real test**: in a web app (React), a click changed the address without reloading, and Jarvis read the old page; it now waits until the text changes and settles. Two links with the same name and the same address (menu and footer) are no longer ambiguous.
 - Real tests on octave.excellenceteam.site: "click Projects, then Blog, and tell me the latest article" → the right title, watched in a Chromium window; a 4-click plan stopped during the 2nd click → the last two never ran.
 
+### Clicking in desktop apps ([#48](https://github.com/octavebahoun/O-jarvis/issues/48)), done
+
+- **Find** (`trouver_a_l_ecran`, read-only): two Meta models work together. SAM 3.1 frames every button and icon on a screenshot, pixel-accurate, but does not read labels. Muse Spark points to roughly where the element is, then picks it in an enlarged view of that area, where the frames are numbered and colored, and checks its pick on a zoom of the element. If SAM framed nothing there (a letter "B"), SAM frames the object under the pointed spot.
+- **Never at random**: nothing found, two possible elements, or a pick the zoom denies twice → Jarvis asks, describing places in words.
+- **Click** (`cliquer_ecran`, approval needed): only an element found less than 10 minutes ago, never raw coordinates. The plan card shows the screenshot with the element framed in green. After approval the app steps aside, and the engine waits until the element is visible again before clicking (15 s at most). The click goes through GNOME's remote desktop portal: GNOME asks the user once, and refusing means no click. Every click goes to the audit log with its annotated screenshot.
+- **Measured**: on a copy of LibreOffice's toolbars (about 50 real icons), 12 right picks, 2 questions and no wrong click, in 6 to 11 s. Real test on October 31: "wait 3 s, then click Export as PDF in LibreOffice", the right icon clicked 0.8 s after approval.
+- First real test (October 30): Muse Spark picked the printer next to the PDF icon among 54 numbered icons. That led to the zoom check and the pointed area.
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
