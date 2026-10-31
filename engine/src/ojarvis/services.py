@@ -89,8 +89,11 @@ from ojarvis.tools.impasses import impasse_tools
 from ojarvis.tools.integrations import integration_tools
 from ojarvis.tools.machine import ReadMachineMap
 from ojarvis.tools.mcp import mcp_tools
-from ojarvis.tools.shell import LookAtPage, OpenShell, ProposeAdmin, RunCommand
+from ojarvis.tools.page_view import LookAtPage
+from ojarvis.tools.shell import RunCommand
 from ojarvis.tools.skills import skill_tools
+from ojarvis.tools.sudo import ProposeAdmin
+from ojarvis.tools.terminal import OpenShell
 from ojarvis.tracing.tracer import TraceQueries, Tracer
 from ojarvis.voice.service import VoiceService
 from ojarvis.voice.simulated import simulated_voice
