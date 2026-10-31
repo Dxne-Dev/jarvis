@@ -97,6 +97,12 @@ The full list of Meta models and of OS features is in the [README](./README.md#m
 - **Measured**: on a copy of LibreOffice's toolbars (about 50 real icons), 12 right picks, 2 questions and no wrong click, in 6 to 11 s. Real test on October 31: "wait 3 s, then click Export as PDF in LibreOffice", the right icon clicked 0.8 s after approval.
 - First real test (October 30): Muse Spark picked the printer next to the PDF icon among 54 numbered icons. That led to the zoom check and the pointed area.
 
+### Live screen share and screen recordings ([#50](https://github.com/octavebahoun/O-jarvis/issues/50)), done
+
+- **Live share** (asked for during the #48 tests): GNOME's ScreenCast portal (the user allows it once, and GNOME's indicator stays on while it lasts), read by GStreamer. Two images per second, only the latest kept, in memory; nothing is recorded. Looking at the screen, finding an element and checking it before a click read that image instead of taking a screenshot. Settings › PC control › "Share…"; a banner shows the live preview and "Stop sharing", and stopping it from GNOME stops it for Jarvis too.
+- **`filmer_ecran`** (on request only, 30 s at most): the images of the share (started and stopped for the occasion if it was off) become an MP4 clip (ffmpeg), sent to Muse Spark with the question through Meta's Responses API (`input_video`). The working file is deleted as soon as Muse Spark has answered.
+- Tests: on a fake window filmed for 6 s, Muse Spark told in order the menu opened then closed, and the error banner shown for barely 2 s. Real test on October 31: 10 s filmed (20 images, 236 KB), explained in 18 s, nothing left on disk.
+
 ### Hardening after a code review (October 27)
 
 A review of the night's commits found 21 problems; each was checked in the code, fixed, and covered by tests. The most serious: `bash -c 'rm -rf ~/projet' --help` was classified as a read, so it would have run without asking, and `find … | xargs cat` could send secret files to the model. Also fixed: results lost when the budget stopped a request, "always" still active after reading GitHub or `curl` output, a non-UTF-8 file losing its accents on edit, and the terminal crashing on a U+2028 character.
