@@ -23,6 +23,18 @@ _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{16,}"),
     re.compile(r"(?<![0-9])\d{8,12}:AA[A-Za-z0-9_-]{30,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    # Ajoutés le 26/10/2026 : une commande du mode shell a affiché le début d'un jeton
+    # Google. Même tronqué, un début de jeton est masqué.
+    re.compile(r"\bya29\.[A-Za-z0-9._-]{6,}"),  # jeton d'accès Google (gcloud)
+    re.compile(r"(?<![0-9A-Za-z/])1//0[A-Za-z0-9_-]{20,}"),  # jeton de renouvellement Google
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"),  # clé d'API Google
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),  # JWT
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),  # Slack
+    re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}"),  # GitLab
+    re.compile(r"\bhf_[A-Za-z0-9]{30,}"),  # Hugging Face
+    re.compile(  # clé privée (SSH, TLS), jusqu'à sa fin ou celle du texte
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)"
+    ),
 )
 
 _MIN_SECRET_LENGTH = 6

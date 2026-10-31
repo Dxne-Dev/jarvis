@@ -9,6 +9,8 @@
   désignant par leur nom, comme on le dirait à quelqu'un.
 - Connexion : une fenêtre visible où tu te connectes toi-même ; Jarvis ne tape jamais
   un mot de passe ni un numéro de carte.
+- Voir Jarvis agir (#34) : la page est filmée pour l'app (`live.py`), et l'option
+  « Montrer le navigateur » ouvre Chromium en fenêtre plutôt qu'en arrière-plan.
 """
 
 from __future__ import annotations
@@ -16,12 +18,26 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
 import anyio.to_thread
 
+from ojarvis.browser.live import LiveView
+from ojarvis.browser.login import _LoginWindow, install_chromium
+from ojarvis.browser.page import (
+    _ELEMENTS_SCRIPT,
+    _LINKS_SCRIPT,
+    _PROTECTED_FIELD_JS,
+    _TABLES_SCRIPT,
+    MAX_ELEMENTS,
+    MAX_LINKS,
+    MAX_TEXT,
+    PageView,
+    _settle,
+    _signature,
+    _single,
+)
 from ojarvis.browser.proxy import GuardProxy
 from ojarvis.browser.vault import CookieVault, State, in_domain
 from ojarvis.core.errors import ConflictError, InvalidInputError, NotFoundError, UnavailableError
@@ -30,113 +46,8 @@ from ojarvis.tools.guards import check_public_url
 
 log = get_logger(__name__)
 
-MAX_TEXT = 12_000
-MAX_ELEMENTS = 60
-MAX_LINKS = 80
 NAVIGATION_TIMEOUT_MS = 20_000
 ACTION_TIMEOUT_MS = 6_000
-LOGIN_SNAPSHOT_S = 2.0
-
-_ELEMENTS_SCRIPT = """
-(limit) => {
-  const clean = (s) => (s || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
-  const name = (el) => clean(
-    el.getAttribute('aria-label')
-    || (el.labels && el.labels[0] && el.labels[0].innerText)
-    || el.getAttribute('placeholder') || el.innerText || el.value || el.name || ''
-  );
-  const out = [];
-  const query = 'a[href], button, input:not([type=hidden]), select, textarea, [role=button]';
-  for (const el of document.querySelectorAll(query)) {
-    const box = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-    if ((box.width === 0 && box.height === 0) || style.visibility === 'hidden') continue;
-    const button = el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'
-      || ['submit', 'button'].includes(el.type);
-    const kind = el.tagName === 'A' ? 'lien' : button ? 'bouton' : 'champ';
-    const label = name(el);
-    if (label) out.push({kind, label});
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-"""
-
-_LINKS_SCRIPT = """
-(limit) => {
-  const out = [];
-  for (const a of document.querySelectorAll('a[href]')) {
-    const text = (a.innerText || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
-    if (!text || !/^https?:/.test(a.href)) continue;
-    out.push({text: text.slice(0, 100), href: a.href.slice(0, 300)});
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-"""
-
-_TABLES_SCRIPT = """
-() => Array.from(document.querySelectorAll('table')).slice(0, 5).map((table) =>
-  Array.from(table.querySelectorAll('tr')).slice(0, 60).map((tr) =>
-    Array.from(tr.querySelectorAll('th, td')).map((c) => c.innerText.replace(/\\s+/g, ' ').trim())
-  )
-)
-"""
-
-#: Champs que Jarvis ne remplit jamais : c'est toi qui les saisis.
-_PROTECTED_FIELD_JS = """
-(el) => {
-  const type = (el.getAttribute('type') || '').toLowerCase();
-  const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
-  return type === 'password' || /password|cc-|one-time-code/.test(auto);
-}
-"""
-
-
-@dataclass(frozen=True)
-class PageView:
-    title: str
-    url: str
-    text: str
-    elements: list[dict[str, str]] = field(default_factory=list)
-    identity: bool = False
-
-    def render(self) -> str:
-        lines = [f"Titre : {self.title}", f"Adresse : {self.url}", "", self.text]
-        if self.elements:
-            lines += ["", "Éléments de la page :"]
-            lines += [f"- {e['kind']} « {e['label']} »" for e in self.elements]
-        return "\n".join(lines)
-
-
-_install_lock = asyncio.Lock()
-
-
-async def install_chromium(timeout_s: float = 900.0) -> bool:
-    """Télécharge le Chromium de Playwright (dans ~/.cache/ms-playwright) avec son pilote."""
-    from playwright._impl._driver import (  # noqa: PLC0415
-        compute_driver_executable,
-        get_driver_env,
-    )
-
-    async with _install_lock:
-        node, cli = compute_driver_executable()
-        log.info("chromium_installing")
-        try:
-            process = await asyncio.create_subprocess_exec(
-                node,
-                cli,
-                "install",
-                "chromium",
-                env=get_driver_env(),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            ok = await asyncio.wait_for(process.wait(), timeout_s) == 0
-        except (OSError, TimeoutError):
-            ok = False
-        log.info("chromium_installed" if ok else "chromium_install_failed")
-        return ok
 
 
 class BrowserSession:
@@ -147,8 +58,14 @@ class BrowserSession:
         allowed_hosts: tuple[str, ...] = (),
         granted: Callable[[], set[str]] = set,
         proxy: GuardProxy | None = None,
+        visible: Callable[[], bool] = lambda: False,
+        live: LiveView | None = None,
     ) -> None:
         self._vault = vault
+        #: Chromium en fenêtre (option « Montrer le navigateur »), relu à chaque lancement.
+        self._visible = visible
+        self._headless: bool | None = None
+        self.live = live
         self._allowed_hosts = allowed_hosts
         #: Domaines autorisés (non révoqués), relus à chaque décision.
         self._granted = granted
@@ -197,12 +114,17 @@ class BrowserSession:
         )
 
     async def _context(self, identity: bool) -> Any:
+        headless = not self._visible()
+        browser = self._browser
+        if browser is not None and (not browser.is_connected() or self._headless != headless):
+            # Fenêtre fermée à la main, ou l'option « Montrer le navigateur » a changé.
+            await self._drop_browser()
         context = self._contexts.get(identity)
         if context is not None:
             return context
-        if self._browser is None or not self._browser.is_connected():
+        if self._browser is None:
             try:
-                self._browser = await self._launch(headless=True)
+                self._browser = await self._launch(headless=headless)
             except Exception as exc:
                 # App installée : Chromium se télécharge au premier usage (~170 Mo), une fois.
                 if "Executable doesn't exist" not in str(exc) or not await install_chromium():
@@ -210,7 +132,8 @@ class BrowserSession:
                         "Navigateur indisponible (Chromium de Playwright absent ou "
                         "impossible à télécharger)."
                     ) from exc
-                self._browser = await self._launch(headless=True)
+                self._browser = await self._launch(headless=headless)
+            self._headless = headless
         state: State | None = None
         if identity:
             state = await anyio.to_thread.run_sync(self._vault.load)
@@ -250,18 +173,31 @@ class BrowserSession:
                     await context.close()
             return result
 
+    async def _drop_browser(self) -> None:
+        if self.live is not None:
+            await self.live.stop()
+        for context in list(self._contexts.values()):
+            with contextlib.suppress(Exception):
+                await context.close()
+        self._contexts.clear()
+        self._page = None
+        self._page_identity = False
+        browser, self._browser = self._browser, None
+        if browser is not None:
+            with contextlib.suppress(Exception):
+                await browser.close()
+
+    async def _watch(self) -> None:
+        """La page courante est filmée pour l'app (et le reste un moment après l'action)."""
+        if self.live is not None and self._page is not None and not self._page.is_closed():
+            await self.live.follow(self._page)
+
     async def close(self) -> None:
         async with self._lock:
             await self._close_login()
-            for context in list(self._contexts.values()):
-                with contextlib.suppress(Exception):
-                    await context.close()
-            self._contexts.clear()
-            self._page = None
-            browser, self._browser = self._browser, None
-            if browser is not None:
-                with contextlib.suppress(Exception):
-                    await browser.close()
+            if self.live is not None:
+                await self.live.close()
+            await self._drop_browser()
             playwright, self._playwright = self._playwright, None
             if playwright is not None:
                 with contextlib.suppress(Exception):
@@ -305,11 +241,14 @@ class BrowserSession:
                         await self._page.close()
                 self._page = await context.new_page()
                 self._page_identity = identity
+            await self._watch()  # on voit la page se charger
             await self._page.goto(
                 target, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
             )
+            await _settle(self._page)
             view = await self._view(self._page)
             await self._persist()
+            await self._watch()
             return view
 
     def _require_page(self) -> Any:
@@ -343,15 +282,20 @@ class BrowserSession:
                 page.get_by_role("link", name=target),
                 page.get_by_text(target, exact=True),
             )
+            await self._watch()
             for locator in candidates:
-                if await locator.count() == 1:
-                    await locator.click()
+                element = await _single(locator, same_link=True)
+                if element is not None:
+                    before = await _signature(page)
+                    await element.click()
                     with contextlib.suppress(Exception):
                         await self._page.wait_for_load_state(
                             "domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
                         )
+                    await _settle(self._page, before=before)
                     view = await self._view(self._page)
                     await self._persist()
+                    await self._watch()  # un clic a pu ouvrir un nouvel onglet
                     return view
             raise NotFoundError(f"Élément « {target} » introuvable (ou ambigu) sur la page.")
 
@@ -365,14 +309,16 @@ class BrowserSession:
                 page.get_by_role("textbox", name=field_name),
             )
             for locator in candidates:
-                if await locator.count() == 1:
-                    if await locator.evaluate(_PROTECTED_FIELD_JS):
+                field = await _single(locator)
+                if field is not None:
+                    if await field.evaluate(_PROTECTED_FIELD_JS):
                         raise InvalidInputError(
                             "Jarvis ne saisit ni mot de passe ni carte bancaire : connecte-toi "
                             "toi-même (Réglages > Navigateur).",
                             code="secret_field",
                         )
-                    await locator.fill(value)
+                    await self._watch()
+                    await field.fill(value)
                     return await self._view(page)
             raise NotFoundError(f"Champ « {field_name} » introuvable (ou ambigu) sur la page.")
 
@@ -421,61 +367,3 @@ class BrowserSession:
         window, self._login = self._login, None
         if window is not None:
             await window.close()
-
-
-class _LoginWindow:
-    """Fenêtre de connexion : son état est relevé toutes les 2 s, et une dernière fois
-    quand tu la fermes."""
-
-    def __init__(
-        self, browser: Any, context: Any, on_closed: Callable[[], Awaitable[Any]] | None
-    ) -> None:
-        self.browser = browser
-        self.context = context
-        self.state: State = {"cookies": [], "origins": []}
-        self.done = asyncio.Event()
-        self._on_closed = on_closed
-        self._closing = False
-        self._watch_task: asyncio.Task[None] | None = None
-        self._final_task: asyncio.Task[None] | None = None
-
-    def start(self) -> None:
-        self._watch_task = asyncio.create_task(self._watch())
-
-    def closed(self) -> None:
-        """Page ou navigateur fermé par toi : dernier relevé, puis fin de la connexion."""
-        if self._closing:
-            return
-        self._closing = True
-        self._final_task = asyncio.create_task(self._finalize())
-
-    async def _finalize(self) -> None:
-        with contextlib.suppress(Exception):
-            self.state = await self.context.storage_state()
-        self.done.set()
-        if self._on_closed is not None:
-            await self._on_closed()
-
-    async def snapshot(self) -> None:
-        if self._closing:
-            return
-        with contextlib.suppress(Exception):
-            self.state = await self.context.storage_state()
-
-    async def _watch(self) -> None:
-        while not self.done.is_set():
-            await self.snapshot()
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self.done.wait(), LOGIN_SNAPSHOT_S)
-
-    async def close(self) -> None:
-        self._closing = True
-        self.done.set()
-        if self._watch_task is not None:
-            self._watch_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._watch_task
-        with contextlib.suppress(Exception):
-            await self.context.close()
-        with contextlib.suppress(Exception):
-            await self.browser.close()

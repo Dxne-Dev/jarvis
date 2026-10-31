@@ -109,6 +109,9 @@ def to_anthropic_messages(messages: list[Message]) -> tuple[str, list[dict[str, 
             ]
             content.append({"type": "text", "text": message.content})
             out.append({"role": "user", "content": content})
+        elif out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+            # Après des résultats d'outils (l'arrêt au nombre d'étapes) : un seul message.
+            out[-1]["content"].append({"type": "text", "text": message.content})
         else:
             out.append({"role": "user", "content": message.content})
     return "\n\n".join(p for p in system_parts if p), out

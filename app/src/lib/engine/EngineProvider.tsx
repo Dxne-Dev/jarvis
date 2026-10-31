@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, type ReactNode } from "react";
 
+import { useBrowserLive } from "./browserLive";
+import { useScreenLive } from "./screenLive";
 import { EngineClient } from "./client";
 import { onEngineStatus, resolveEngine, type EngineBootInfo } from "./connection";
 import { EventStream } from "./events";
@@ -26,6 +28,7 @@ const INVALIDATIONS: [prefix: string, key: string][] = [
   ["plan.finished", "conversations"],
   ["audit.", "audit"],
   ["browser.", "browser"],
+  ["screen.share", "screen-share"],
   ["automation.", "automations"],
   ["workflow.", "automations"],
   ["integration.", "integrations"],
@@ -143,6 +146,17 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         // ni par le journal des événements ni par React.
         if (event.type === "voice.level") {
           setVoiceLevel(Number(event.payload.level) || 0);
+          return;
+        }
+        // Une nouvelle image de l'écran partagé : l'aperçu la lira.
+        if (event.type === "screen.frame") {
+          useScreenLive.getState().setSeq(Number(event.payload.seq) || 0);
+          return;
+        }
+        // Une nouvelle image de la page de Jarvis : la vue en direct la lira.
+        if (event.type === "browser.frame") {
+          const { seq, url } = event.payload;
+          useBrowserLive.getState().setFrame(Number(seq) || 0, typeof url === "string" ? url : "");
           return;
         }
         handleVoiceEvent(event);

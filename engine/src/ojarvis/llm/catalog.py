@@ -1,7 +1,8 @@
 """Catalogue des modèles : capacités et prix (dollars par million de jetons).
 
-Prix relevés le 14/10/2026 dans les docs officielles (DeepSeek, Anthropic). Les modèles
-gratuits d'OpenRouter changent souvent : ils sont redécouverts au démarrage.
+Prix relevés le 14/10/2026 dans les docs officielles (DeepSeek, Anthropic), le 26/10/2026
+pour Meta (mode Standard). Les modèles gratuits d'OpenRouter changent souvent : ils sont
+redécouverts au démarrage.
 """
 
 from __future__ import annotations
@@ -61,6 +62,15 @@ STATIC_CATALOG: tuple[ModelSpec, ...] = (
         context=1_000_000,
         price=Price(input=0.66, output=1.98, cached_input=0.022),
     ),
+    # Expérimental (août 2026) : absent de GET /models, mais il répond ; pas de prix publié.
+    ModelSpec(
+        "deepseek",
+        "deepseek-v4-flash-vision-exp",
+        "DeepSeek V4 Flash Vision (expérimental)",
+        vision=True,
+        thinking_toggle=True,
+        context=128_000,
+    ),
     ModelSpec(
         "anthropic",
         "claude-opus-5-5",
@@ -84,6 +94,33 @@ STATIC_CATALOG: tuple[ModelSpec, ...] = (
         vision=True,
         context=1_000_000,
         price=Price(input=0.1, output=0.5, cached_input=0.01),
+    ),
+    # Meta : la réflexion est cachée mais facturée en sortie ; elle se règle par l'effort.
+    ModelSpec(
+        "meta",
+        "muse-spark-1.3",
+        "Muse Spark 1.3",
+        vision=True,
+        context=1_048_576,
+        price=Price(input=1.25, output=4.25, cached_input=0.15),
+    ),
+    ModelSpec(
+        "meta",
+        "muse-wonder-1.0",
+        "Muse Wonder 1.0",
+        vision=True,
+        context=1_048_576,
+        price=Price(input=4.0, output=20.0, cached_input=0.2),
+    ),
+    # Muse Spark Open, le modèle ouvert de Meta, chez Baseten. Prix relevés par des
+    # comparateurs le 27/10/2026 (la page de Baseten ne le donne pas) : ceux de Muse Spark.
+    ModelSpec(
+        "baseten",
+        "meta-models/muse-spark-open-1026",
+        "Muse Spark Open",
+        vision=True,
+        context=1_048_576,
+        price=Price(input=1.25, output=4.25),
     ),
     ModelSpec("openai", "gpt-5", "GPT-5", vision=True, context=400_000),
     ModelSpec("openai", "gpt-5-mini", "GPT-5 mini", vision=True, context=400_000),

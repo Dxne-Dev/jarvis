@@ -48,6 +48,8 @@ CATALOG: tuple[SecretSpec, ...] = (
     SecretSpec("OPENROUTER_API_KEY", "OpenRouter", "llm", "LLM secondaire et vision."),
     SecretSpec("OPENAI_API_KEY", "OpenAI", "llm", "Optionnel."),
     SecretSpec("ANTHROPIC_API_KEY", "Anthropic", "llm", "Optionnel."),
+    SecretSpec("MODEL_API_KEY", "Meta", "llm", "Muse Spark, Muse Wonder (dev.meta.ai)."),
+    SecretSpec("BASETEN_API_KEY", "Baseten", "llm", "Muse Spark Open, en secours de Muse Spark."),
     SecretSpec("CARTESIA_API_KEY", "Cartesia", "voice", "Synthèse vocale Sonic."),
     SecretSpec("GROQ_API_KEY", "Groq", "voice", "Transcription Whisper large-v3."),
     SecretSpec("TAVILY_API_KEY", "Tavily", "search", "Recherche web."),

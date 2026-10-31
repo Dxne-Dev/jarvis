@@ -10,7 +10,8 @@ from urllib.parse import urlsplit
 
 from pydantic import Field
 
-from ojarvis.browser.session import BrowserSession, PageView
+from ojarvis.browser.page import PageView
+from ojarvis.browser.session import BrowserSession
 from ojarvis.tools.base import Level, Tool, ToolArgs, ToolContext, ToolOutput
 
 

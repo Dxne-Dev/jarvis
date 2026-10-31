@@ -29,6 +29,7 @@ from ojarvis.llm.providers.anthropic_provider import classify_error as classify_
 from ojarvis.llm.providers.fake import FakeProvider, FakeReply
 from ojarvis.llm.providers.openai_compat import (
     DEEPSEEK,
+    META,
     OLLAMA,
     OPENAI,
     OPENROUTER,
@@ -100,6 +101,37 @@ def test_openai_uses_max_completion_tokens_and_no_thinking_switch() -> None:
     assert "extra_body" not in params
     assert params["response_format"] == {"type": "json_object"}
     assert params["temperature"] == 0.3
+
+
+def test_meta_sets_the_effort_and_leaves_room_for_hidden_reasoning() -> None:
+    provider = compat(META, FakeOpenAIClient())
+    quick = provider.build_params(
+        LLMRequest([Message("user", "x")], max_tokens=30, temperature=0.3), "muse-spark-1.3"
+    )
+    assert quick["reasoning_effort"] == "minimal"
+    # La réflexion cachée compte dans la limite : un titre de 30 jetons sortirait vide.
+    assert quick["max_tokens"] == 30 + META.reasoning_headroom
+    assert quick["temperature"] == 0.3
+    assert "extra_body" not in quick
+    deep = provider.build_params(
+        LLMRequest([Message("user", "x")], thinking=True), "muse-spark-1.3"
+    )
+    assert deep["reasoning_effort"] == "high"
+    assert "max_tokens" not in deep
+
+
+def test_meta_refuses_contributor_models() -> None:
+    provider = compat(META, FakeOpenAIClient())
+    with pytest.raises(InvalidRequestError, match="entraîner"):
+        provider.build_params(LLMRequest([Message("user", "x")]), "muse-spark-1.3-contributor")
+
+
+def test_other_providers_send_no_effort() -> None:
+    params = compat(OPENROUTER, FakeOpenAIClient()).build_params(
+        LLMRequest([Message("user", "x")], max_tokens=30), "un/modele"
+    )
+    assert "reasoning_effort" not in params
+    assert params["max_tokens"] == 30
 
 
 def test_tools_and_images_are_converted() -> None:
@@ -393,3 +425,18 @@ async def test_fake_provider_scripts() -> None:
     assert isinstance(events[0], ReasoningDelta)
     assert provider.requests[0][1] == "m"
     assert await provider.list_models() == ["fake-model"]
+
+
+def test_a_text_after_tool_results_joins_their_user_message() -> None:
+    # L'arrêt au nombre d'étapes : « dis où tu en es » suit des résultats d'outils.
+    call = ToolCall("t1", "executer_commande", {"commande": "ls"})
+    _system, out = to_anthropic_messages(
+        [
+            Message("user", "Vérifie tout."),
+            Message("assistant", "", tool_calls=(call,)),
+            Message("tool", "a.txt", tool_call_id="t1"),
+            Message("user", "Dis où tu en es."),
+        ]
+    )
+    assert [m["role"] for m in out] == ["user", "assistant", "user"]
+    assert [b["type"] for b in out[-1]["content"]] == ["tool_result", "text"]

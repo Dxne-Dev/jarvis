@@ -8,6 +8,7 @@ que le budget le permet. Chaque candidat, gardé ou écarté, est consigné dans
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
@@ -19,7 +20,13 @@ from ojarvis.memory.graph import GraphStore
 from ojarvis.memory.store import MemoryHit, MemoryRecord, MemoryStore
 
 #: Budget total du contexte (hors réponse), en jetons, par canal.
-BUDGETS = {"voice": 2200, "app": 7000, "telegram": 4000, "automation": 5000}
+#: Une question qui parle du PC : la carte de la machine entre dans le contexte.
+ABOUT_THE_MACHINE = re.compile(
+    r"\b(?:pc|ordi|ordinateur|machine|disques?|stockage|m[ée]moire|ram|processeur|cpu|"
+    r"rame|ramer|lent|lenteur|chauffe|ventilateur|batterie|docker|services?|install[ée]e?s?)\b",
+    re.IGNORECASE,
+)
+BUDGETS = {"voice": 2200, "app": 7000, "telegram": 4000, "automation": 5000, "shell": 7000}
 #: Part maximale de chaque section dans le budget restant après le système.
 MEMORY_SHARE = 0.35
 RECALL_SHARE = 0.15
@@ -44,6 +51,10 @@ STYLE = {
     ),
     "app": "Réponds de façon concise. Utilise le markdown quand il aide (listes, code).",
     "telegram": "Réponds de façon concise, en texte simple, adapté à un téléphone.",
+    "shell": (
+        "Tu réponds dans un terminal : phrases courtes, texte simple, sans tableau ; les "
+        "commandes et les chemins entre accents graves."
+    ),
     "automation": (
         "Tu travailles seul, pour une automatisation que l'utilisateur a créée : fais la "
         "tâche avec tes outils de lecture, puis résume en quelques phrases ce que tu as fait "
@@ -180,7 +191,7 @@ class ContextEngine:
         question_tokens = estimate_tokens(user_text)
         remaining = max(total - base.tokens - question_tokens, 0)
 
-        memory_items = await self._memory_section(user_text)
+        memory_items = await self._memory_section(user_text, channel)
         memory_used = _select(memory_items, int(remaining * MEMORY_SHARE))
         recall_items = await self._recall_section(user_text, conversation_id)
         recall_used = _select(recall_items, int(remaining * RECALL_SHARE))
@@ -206,14 +217,19 @@ class ContextEngine:
             memory_ids=[int(i.ref) for i in kept_memory if i.ref],
         )
 
-    async def _memory_section(self, user_text: str) -> list[ContextItem]:
-        """Profil (toujours candidat) puis souvenirs trouvés par le sens ou les mots."""
+    async def _memory_section(self, user_text: str, channel: str) -> list[ContextItem]:
+        """Profil (toujours candidat), la carte de la machine en mode shell ou quand la
+        question parle du PC, puis souvenirs trouvés par le sens ou les mots."""
         found: dict[int, ContextItem] = {}
         for profile in await self._memory.items(kind="profil", limit=12):
             found[profile.id] = self._memory_item(profile, 1.0 + (0.1 if profile.pinned else 0))
+        if channel == "shell" or ABOUT_THE_MACHINE.search(user_text):
+            # De quoi répondre à « mon PC rame » sans tout remesurer.
+            for record in await self._memory.items(kind="machine", limit=12):
+                found[record.id] = self._memory_item(record, 1.0)
         for hit in await self._memory.search(user_text, k=12):
-            if hit.record.id in found:
-                continue
+            if hit.record.id in found or hit.record.kind == "impasse":
+                continue  # une impasse est consultée au bon moment, jamais injectée d'office
             item = self._memory_item(hit.record, hit.score)
             if hit.via == "sens" and hit.score < self._floor:
                 item.reason = "trop peu pertinent"

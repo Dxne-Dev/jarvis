@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from ojarvis.assembly import _startup_preferences
+from ojarvis.config import EngineConfig
 from ojarvis.core.clock import utc_now
 from ojarvis.core.context import correlation_id_var
 from ojarvis.core.errors import InvalidInputError
@@ -125,3 +127,23 @@ async def test_settings_survive_invalid_stored_value(db: Database) -> None:
     prefs = await SettingsStore(db).get()
     assert prefs.reduced_motion == "system"
     assert prefs.sphere_quality == "low"
+
+
+async def test_startup_preferences_e2e_force_auto(
+    db: Database, config: EngineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E2E : base neuve (profil « Tout Meta ») → le démarrage bascule en « Auto »."""
+    monkeypatch.setenv("OJARVIS_FAKE_LLM", "1")
+    store = SettingsStore(db)
+    assert (await store.get()).model_profile == "meta"
+    prefs = await _startup_preferences(store, config, None)
+    assert prefs.model_profile == "auto"
+    assert (await store.get()).model_profile == "auto"
+
+
+async def test_startup_preferences_keep_default_without_fake_llm(
+    db: Database, config: EngineConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OJARVIS_FAKE_LLM", raising=False)
+    prefs = await _startup_preferences(SettingsStore(db), config, None)
+    assert prefs.model_profile == "meta"

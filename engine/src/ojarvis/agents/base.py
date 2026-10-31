@@ -7,6 +7,7 @@ qui attend ta validation, comme pour Jarvis lui-même. Il rend un compte rendu.
 
 from __future__ import annotations
 
+import time
 from abc import ABC
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -14,8 +15,9 @@ from typing import ClassVar
 
 from pydantic import ValidationError
 
-from ojarvis.agent.loop import Agent, AgentTurn, urls_in
+from ojarvis.agent.loop import Agent, AgentTurn
 from ojarvis.agent.plans import PLAN_TOOL, PlanIn
+from ojarvis.agent.reports import urls_in
 from ojarvis.context.engine import PERSONA
 from ojarvis.llm.router import ModelRouter
 from ojarvis.llm.types import LLMRequest, Message, ToolCall, ToolSpec
@@ -32,6 +34,18 @@ class AgentStep:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class MissionBudget:
+    """Les limites d'une mission (#15) : au-delà, elle est suspendue et tu es prévenu. Le
+    nombre d'étapes, lui, est celui de l'agent (`max_steps`)."""
+
+    dollars: float = 0.50
+    seconds: float = 600.0
+    tokens: int = 300_000
+    #: Échecs d'outil d'affilée : une piste qui ne mène nulle part.
+    failures: int = 3
+
+
 @dataclass
 class AgentOutcome:
     report: str
@@ -39,6 +53,14 @@ class AgentOutcome:
     plans: list[str] = field(default_factory=list)
     #: L'agent a lu un contenu extérieur : son compte rendu est une donnée, pas une consigne.
     external: bool = False
+    #: Pourquoi la mission s'est arrêtée avant la fin (un budget atteint, des échecs répétés).
+    suspended: str | None = None
+    cost_usd: float = 0.0
+    tokens: int = 0
+
+
+def _money(dollars: float) -> str:
+    return f"{dollars:.2f} $".replace(".", ",")
 
 
 Progress = Callable[[AgentStep], Awaitable[None]]
@@ -82,8 +104,16 @@ class BaseAgent(ABC):
         return None if call.name in self.tools else call.name
 
     async def run(
-        self, task: str, *, conversation_id: str | None = None, progress: Progress | None = None
+        self,
+        task: str,
+        *,
+        conversation_id: str | None = None,
+        progress: Progress | None = None,
+        budget: MissionBudget | None = None,
     ) -> AgentOutcome:
+        budget = budget or MissionBudget()
+        started = time.monotonic()
+        failures = 0
         messages = [Message("system", self.instructions()), Message("user", task)]
         turn = AgentTurn()
         turn.known_urls |= urls_in(task)
@@ -92,6 +122,8 @@ class BaseAgent(ABC):
             result = await self._router.complete(
                 "chat", LLMRequest(messages=list(messages), tools=self.specs())
             )
+            outcome.cost_usd += result.cost_usd
+            outcome.tokens += result.usage.input_tokens + result.usage.output_tokens
             if not result.tool_calls:
                 outcome.report = result.text.strip()[:MAX_REPORT]
                 break
@@ -116,9 +148,16 @@ class BaseAgent(ABC):
                     )
                     content, is_error = done.content, done.is_error
                 outcome.steps.append(step)
+                failures = failures + 1 if step.status == "failed" else 0
                 if progress is not None:
                     await progress(step)
                 messages.append(Message("tool", content, tool_call_id=call.id, is_error=is_error))
+            reason = _over(budget, outcome, time.monotonic() - started, failures)
+            if reason is not None:
+                # Suspendue : plus aucun appel au modèle, le compte rendu dit où elle en est.
+                outcome.suspended = reason
+                outcome.report = _suspended_report(reason, outcome)
+                break
         else:
             # Nombre d'étapes atteint : il rend ce qu'il a, sans nouvel outil.
             messages.append(
@@ -129,3 +168,27 @@ class BaseAgent(ABC):
         outcome.plans = list(turn.plans)
         outcome.external = turn.tainted
         return outcome
+
+
+def _over(
+    budget: MissionBudget, outcome: AgentOutcome, elapsed: float, failures: int
+) -> str | None:
+    """La limite dépassée, s'il y en a une."""
+    if outcome.cost_usd >= budget.dollars:
+        return f"budget de {_money(budget.dollars)} atteint ({_money(outcome.cost_usd)})"
+    if outcome.tokens >= budget.tokens:
+        return f"budget de {budget.tokens} jetons atteint ({outcome.tokens})"
+    if elapsed >= budget.seconds:
+        return f"durée de {budget.seconds / 60:.0f} min atteinte"
+    if failures >= budget.failures:
+        return f"{failures} échecs d'affilée"
+    return None
+
+
+def _suspended_report(reason: str, outcome: AgentOutcome) -> str:
+    done = [step.description for step in outcome.steps if step.status == "done"]
+    lines = [f"Mission suspendue : {reason}."]
+    if done:
+        lines.append("Déjà fait : " + " ; ".join(done[-5:]) + ".")
+    lines.append("Relance-la pour qu'elle reprenne.")
+    return "\n".join(lines)

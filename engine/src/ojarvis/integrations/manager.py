@@ -261,6 +261,13 @@ class IntegrationManager:
         connection = self._connections.get(name)
         return connection.state.tools.get(tool) if connection else None
 
+    def ready_tools(self, name: str) -> list[str] | None:
+        """Les outils d'un serveur prêt ; `None` tant qu'il n'a pas répondu."""
+        connection = self._connections.get(name)
+        if connection is None or connection.state.status != "prêt":
+            return None
+        return sorted(connection.state.tools)
+
     async def call(self, name: str, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         tools = await self.ensure(name)
         if tool not in tools:

@@ -5,18 +5,21 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ojarvis.agent.reports import RanCommand
 from ojarvis.api.deps import ServicesDep
 from ojarvis.chat.service import ChatEvent
 from ojarvis.conversations.store import ConversationRecord, MessageRecord
-from ojarvis.core.errors import EngineError
+from ojarvis.core.errors import EngineError, NotFoundError
 from ojarvis.llm.providers.registry import OllamaProvider
 from ojarvis.memory.store import MemoryKind, MemoryRecord
+from ojarvis.tools.guards import resolve_user_path, shown
 
 router = APIRouter(prefix="/v1")
 
@@ -24,23 +27,68 @@ router = APIRouter(prefix="/v1")
 # ---------------------------------------------------------------------- chat
 
 
+class RanIn(BaseModel):
+    """Une commande sudo proposée par Jarvis, que l'utilisateur a lancée lui-même."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: str = Field(min_length=1, max_length=4000)
+    code: int = Field(ge=-255, le=255)
+    output: str = Field(default="", max_length=20_000)
+
+
 class ChatIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=8000)
     conversation_id: str | None = Field(default=None, max_length=32)
-    channel: Literal["app", "voice"] = "app"
+    channel: Literal["app", "voice", "shell"] = "app"
+    #: Mode shell : le dossier de la session (~/… ou chemin absolu dans ton dossier).
+    folder: str | None = Field(default=None, max_length=1000)
+    #: Mode shell : les plans validés dans le terminal ; leurs résultats reviennent au modèle.
+    #: Un seul identifiant est aussi accepté.
+    after_plan: list[Annotated[str, Field(max_length=32)]] | None = Field(
+        default=None, max_length=10
+    )
+
+    #: Mode shell : une commande sudo que l'utilisateur a lancée lui-même ; sa sortie revient.
+    ran: RanIn | None = None
+
+    @field_validator("after_plan", mode="before")
+    @classmethod
+    def _one_or_more(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
+
+
+#: Fins de ligne pour httpx (qui coupe comme `str.splitlines`), permises telles quelles dans
+#: une chaîne JSON : échappées, une ligne de données ne se coupe jamais en deux.
+LINE_BREAKS = str.maketrans({"\u2028": "\\u2028", "\u2029": "\\u2029", "\x85": "\\u0085"})
 
 
 def sse(event: ChatEvent) -> str:
-    return f"event: {event.type}\ndata: {json.dumps(event.data, ensure_ascii=False)}\n\n"
+    data = json.dumps(event.data, ensure_ascii=False).translate(LINE_BREAKS)
+    return f"event: {event.type}\ndata: {data}\n\n"
 
 
 @router.post("/chat")
 async def chat(body: ChatIn, services: ServicesDep) -> StreamingResponse:
     """Réponse en flux : événements start, context, route, delta…, puis done ou error."""
+    folder = None
+    if body.folder is not None:
+        # Le dossier de la session, dit comme Jarvis le dit (« ~/projet ») : vérifié ici (dans
+        # ton dossier personnel, hors dossiers de secrets), et sans ton nom d'utilisateur.
+        home = services.config.user_home or Path.home()
+        path = resolve_user_path(body.folder, home)
+        if not path.is_dir():
+            raise NotFoundError(f"Dossier introuvable : {body.folder}.")
+        folder = shown(path, home)
     stream = services.chat.respond(
-        text=body.text, conversation_id=body.conversation_id, channel=body.channel
+        text=body.text,
+        conversation_id=body.conversation_id,
+        channel=body.channel,
+        shell_folder=folder,
+        after_plan=body.after_plan,
+        ran=RanCommand(body.ran.command, body.ran.code, body.ran.output) if body.ran else None,
     )
     # Les erreurs de validation (conversation inconnue, texte vide) arrivent avant le flux.
     first = await anext(stream)

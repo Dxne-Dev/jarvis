@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from ojarvis.agents.base import MissionBudget
 from ojarvis.agents.orchestrator import AgentRun
 from ojarvis.api.deps import ServicesDep
 
@@ -45,6 +46,9 @@ class MissionIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task: str = Field(min_length=5, max_length=2000)
+    #: Les limites de la mission (#15) ; absentes, celles par défaut (0,50 $, 10 min).
+    budget_dollars: float | None = Field(default=None, gt=0, le=10)
+    budget_minutes: int | None = Field(default=None, ge=1, le=120)
 
 
 def _run(run: AgentRun) -> AgentRunOut:
@@ -86,4 +90,10 @@ async def get_run(run_id: str, services: ServicesDep) -> AgentRunOut:
 @router.post("/{name}/runs", status_code=202)
 async def start_mission(name: str, body: MissionIn, services: ServicesDep) -> AgentRunOut:
     """Tu confies directement une tâche à un agent ; elle tourne en arrière-plan."""
-    return _run(await services.orchestrator.launch(name, body.task, origin="interface"))
+    defaults = MissionBudget()
+    budget = MissionBudget(
+        dollars=body.budget_dollars or defaults.dollars,
+        seconds=(body.budget_minutes or defaults.seconds / 60) * 60,
+    )
+    run = await services.orchestrator.launch(name, body.task, origin="interface", budget=budget)
+    return _run(run)

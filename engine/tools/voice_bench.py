@@ -30,9 +30,12 @@ from ojarvis.events.bus import Event
 from ojarvis.security.secrets import MemoryBackend
 from ojarvis.services import Services
 from ojarvis.voice.audio import FileSource, MemorySink, read_wav
-from ojarvis.voice.pipeline import TurnReport, VoiceConfig, VoicePipeline
-from ojarvis.voice.stt import CartesiaSTT, GroqTranscriber, WhisperTranscriber
+from ojarvis.voice.pipeline import VoicePipeline
+from ojarvis.voice.states import VoiceConfig
+from ojarvis.voice.stt import WhisperTranscriber
+from ojarvis.voice.stt_online import CartesiaSTT, GroqTranscriber
 from ojarvis.voice.tts import CartesiaTTS, FallbackTTS, PiperTTS
+from ojarvis.voice.turn import TurnReport
 from ojarvis.voice.vad import SileroVad
 from ojarvis.voice.wake import OpenWakeWord
 

@@ -1,7 +1,8 @@
 """Exécution d'un plan validé : étape par étape, chacune par la porte des permissions.
 
 Rien ne démarre sans ta décision. Un plan de niveau 3 demande une double confirmation.
-Si une étape échoue, le plan s'arrête. À la fin, le modèle écrit une synthèse à partir des
+Si une étape échoue, le plan s'arrête ; « Arrêter » laisse finir l'étape en cours et ne
+lance pas les suivantes. À la fin, le modèle écrit une synthèse à partir des
 résultats (marqués comme données, jamais comme instructions) ; elle rejoint la conversation.
 """
 
@@ -69,6 +70,8 @@ class PlanExecutor:
         self._conversations = conversations
         self._bus = bus
         self._running: dict[str, asyncio.Task[None]] = {}
+        #: Plans que tu as arrêtés : leur prochaine étape ne part pas.
+        self._stopping: set[str] = set()
 
     async def _publish(self, plan_id: str, **extra: Any) -> None:
         await self._bus.publish("plan.updated", {"id": plan_id, **extra}, persist=False)
@@ -115,7 +118,28 @@ class PlanExecutor:
     def _launch(self, plan_id: str, *, double_confirmed: bool) -> None:
         task = asyncio.create_task(self.run(plan_id, double_confirmed=double_confirmed))
         self._running[plan_id] = task
-        task.add_done_callback(lambda _t: self._running.pop(plan_id, None))
+
+        def finished(_task: asyncio.Task[None]) -> None:
+            self._running.pop(plan_id, None)
+            self._stopping.discard(plan_id)
+
+        task.add_done_callback(finished)
+
+    async def stop(self, plan_id: str, *, channel: str = "app") -> PlanRecord:
+        """« Arrêter » : l'étape en cours se termine, les suivantes ne sont pas lancées."""
+        plan = await self._plans.get(plan_id)
+        if plan_id not in self._running or plan.status not in ("approved", "running"):
+            raise ConflictError("Ce plan ne tourne plus.", code="plan_not_running")
+        self._stopping.add(plan_id)
+        await self._journal.append(
+            actor="utilisateur",
+            action="plan.arrete",
+            level=plan.max_level,
+            summary=f"Plan arrêté : {plan.title}",
+            details={"plan": plan_id, "canal": channel},
+        )
+        await self._publish(plan_id, stopping=True)
+        return await self._plans.get(plan_id)
 
     async def refuse(self, plan_id: str, *, channel: str = "app") -> PlanRecord:
         plan = await self._plans.get(plan_id)
@@ -139,9 +163,14 @@ class PlanExecutor:
         results: dict[int, str] = {}
         sections: list[str] = []
         failed = False
+        stopped = False
         for step in plan.steps:
-            if failed:
+            if not (failed or stopped) and plan_id in self._stopping:
+                stopped = True
+                sections.append(f"Arrêté par l'utilisateur avant l'étape {step.position}.")
+            if failed or stopped:
                 await self._plans.set_step(plan_id, step.position, status="skipped")
+                await self._publish(plan_id, step=step.position, step_status="skipped")
                 continue
             await self._plans.set_step(plan_id, step.position, status="running")
             await self._publish(plan_id, step=step.position, step_status="running")
@@ -163,8 +192,16 @@ class PlanExecutor:
             await self._publish(plan_id, step=step.position, step_status="done")
             body = as_data(output.text, origin=output.source) if output.external else output.text
             sections.append(f"Étape {step.position}, faite ({step.description}) :\n{body}")
-        status: PlanStatus = "failed" if failed else "done"
-        synthesis = await self._synthesize(plan, sections)
+        status: PlanStatus = "stopped" if stopped else "failed" if failed else "done"
+        if await self._in_shell(plan):
+            # En mode shell, Jarvis lit lui-même les résultats au tour suivant (il corrige,
+            # relance, vérifie) : un compte rendu par le modèle serait un appel de trop.
+            done = len(results)
+            synthesis = f"Plan « {plan.title} » : {done} étape(s) faite(s) sur {len(plan.steps)}."
+            if stopped:
+                synthesis += " Arrêté par toi."
+        else:
+            synthesis = await self._synthesize(plan, sections)
         # Le compte rendu entre dans la conversation avant que le plan soit dit fini : une
         # question posée juste après le voit déjà.
         if plan.conversation_id:
@@ -179,6 +216,15 @@ class PlanExecutor:
             "plan.finished",
             {"id": plan_id, "status": status, "conversation_id": plan.conversation_id},
         )
+
+    async def _in_shell(self, plan: PlanRecord) -> bool:
+        if not plan.conversation_id:
+            return False
+        try:
+            conversation = await self._conversations.get(plan.conversation_id)
+        except EngineError:
+            return False
+        return conversation.channel == "shell"
 
     async def _synthesize(self, plan: PlanRecord, sections: list[str]) -> str:
         request = LLMRequest(

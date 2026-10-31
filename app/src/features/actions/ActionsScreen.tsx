@@ -39,7 +39,11 @@ export function ActionsScreen() {
     const waiting = plans.data.filter((p) => p.status === "proposed");
     const active = plans.data.filter((p) => p.status === "approved" || p.status === "running");
     const past = plans.data.filter(
-      (p) => p.status === "done" || p.status === "failed" || p.status === "refused",
+      (p) =>
+        p.status === "done" ||
+        p.status === "failed" ||
+        p.status === "refused" ||
+        p.status === "stopped",
     );
     body = (
       <>

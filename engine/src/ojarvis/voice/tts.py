@@ -1,5 +1,7 @@
 """Synthèse vocale en flux : Cartesia Sonic (en ligne) et Piper (local, repli hors ligne).
 
+Profil « Tout Meta » : MMS, la voix de Meta, et espeak-ng en secours (`tts_meta.py`).
+
 Chaque moteur reçoit les phrases au fil de l'eau et rend l'audio au fil de l'eau :
 Jarvis commence à parler pendant que le modèle écrit encore la suite.
 """
@@ -41,10 +43,12 @@ PIPER_FILES: dict[str, PinnedFile] = {
     f"{PIPER_VOICE}.onnx": PinnedFile(
         f"{PIPER_BASE}/{PIPER_VOICE}.onnx",
         "bf65074ccdeeeeaa832e75edb1c0a513c01c9a972bdf085ff8a6e71ea234fd41",
+        63_511_038,
     ),
     f"{PIPER_VOICE}.onnx.json": PinnedFile(
         f"{PIPER_BASE}/{PIPER_VOICE}.onnx.json",
         "2f7f885ad5a0aad802e3cc24e4f57239febdcb142b4876de5d238094674361cc",
+        4_959,
     ),
 }
 
@@ -266,6 +270,12 @@ class PiperTTS:
                 yield AudioChunk(pcm, rate)
 
 
+# --------------------------------------------------------------------------- MMS (Meta)
+
+
+# --------------------------------------------------------------------------- espeak-ng
+
+
 # --------------------------------------------------------------------------- repli
 
 
@@ -292,10 +302,11 @@ class _Replay:
 
 
 class FallbackTTS:
-    """Cartesia d'abord ; Piper prend le relais si Cartesia échoue, même en cours de réponse.
+    """Cartesia (ou MMS) d'abord ; Piper (ou espeak-ng) prend le relais si le premier échoue,
+    même en cours de réponse.
 
-    Après un échec, Cartesia est mis de côté pendant `cooldown_s` : les réponses suivantes
-    partent directement sur Piper, sans attendre un nouvel échec.
+    Après un échec, le premier est mis de côté pendant `cooldown_s` : les réponses suivantes
+    partent directement sur le secours, sans attendre un nouvel échec.
     """
 
     name = "auto"

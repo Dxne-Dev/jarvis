@@ -1,0 +1,55 @@
+.providers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provider {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "dot name"
+    "dot state";
+  column-gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.providerDot {
+  grid-area: dot;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+
+.provider[data-tone="ok"] .providerDot {
+  background: var(--color-accent);
+  box-shadow: var(--glow-accent);
+}
+
+.provider[data-tone="down"] .providerDot {
+  background: var(--color-danger);
+}
+
+.providerName {
+  grid-area: name;
+  font-weight: var(--weight-medium);
+}
+
+.providerState {
+  grid-area: state;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.routing {
+  display: grid;
+  gap: var(--space-2);
+}

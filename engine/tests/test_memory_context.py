@@ -154,6 +154,22 @@ async def test_memory_degrades_without_embeddings(db: Database) -> None:
     assert hits[0].via == "mots"
 
 
+async def test_a_new_embedding_model_embeds_the_memories_already_kept(db: Database) -> None:
+    """« Tout Meta » passe d'e5 aux mots hachés : les souvenirs gardent leur recherche par sens."""
+
+    class Before(HashEmbedder):
+        model_id = "avant"
+
+    first = MemoryStore(db, Before(), None)
+    await first.start()
+    record, _ = await first.add("fait", "Octave boit son café sans sucre.")
+    after = MemoryStore(db, HashEmbedder(), None)
+    await after.start()
+    hits = await after.search("café sucre")
+    assert [h.record.id for h in hits] == [record.id]
+    assert hits[0].via == "les deux"
+
+
 async def test_touch_records_usage(memory: MemoryStore) -> None:
     record, _ = await memory.add("fait", "Octave apprend Rust.")
     await memory.touch([record.id])

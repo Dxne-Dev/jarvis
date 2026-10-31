@@ -1,12 +1,15 @@
-"""Détection de parole (Silero VAD v6) et décision de fin de phrase.
+"""Détection de parole (Silero VAD v6, ou le volume du son) et décision de fin de phrase.
 
 Le modèle ONNX est celui fourni avec faster-whisper : rien à télécharger. Il travaille
 sur des morceaux de 32 ms (512 échantillons à 16 kHz) précédés de 64 échantillons de contexte.
+Le profil « Tout Meta » n'utilise aucun modèle qui ne soit pas de Meta : la parole y est
+reconnue à son volume, au-dessus du bruit de fond de la pièce.
 """
 
 from __future__ import annotations
 
 import enum
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -68,6 +71,38 @@ class SileroVad:
             start += CHUNK
         self._rest = audio[start:]
         return best
+
+
+class EnergyVad:
+    """La parole reconnue à son volume : du simple calcul, pas un modèle.
+
+    Le bruit de fond (ventilateur, rue) est le volume des trames les plus calmes des dernières
+    secondes : les silences entre les mots le gardent bas pendant qu'on parle. La probabilité
+    vaut 0,5 à `margin_db` au-dessus du fond, 1 à deux fois cette marge.
+    """
+
+    def __init__(
+        self, *, margin_db: float = 12.0, window: int = 60, quietest_db: float = -70.0
+    ) -> None:
+        self.margin_db = margin_db
+        self._quietest = quietest_db
+        self._recent: deque[float] = deque(maxlen=window)
+
+    @property
+    def floor_db(self) -> float:
+        if not self._recent:
+            return self._quietest
+        return max(float(np.percentile(self._recent, 10)), self._quietest)
+
+    def reset(self) -> None:
+        """Le fond de la pièce est gardé d'une phrase à l'autre : rien à remettre à zéro."""
+
+    def process(self, pcm: Pcm) -> float:
+        samples = pcm.astype(np.float32) / 32768.0
+        rms = float(np.sqrt(np.mean(samples**2))) if samples.size else 0.0
+        self._recent.append(20.0 * float(np.log10(max(rms, 1e-6))))
+        above = self._recent[-1] - self.floor_db
+        return min(max(above / (2 * self.margin_db), 0.0), 1.0)
 
 
 class Endpoint(enum.Enum):

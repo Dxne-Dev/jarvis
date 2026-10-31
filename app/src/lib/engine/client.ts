@@ -57,13 +57,15 @@ export class EngineClient {
       Authorization: `Bearer ${this.endpoint.token}`,
       "X-Correlation-ID": crypto.randomUUID().replaceAll("-", "").slice(0, 16),
     };
-    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const raw = body instanceof Blob;
+    if (body !== undefined)
+      headers["Content-Type"] = raw ? "application/octet-stream" : "application/json";
     let response: Response;
     try {
       response = await this.fetchImpl(this.endpoint.baseUrl + path, {
         method,
         headers,
-        body: body === undefined ? null : JSON.stringify(body),
+        body: body === undefined ? null : raw ? body : JSON.stringify(body),
       });
     } catch {
       throw new EngineUnreachableError();
@@ -87,6 +89,27 @@ export class EngineClient {
       );
     }
     return data as T;
+  }
+
+  /** Un fichier (une image) : `null` s'il n'existe pas encore (404). */
+  async blob(path: string): Promise<Blob | null> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(this.endpoint.baseUrl + path, {
+        headers: { Authorization: `Bearer ${this.endpoint.token}` },
+      });
+    } catch {
+      throw new EngineUnreachableError();
+    }
+    if (response.status === 404) return null;
+    if (!response.ok)
+      throw new EngineApiError(
+        response.status,
+        "http_error",
+        `Erreur HTTP ${response.status}.`,
+        null,
+      );
+    return response.blob();
   }
 
   /** Requête POST dont la réponse est lue au fil de l'eau (flux SSE). */
@@ -145,6 +168,11 @@ export class EngineClient {
 
   delete<T>(path: string): Promise<T> {
     return this.request<T>("DELETE", path);
+  }
+
+  /** Envoie un fichier tel quel (corps brut), sans le lire en mémoire côté interface. */
+  upload<T>(path: string, file: Blob): Promise<T> {
+    return this.request<T>("POST", path, file);
   }
 }
 

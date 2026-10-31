@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenêtre principale : écouter les événements du shell, ouvrir les liens web dans le navigateur, afficher des notifications et régler le démarrage automatique, rien d'autre. Les commandes de l'app (moteur, journal, raccourci, quitter) sont déclarées dans le code.",
+  "description": "Fenêtre principale : écouter les événements du shell, ouvrir les liens web dans le navigateur, afficher des notifications, régler le démarrage automatique et se réduire avant un clic à l'écran, rien d'autre. Les commandes de l'app (moteur, journal, raccourci, quitter) sont déclarées dans le code.",
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "core:window:allow-minimize",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

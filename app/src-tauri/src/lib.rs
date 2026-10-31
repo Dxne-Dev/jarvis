@@ -1,6 +1,7 @@
 //! Coque de bureau d'O-jarvis : fenêtre, icône dans la barre système, moteur Python.
 
 mod engine;
+mod join;
 mod shortcut;
 
 use std::sync::Arc;

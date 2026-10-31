@@ -5,6 +5,9 @@ Poignée de main avec l'app :
 2. le moteur choisit un port libre sur 127.0.0.1, prépare la base, puis écrit sur
    la sortie standard : `OJARVIS_READY {"port": ..., "pid": ..., "version": ...}` ;
 3. quand l'entrée standard se ferme (l'app quitte ou meurt), le moteur s'arrête.
+
+Il publie aussi sa connexion pour le mode shell (`ojarvis.shell.connection`), effacée à
+l'arrêt.
 """
 
 from __future__ import annotations
@@ -26,10 +29,17 @@ from ojarvis import __version__
 from ojarvis.app import create_app
 from ojarvis.config import load_config
 from ojarvis.core.logs import configure_logging, get_logger
-
-READY_PREFIX = "OJARVIS_READY "
-EXIT_LOCKED = 3
-EXIT_BAD_TOKEN = 4
+from ojarvis.shell.connection import (
+    EXIT_BAD_TOKEN,
+    EXIT_LOCKED,
+    READY_PREFIX,
+    RUNNING_PREFIX,
+    EngineInfo,
+    info_path,
+    read_info,
+    remove_info,
+    write_info,
+)
 
 log = get_logger("ojarvis.main")
 
@@ -98,7 +108,26 @@ def watch_parent(server: uvicorn.Server, stream: IO[bytes]) -> None:
     threading.Thread(target=watch_ppid, name="ppid-watch", daemon=True).start()
 
 
+def announce_running(connection: Path | None) -> None:
+    """Un moteur tourne déjà sur ces données (lancé par un terminal) : sa connexion part vers
+    celui qui nous a lancés (l'app), qui le rejoint au lieu d'échouer. Rien s'il n'est pas
+    sûr de le lire (voir `read_info`)."""
+    running = read_info(connection) if connection is not None else None
+    if running is None:
+        return
+    line = {"port": running.port, "pid": running.pid, "token": running.token}
+    sys.stdout.write(RUNNING_PREFIX + json.dumps(line) + "\n")
+    sys.stdout.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["shell"]:
+        # Le moteur empaqueté n'a pas de « python -m » : « ojarvis-engine shell » ouvre le
+        # terminal de Jarvis.
+        from ojarvis.shell.cli import main as shell_main  # noqa: PLC0415
+
+        return shell_main(argv[1:])
     args = parse_args(argv)
     config = load_config(dev_mode=args.dev)
     config.paths.ensure()
@@ -121,12 +150,20 @@ def main(argv: list[str] | None = None) -> int:
     lock = acquire_lock(config.paths.lock_path)
     if lock is None:
         log.error("engine_already_running", lock=str(config.paths.lock_path))
+        announce_running(info_path(config.paths))
         return EXIT_LOCKED
 
     sock = bind_socket(args.port)
     port = int(sock.getsockname()[1])
+    connection = info_path(config.paths)
 
     def announce() -> None:
+        if connection is not None:
+            # Le mode shell rejoint ce moteur (choix validé le 26/10 : voir shell/connection).
+            try:
+                write_info(connection, EngineInfo(port, os.getpid(), token, __version__))
+            except OSError:
+                log.warning("shell_connection_not_written")
         info = {"port": port, "pid": os.getpid(), "version": __version__}
         sys.stdout.write(READY_PREFIX + json.dumps(info) + "\n")
         sys.stdout.flush()
@@ -148,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server.run(sockets=[sock])
     finally:
+        if connection is not None:
+            remove_info(connection, os.getpid())
         sock.close()
         lock.close()
     return 0
