@@ -1,6 +1,7 @@
-import { generateCyberMaskPoints } from "./cyberMask";
 import { uiLog } from "../../lib/log";
 import type { FrameParams } from "./animator";
+import { generateCyberMaskPoints } from "./cyberMask";
+import { MASK_POINTS_FRAGMENT, MASK_POINTS_VERTEX } from "./maskShaders";
 import {
   GLOW_FRAGMENT,
   GLOW_VERTEX,
@@ -99,13 +100,11 @@ function tintInto(
   }
 }
 
-function perspective(aspect = 1): Float32Array {
+function perspective(): Float32Array {
   const near = 0.1;
   const far = 50;
   const m = new Float32Array(16);
-  // Pour le masque en plein écran, on conserve la hauteur du masque bien présente
-  // et on ouvre le champ horizontal sans déformer ni éloigner le masque.
-  m[0] = FOCAL / aspect;
+  m[0] = FOCAL;
   m[5] = FOCAL;
   m[10] = (far + near) / (near - far);
   m[11] = -1;
@@ -164,24 +163,31 @@ export class SphereRenderer {
   private constructor(gl: WebGL2RenderingContext, options: RendererOptions) {
     this.gl = gl;
     this.pointCount = options.pointCount;
-    this.avatarModel = options.avatarModel ?? "cyberMask";
-    this.points = link(gl, POINTS_VERTEX, POINTS_FRAGMENT, [
-      "u_proj",
-      "u_rot",
-      "u_camera",
-      "u_flowTime",
-      "u_time",
-      "u_amp",
-      "u_freq",
-      "u_audio",
-      "u_scale",
-      "u_jitter",
-      "u_pointSize",
-      "u_extent",
-      "u_color",
-      "u_colorHot",
-      "u_intensity",
-    ]);
+    this.avatarModel = options.avatarModel ?? "sphere";
+    // La sphère garde ses shaders d'origine ; le masque a les siens (maskShaders.ts).
+    const mask = this.avatarModel === "cyberMask";
+    this.points = link(
+      gl,
+      mask ? MASK_POINTS_VERTEX : POINTS_VERTEX,
+      mask ? MASK_POINTS_FRAGMENT : POINTS_FRAGMENT,
+      [
+        "u_proj",
+        "u_rot",
+        "u_camera",
+        "u_flowTime",
+        "u_time",
+        "u_amp",
+        "u_freq",
+        "u_audio",
+        "u_scale",
+        "u_jitter",
+        "u_pointSize",
+        "u_extent",
+        "u_color",
+        "u_colorHot",
+        "u_intensity",
+      ],
+    );
     this.rings = link(gl, RINGS_VERTEX, RINGS_FRAGMENT, [
       "u_proj",
       "u_rot",
@@ -200,14 +206,13 @@ export class SphereRenderer {
       "u_radius",
     ]);
 
-    const { positions, seeds, kinds } =
-      this.avatarModel === "cyberMask"
-        ? generateCyberMaskPoints(this.pointCount)
-        : fibonacciSphere(this.pointCount);
+    const { positions, seeds, kinds } = mask
+      ? generateCyberMaskPoints(this.pointCount)
+      : fibonacciSphere(this.pointCount);
     this.pointsVao = this.vao(this.points.program, [
       { name: "a_pos", data: positions, size: 3 },
       { name: "a_seed", data: seeds, size: 1 },
-      { name: "a_kind", data: kinds, size: 1 },
+      ...(mask ? [{ name: "a_kind", data: kinds, size: 1 }] : []),
     ]);
 
     const angles = new Float32Array(RING_POINTS * 2);
@@ -279,7 +284,8 @@ export class SphereRenderer {
       canvas.height = h;
     }
     this.dpr = dpr;
-    this.setAspect(w / h);
+    // Le masque, en plein écran, suit le ratio du canevas ; la sphère garde sa projection.
+    if (this.avatarModel === "cyberMask") this.setAspect(w / h);
     this.gl.viewport(0, 0, w, h);
   }
 
@@ -312,7 +318,8 @@ export class SphereRenderer {
     }
 
     const canvas = gl.canvas as HTMLCanvasElement;
-    const sizeScale = Math.min(canvas.width, canvas.height) / (this.dpr * 440);
+    const sizeScale =
+      (mask ? Math.min(canvas.width, canvas.height) : canvas.width) / (this.dpr * 440);
     const pointPx = Math.max(
       1.5,
       2.6 * v.pointSize * this.dpr * Math.min(Math.max(sizeScale, 0.6), 1.4),
