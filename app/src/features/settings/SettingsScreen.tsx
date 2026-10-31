@@ -206,7 +206,9 @@ function AvatarModelChoice() {
           </span>
           <span className={styles.radioText}>
             <span>Masque cybernétique</span>
-            <span className={styles.radioHint}>Masque facial stylisé avec pluie binaire Matrix.</span>
+            <span className={styles.radioHint}>
+              Masque facial stylisé avec pluie binaire Matrix.
+            </span>
           </span>
         </RadioGroup.Item>
       </RadioGroup.Root>
