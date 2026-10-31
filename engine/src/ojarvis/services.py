@@ -31,6 +31,7 @@ from ojarvis.assembly import (
     _build_router,
     _memory_tools,
     _open_secrets,
+    _startup_preferences,
     relay_policy,
 )
 from ojarvis.audit.journal import AuditJournal
@@ -159,7 +160,7 @@ class Services:
         secrets, backend, keyring_error, imported = await _open_secrets(config, db, secret_backend)
 
         settings = SettingsStore(db)
-        preferences = await settings.get()
+        preferences = await _startup_preferences(settings, config, providers)
         tracer = Tracer(db, bus)
         http = httpx.AsyncClient(timeout=httpx.Timeout(10.0), transport=http_transport)
         catalog = Catalog()
