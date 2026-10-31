@@ -15,13 +15,20 @@ import contextlib
 import hashlib
 import json
 import os
+import secrets
 import stat
+import subprocess
 import sys
+import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from ojarvis.config import APP_DIR_NAME, Paths
+import httpx
+
+from ojarvis.config import APP_DIR_NAME, Paths, resolve_paths
 
 #: Poignée de main du moteur (voir `ojarvis.__main__`), lue aussi par le terminal.
 READY_PREFIX = "OJARVIS_READY "
@@ -114,3 +121,92 @@ def python_module(module: str, *, frozen_as: str | None = None) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, frozen_as] if frozen_as else [sys.executable]
     return [sys.executable, "-m", module]
+
+
+class EngineUnavailableError(Exception):
+    pass
+
+
+def reachable(info: EngineInfo) -> bool:
+    try:
+        response = httpx.get(
+            f"{info.url}/v1/status",
+            headers={"Authorization": f"Bearer {info.token}"},
+            timeout=3.0,
+        )
+    except httpx.HTTPError:
+        return False
+    return response.status_code == 200
+
+
+def start_engine(
+    env: Mapping[str, str], *, timeout_s: float = 180.0
+) -> tuple[EngineInfo, subprocess.Popen[bytes]]:
+    """Lance le moteur complet, comme le fait l'app (voix comprise) : jeton sur l'entrée
+    standard, gardée ouverte ; il s'arrête quand le terminal se ferme. L'app ouverte ensuite
+    le rejoint au lieu d'en lancer un second."""
+    token = secrets.token_urlsafe(32)
+    process = subprocess.Popen(  # noqa: S603 - notre propre moteur, sans entrée extérieure
+        python_module("ojarvis"),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=dict(env),
+        start_new_session=True,  # Ctrl+C dans le terminal ne coupe pas le moteur
+    )
+    stdin, stdout = process.stdin, process.stdout
+    if stdin is None or stdout is None:
+        process.kill()
+        raise EngineUnavailableError("Le moteur n'a pas de tubes d'entrée et de sortie.")
+    stdin.write(token.encode() + b"\n")
+    stdin.flush()
+    ready: dict[str, Any] = {}
+
+    def read_ready() -> None:
+        for raw in stdout:
+            line = raw.decode("utf-8", "replace")
+            if line.startswith(READY_PREFIX) and not ready:
+                ready.update(json.loads(line[len(READY_PREFIX) :]))
+            # La suite est lue et jetée : un tube plein bloquerait le moteur.
+
+    threading.Thread(target=read_ready, name="engine-stdout", daemon=True).start()
+    deadline = time.monotonic() + timeout_s
+    while not ready:
+        if process.poll() is not None:
+            if process.returncode == EXIT_LOCKED:
+                raise EngineUnavailableError(
+                    "Le moteur de l'app tourne déjà mais ne publie pas sa connexion : "
+                    "redémarre l'app (version à jour) ou ferme-la, puis relance."
+                )
+            raise EngineUnavailableError(
+                f"Le moteur n'a pas démarré (code {process.returncode}) : voir son journal, "
+                "~/.local/state/o-jarvis/logs/engine.log."
+            )
+        if time.monotonic() > deadline:
+            process.kill()
+            raise EngineUnavailableError("Le moteur met trop de temps à démarrer.")
+        time.sleep(0.1)
+    info = EngineInfo(int(ready["port"]), int(ready["pid"]), token, str(ready.get("version")))
+    return info, process
+
+
+def connect(env: Mapping[str, str]) -> tuple[EngineInfo, subprocess.Popen[bytes] | None]:
+    """Le moteur de l'app s'il tourne, sinon un moteur à ce terminal."""
+    path = info_path(resolve_paths(env), env)
+    if path is not None:
+        info = read_info(path)
+        if info is not None and reachable(info):
+            return info, None
+    return start_engine(env)
+
+
+def stop_engine(process: subprocess.Popen[bytes] | None) -> None:
+    if process is None:
+        return
+    if process.stdin is not None:
+        with contextlib.suppress(OSError):
+            process.stdin.close()  # le moteur s'arrête à la fermeture de son entrée
+    try:
+        process.wait(15)
+    except subprocess.TimeoutExpired:
+        process.kill()
