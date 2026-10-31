@@ -6,6 +6,7 @@ import keyring
 import pytest
 from keyring.backends import fail, null
 
+from ojarvis.assembly import UnavailableBackend
 from ojarvis.core.errors import InvalidInputError, NotFoundError, UnavailableError
 from ojarvis.db.engine import Database
 from ojarvis.db.migrate import upgrade_to_head
@@ -18,7 +19,6 @@ from ojarvis.security.secrets import (
     SecretStore,
     parse_dotenv,
 )
-from ojarvis.services import UnavailableBackend
 
 
 @pytest.fixture
